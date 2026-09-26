@@ -1,0 +1,222 @@
+package tw.moneybook.app
+
+import java.text.NumberFormat
+import java.time.LocalDate
+import java.time.YearMonth
+
+enum class TxType { EXPENSE, INCOME, TRANSFER }
+
+enum class AccountType(val label: String, val emoji: String) {
+    CASH("現金", "💵"),
+    BANK("銀行", "🏦"),
+    CARD("信用卡", "💳"),
+    ECARD("電子票證", "🎫"),
+    EPAY("電子支付", "📱"),
+    OTHER("其他", "👛"),
+}
+
+data class Book(
+    val id: Long,
+    val name: String,
+    val emoji: String,
+    val budget: Long = 0L,
+)
+
+data class Account(
+    val id: Long,
+    val name: String,
+    val emoji: String,
+    val type: AccountType,
+    val initial: Long,
+    val order: Int,
+    val hidden: Boolean = false,
+)
+
+data class Category(
+    val id: Long,
+    val name: String,
+    val emoji: String,
+    val color: Int,
+    val kind: TxType,
+    val parentId: Long?,
+    val order: Int,
+)
+
+data class Txn(
+    val id: Long,
+    val bookId: Long,
+    val type: TxType,
+    val amount: Long,
+    val categoryId: Long?,
+    val accountId: Long?,
+    val toAccountId: Long?,
+    val day: Long,
+    val note: String,
+    val tags: List<String>,
+    val instGroup: Long? = null,
+    val instIndex: Int = 0,
+    val instTotal: Int = 0,
+) {
+    val date: LocalDate get() = LocalDate.ofEpochDay(day)
+    val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
+}
+
+data class Template(
+    val id: Long,
+    val name: String,
+    val type: TxType,
+    val amount: Long,
+    val categoryId: Long?,
+    val accountId: Long?,
+    val note: String,
+    val tags: List<String>,
+)
+
+data class Prefs(
+    val bookId: Long,
+    val palette: String = "milktea",
+    val mascot: String = "deer",
+    val mascotName: String = "",
+    val dark: Int = 0, // 0 跟隨系統, 1 淺色, 2 深色
+    val celebrate: Boolean = true,
+)
+
+data class AppData(
+    val books: List<Book>,
+    val accounts: List<Account>,
+    val categories: List<Category>,
+    val txns: List<Txn>,
+    val templates: List<Template>,
+    val prefs: Prefs,
+    val nextId: Long,
+) {
+    val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
+    val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }
+
+    val currentBook: Book
+        get() = books.firstOrNull { it.id == prefs.bookId } ?: books.first()
+
+    /** 目前帳本的記錄（已依日期新到舊排序） */
+    val bookTxns: List<Txn> by lazy {
+        val bid = currentBook.id
+        txns.filter { it.bookId == bid }
+    }
+
+    val visibleAccounts: List<Account>
+        get() = accounts.filter { !it.hidden }.sortedBy { it.order }
+
+    fun topCategories(kind: TxType): List<Category> =
+        categories.filter { it.kind == kind && it.parentId == null }.sortedBy { it.order }
+
+    fun childrenOf(parentId: Long): List<Category> =
+        categories.filter { it.parentId == parentId }.sortedBy { it.order }
+
+    fun topOf(c: Category): Category = c.parentId?.let { catMap[it] } ?: c
+
+    /** 各帳戶目前餘額（所有帳本合計） */
+    fun balances(): Map<Long, Long> {
+        val m = HashMap<Long, Long>()
+        for (a in accounts) m[a.id] = a.initial
+        for (t in txns) {
+            when (t.type) {
+                TxType.EXPENSE -> t.accountId?.let { m[it] = (m[it] ?: 0L) - t.amount }
+                TxType.INCOME -> t.accountId?.let { m[it] = (m[it] ?: 0L) + t.amount }
+                TxType.TRANSFER -> {
+                    t.accountId?.let { m[it] = (m[it] ?: 0L) - t.amount }
+                    t.toAccountId?.let { m[it] = (m[it] ?: 0L) + t.amount }
+                }
+            }
+        }
+        return m
+    }
+
+    fun allTags(): List<String> =
+        txns.flatMap { it.tags }.groupingBy { it }.eachCount().entries
+            .sortedByDescending { it.value }.map { it.key }
+}
+
+fun List<Txn>.inMonth(m: YearMonth): List<Txn> = filter { it.month == m }
+fun List<Txn>.inYear(y: Int): List<Txn> = filter { it.date.year == y }
+fun List<Txn>.expenseSum(): Long = filter { it.type == TxType.EXPENSE }.sumOf { it.amount }
+fun List<Txn>.incomeSum(): Long = filter { it.type == TxType.INCOME }.sumOf { it.amount }
+
+fun sortTxns(list: List<Txn>): List<Txn> =
+    list.sortedWith(compareByDescending<Txn> { it.day }.thenByDescending { it.id })
+
+private val moneyFmt: NumberFormat = NumberFormat.getIntegerInstance()
+
+fun formatMoney(v: Long): String =
+    (if (v < 0) "-$" else "$") + moneyFmt.format(kotlin.math.abs(v))
+
+/** 日曆格子用的短格式 */
+fun formatShort(v: Long): String = when {
+    v >= 100_000_000L -> String.format("%.1f億", v / 100_000_000.0)
+    v >= 10_000L -> String.format("%.1f萬", v / 10_000.0)
+    else -> moneyFmt.format(v)
+}
+
+fun parseTags(s: String): List<String> =
+    s.split(' ', ',', '，', '#', '＃', '\n', '\t', ';')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+        .take(10)
+
+object Defaults {
+    val emojis: List<String> = listOf(
+        "🍜", "🍱", "🥪", "🍛", "🍰", "🧋", "☕", "🍺", "🍎", "🍿",
+        "🚌", "🚇", "🚕", "⛽", "🅿️", "🚲", "✈️", "🏍️", "🚗", "🎫",
+        "🛍️", "👕", "👟", "💄", "📱", "💻", "🎧", "📷", "🧻", "🧴",
+        "🏠", "🔑", "💡", "📶", "🛋️", "🧺", "🎮", "🎬", "🎤", "🎨",
+        "💊", "🏥", "🦷", "💪", "📚", "✏️", "🎓", "🎁", "💐", "🍻",
+        "🐶", "🐱", "🐰", "👶", "💼", "🏆", "📈", "🧧", "💰", "🪙",
+        "💳", "🏦", "💵", "👛", "📦", "🔧", "🧾", "❤️", "⭐", "🌈",
+    )
+
+    fun create(): AppData {
+        var id = 1L
+        fun nid(): Long = id++
+
+        val book = Book(nid(), "我的帳本", "📒", 0L)
+        val cash = Account(nid(), "現金", "💵", AccountType.CASH, 0L, 0)
+        val cats = ArrayList<Category>()
+
+        fun parent(name: String, emoji: String, color: Int, kind: TxType, subs: List<Pair<String, String>>) {
+            val order = cats.count { it.parentId == null && it.kind == kind }
+            val p = Category(nid(), name, emoji, color, kind, null, order)
+            cats.add(p)
+            subs.forEachIndexed { i, s -> cats.add(Category(nid(), s.first, s.second, color, kind, p.id, i)) }
+        }
+
+        val e = TxType.EXPENSE
+        parent("餐飲", "🍜", 0, e, listOf("早餐" to "🥪", "午餐" to "🍱", "晚餐" to "🍛", "飲料" to "🧋", "點心" to "🍰"))
+        parent("交通", "🚌", 2, e, listOf("大眾運輸" to "🚇", "計程車" to "🚕", "加油" to "⛽", "停車" to "🅿️"))
+        parent("購物", "🛍️", 3, e, listOf("衣物" to "👕", "3C" to "📱", "美妝" to "💄"))
+        parent("日用", "🧻", 1, e, emptyList())
+        parent("居住", "🏠", 5, e, listOf("房租" to "🔑", "水電" to "💡", "網路" to "📶"))
+        parent("娛樂", "🎮", 4, e, listOf("電影" to "🎬", "遊戲" to "🕹️", "旅遊" to "✈️"))
+        parent("醫療", "💊", 6, e, emptyList())
+        parent("教育", "📚", 7, e, emptyList())
+        parent("社交", "🎁", 9, e, emptyList())
+        parent("寵物", "🐶", 8, e, emptyList())
+        parent("其他", "📦", 8, e, emptyList())
+
+        val i = TxType.INCOME
+        parent("薪水", "💼", 5, i, emptyList())
+        parent("獎金", "🏆", 1, i, emptyList())
+        parent("投資", "📈", 2, i, emptyList())
+        parent("兼職", "🧑‍💻", 4, i, emptyList())
+        parent("零用錢", "🧧", 6, i, emptyList())
+        parent("其他", "💰", 8, i, emptyList())
+
+        return AppData(
+            books = listOf(book),
+            accounts = listOf(cash),
+            categories = cats,
+            txns = emptyList(),
+            templates = emptyList(),
+            prefs = Prefs(bookId = book.id),
+            nextId = id + 100,
+        )
+    }
+}

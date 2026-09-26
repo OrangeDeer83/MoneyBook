@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 簡單的錢包圖示：108dp 畫布，內容置於中間 66dp 安全區 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,40h36a6,6 0,0 1,6 6v22a6,6 0,0 1,-6 6h-36a6,6 0,0 1,-6 -6v-22a6,6 0,0 1,6 -6z" />
+    <path
+        android:fillColor="#B07F57"
+        android:pathData="M60,50h16v14h-16a7,7 0,0 1,0 -14z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M61,57m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,34h28l4,6h-36z" />
+</vector>
