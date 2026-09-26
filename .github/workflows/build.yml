@@ -14,6 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Unpack source
+        run: |
+          rm -rf src-build && mkdir src-build
+          unzip -q MoneyBook-src.zip -d src-build
+          ls src-build
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -24,10 +30,24 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Build APK
-        run: gradle assembleDebug --stacktrace
+        working-directory: src-build
+        run: |
+          set -o pipefail
+          gradle assembleDebug --console=plain 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        working-directory: src-build
+        run: |
+          grep -E "^e: " build.log | sed -E 's#file://[^ ]*/app/src/main/java/##' | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          grep -E "What went wrong" -A 8 build.log | head -40 | while IFS= read -r line; do
+            echo "::warning::${line}"
+          done
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk MoneyBook-v${{ github.run_number }}.apk
+        run: cp src-build/app/build/outputs/apk/debug/app-debug.apk MoneyBook-v${{ github.run_number }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
