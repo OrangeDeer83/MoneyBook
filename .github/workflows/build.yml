@@ -18,7 +18,13 @@ jobs:
         run: |
           rm -rf src-build && mkdir src-build
           unzip -q MoneyBook-src.zip -d src-build
-          ls src-build
+
+      - name: Read version
+        id: ver
+        run: |
+          V=$(grep -E '^versionName=' src-build/version.properties | cut -d= -f2 | tr -d '\r ')
+          echo "name=$V" >> "$GITHUB_OUTPUT"
+          echo "版本：$V"
 
       - uses: actions/setup-java@v4
         with:
@@ -47,16 +53,19 @@ jobs:
           done
 
       - name: Rename APK
-        run: cp src-build/app/build/outputs/apk/debug/app-debug.apk MoneyBook-v${{ github.run_number }}.apk
+        run: cp src-build/app/build/outputs/apk/debug/app-debug.apk "MoneyBook-v${{ steps.ver.outputs.name }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MoneyBook-v${{ github.run_number }}
-          path: MoneyBook-v${{ github.run_number }}.apk
+          name: MoneyBook-v${{ steps.ver.outputs.name }}-build${{ github.run_number }}
+          path: MoneyBook-v${{ steps.ver.outputs.name }}.apk
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: 記帳本 v${{ github.run_number }}
-          files: MoneyBook-v${{ github.run_number }}.apk
+          tag_name: v${{ steps.ver.outputs.name }}
+          name: 記帳本 v${{ steps.ver.outputs.name }}
+          body_path: src-build/RELEASE_NOTES.md
+          files: MoneyBook-v${{ steps.ver.outputs.name }}.apk
+          overwrite_files: true
+          make_latest: true
