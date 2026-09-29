@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,6 +59,7 @@ import tw.moneybook.app.Category
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.TxType
 import tw.moneybook.app.formatMoney
+import tw.moneybook.app.pendingReimb
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -109,10 +112,11 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
                 MenuRow("📒", "帳本管理", "目前：${d.currentBook.name}") { open("books") }
                 MenuRow("👛", "帳戶管理", "${d.visibleAccounts.size} 個帳戶") { open("accounts") }
                 MenuRow("🗂️", "分類管理", "新增、改圖示、子分類、排序") { open("categories") }
+                MenuRow("🧾", "報銷", d.bookTxns.pendingReimb().let { p -> if (p.isEmpty()) "沒有待報銷的項目" else "待報銷 ${p.size} 筆・${formatMoney(p.sumOf { it.reimbAmount })}" }) { open("reimb") }
                 MenuRow("⭐", "常用記帳", if (d.templates.isEmpty()) "在記一筆畫面按「存為常用」" else "${d.templates.size} 個") { open("templates") }
                 MenuRow(
                     "🎯", "每月預算",
-                    if (d.currentBook.budget > 0) "${d.currentBook.name}：${formatMoney(d.currentBook.budget)}" else "尚未設定",
+                    d.currentBook.budgetFor(vm.month).let { b -> if (b > 0) "${vm.month.monthValue} 月：${formatMoney(b)}" + (if (d.currentBook.monthBudgets.isNotEmpty()) "・有個別月份設定" else "") else "尚未設定" },
                 ) { budgetDialog = true }
             }
         }
@@ -124,7 +128,7 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
         }
         item {
             Text(
-                "記帳本 v2・資料只存在這支手機裡，記得定期備份喔",
+                "記帳本 v${tw.moneybook.app.BuildConfig.VERSION_NAME}・資料只存在這支手機裡，記得定期備份喔",
                 style = MaterialTheme.typography.bodySmall,
                 color = cute.sub,
                 modifier = Modifier.padding(start = 8.dp, top = 4.dp),
@@ -132,32 +136,66 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
         }
     }
 
-    if (budgetDialog) {
-        var text by remember { mutableStateOf(if (d.currentBook.budget > 0) d.currentBook.budget.toString() else "") }
-        AlertDialog(
-            onDismissRequest = { budgetDialog = false },
-            title = { Text("每月預算") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("「${d.currentBook.name}」每個月的支出預算。留空代表不設定。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                    OutlinedTextField(
-                        text, { text = it.filter { c -> c.isDigit() }.take(10) },
-                        prefix = { Text("$") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.setBudget(text.toLongOrNull() ?: 0L)
-                    budgetDialog = false
-                    vm.toast("預算已更新")
-                }) { Text("儲存") }
-            },
-            dismissButton = { TextButton(onClick = { budgetDialog = false }) { Text("取消") } },
+    if (budgetDialog) BudgetDialog(vm, vm.month) { budgetDialog = false }
+}
+
+/** 預算設定：每個月都一樣，或只設定某個月 */
+@Composable
+fun BudgetDialog(vm: MoneyViewModel, month: java.time.YearMonth, onDismiss: () -> Unit) {
+    val d = vm.data
+    val cute = LocalCute.current
+    val book = d.currentBook
+    val hasOverride = book.monthBudgets.containsKey(month.toString())
+    var mode by remember { mutableStateOf(if (hasOverride) 1 else 0) } // 0 每月, 1 只有這個月
+    var text by remember {
+        mutableStateOf(
+            (if (hasOverride) book.monthBudgets[month.toString()] ?: 0L else book.budget).takeIf { it > 0 }?.toString() ?: ""
         )
     }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("預算設定") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PillSegment(listOf("每個月", "只有 ${month.monthValue} 月"), mode, { m ->
+                    mode = m
+                    val v = if (m == 1) book.budgetFor(month) else book.budget
+                    text = if (v > 0) v.toString() else ""
+                })
+                Text(
+                    if (mode == 0) "「${book.name}」每個月的預設預算，留空代表不設定。"
+                    else "只套用在 ${month.year} 年 ${month.monthValue} 月，其他月份還是用每月預設（${formatMoney(book.budget)}）。",
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                )
+                OutlinedTextField(
+                    text, { text = it.filter { c -> c.isDigit() }.take(10) },
+                    prefix = { Text("$") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val others = book.monthBudgets.entries.sortedByDescending { it.key }
+                if (others.isNotEmpty()) {
+                    Text("個別設定的月份", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    others.take(6).forEach { (k, v) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${k.replace("-", " 年 ")} 月", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Text(formatMoney(v), style = MaterialTheme.typography.bodyMedium)
+                            TextButton(onClick = { vm.setBudget(-1L, java.time.YearMonth.parse(k)) }) { Text("清除") }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val v = text.toLongOrNull() ?: 0L
+                vm.setBudget(v, if (mode == 0) null else month)
+                vm.toast("預算已更新")
+                onDismiss()
+            }) { Text("儲存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 // ───────────────────────── 帳本 ─────────────────────────
@@ -269,11 +307,10 @@ fun EmojiButton(emoji: String, onClick: () -> Unit) {
 // ───────────────────────── 帳戶 ─────────────────────────
 
 @Composable
-fun AccountsScreen(vm: MoneyViewModel, onBack: () -> Unit) {
+fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onBack: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
     val bal = remember(d) { d.balances() }
-    var editing by remember { mutableStateOf<Account?>(null) }
     var adding by remember { mutableStateOf(false) }
     val sorted = d.accounts.sortedBy { it.order }
     SubPage("帳戶管理", onBack) {
@@ -285,20 +322,20 @@ fun AccountsScreen(vm: MoneyViewModel, onBack: () -> Unit) {
                     Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
                 }
             }
-            items(sorted, key = { it.id }) { a ->
-                val b = bal[a.id] ?: 0L
-                CuteCard(Modifier.fillMaxWidth(), onClick = { editing = a }, padding = PaddingValues(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(a.emoji, fontSize = 24.sp)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
-                            Text(a.type.label, style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                        }
-                        Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
-                        Column {
-                            IconButton(onClick = { vm.moveAccount(a.id, true) }, modifier = Modifier.size(28.dp)) { Icon(AppIcons.ChevronUp, "上移", tint = cute.sub) }
-                            IconButton(onClick = { vm.moveAccount(a.id, false) }, modifier = Modifier.size(28.dp)) { Icon(AppIcons.ChevronDown, "下移", tint = cute.sub) }
+            item {
+                ReorderColumn(sorted, { it.id }, { vm.reorderAccounts(it) }) { a, handle, _ ->
+                    val b = bal[a.id] ?: 0L
+                    CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(a.id) }, padding = PaddingValues(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            AccountIcon(a, 40.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
+                                val extra = if (a.type == AccountType.CARD && a.creditLimit > 0) "・可用 ${formatMoney((a.creditLimit + b).coerceAtLeast(0L))}" else ""
+                                Text(a.type.label + extra, style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                            }
+                            Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
+                            DragHandle(handle)
                         }
                     }
                 }
@@ -306,48 +343,99 @@ fun AccountsScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             item { OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增帳戶") } }
             item {
                 Text(
-                    "餘額 = 初始金額 + 收入 − 支出 ± 轉帳。信用卡可以把初始金額設成負數代表欠款。",
+                    "點帳戶可以看它的明細，按住右邊的 ≡ 可以拖曳排序。餘額 = 初始金額 + 收入 − 支出 ± 轉帳。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
         }
     }
-    val target = editing
-    if (adding || target != null) {
+    if (adding) {
         AccountDialog(
-            acc = target,
-            onSave = { name, emoji, type, initial, hidden ->
-                vm.saveAccount(target?.id, name, emoji, type, initial, hidden)
-                adding = false; editing = null
-            },
-            onDelete = if (target != null) ({ vm.deleteAccount(target.id); editing = null }) else null,
-            onDismiss = { adding = false; editing = null },
+            acc = null,
+            onSave = { na -> vm.saveAccount(null, na); adding = false },
+            onDelete = null,
+            onDismiss = { adding = false },
         )
     }
 }
 
 @Composable
-private fun AccountDialog(
+fun AccountDialog(
     acc: Account?,
-    onSave: (String, String, AccountType, Long, Boolean) -> Unit,
+    onSave: (Account) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
+    val cute = LocalCute.current
     var name by remember { mutableStateOf(acc?.name ?: "") }
     var type by remember { mutableStateOf(acc?.type ?: AccountType.BANK) }
     var emoji by remember { mutableStateOf(acc?.emoji ?: AccountType.BANK.emoji) }
+    var useBadge by remember { mutableStateOf((acc?.badge ?: "").isNotBlank()) }
+    var badge by remember { mutableStateOf(acc?.badge ?: "") }
+    var badgeCol by remember { mutableStateOf(acc?.badgeColor ?: 0) }
     var initial by remember { mutableStateOf(acc?.initial?.takeIf { it != 0L }?.toString() ?: "") }
     var hidden by remember { mutableStateOf(acc?.hidden ?: false) }
+    var limit by remember { mutableStateOf(acc?.creditLimit?.takeIf { it > 0 }?.toString() ?: "") }
+    var stmt by remember { mutableStateOf(acc?.statementDay?.takeIf { it > 0 }?.toString() ?: "") }
+    var due by remember { mutableStateOf(acc?.dueDay?.takeIf { it > 0 }?.toString() ?: "") }
     var pick by remember { mutableStateOf(false) }
+    var confirmDel by remember { mutableStateOf(false) }
+
+    fun build(): Account = Account(
+        id = acc?.id ?: 0L,
+        name = name.trim(),
+        emoji = emoji,
+        type = type,
+        initial = initial.toLongOrNull() ?: 0L,
+        order = acc?.order ?: 0,
+        hidden = hidden,
+        badge = if (useBadge) badge.trim().take(2) else "",
+        badgeColor = badgeCol,
+        creditLimit = if (type == AccountType.CARD) limit.toLongOrNull() ?: 0L else 0L,
+        statementDay = if (type == AccountType.CARD) (stmt.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
+        dueDay = if (type == AccountType.CARD) (due.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
+    )
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (acc == null) "新增帳戶" else "編輯帳戶") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    EmojiButton(emoji) { pick = true }
+                    Box(Modifier.clickable { if (!useBadge) pick = true }) { AccountIcon(build(), 52.dp) }
                     Spacer(Modifier.width(10.dp))
-                    OutlinedTextField(name, { name = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(
+                        name,
+                        { v ->
+                            if (useBadge && (badge.isBlank() || badge == name.take(2))) badge = v.take(2)
+                            name = v.take(12)
+                        },
+                        label = { Text("名稱") }, singleLine = true, modifier = Modifier.weight(1f),
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CuteChip("表情符號", !useBadge, { useBadge = false })
+                    CuteChip("文字徽章", useBadge, {
+                        useBadge = true
+                        if (badge.isBlank()) badge = name.take(2)
+                    })
+                }
+                if (useBadge) {
+                    OutlinedTextField(
+                        badge, { badge = it.take(2) },
+                        label = { Text("徽章文字（最多 2 個字）") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    ColorDots(BadgeColors, badgeCol) { badgeCol = it }
+                    Text(
+                        "例如「國泰」「永豐」「悠遊」，再選一個顏色。",
+                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                    )
+                } else {
+                    TextButton(onClick = { pick = true }) { Text("換一個表情符號") }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     AccountType.values().forEach { t ->
@@ -360,10 +448,34 @@ private fun AccountDialog(
                 OutlinedTextField(
                     initial,
                     { s -> initial = s.filterIndexed { i, c -> c.isDigit() || (i == 0 && c == '-') }.take(11) },
-                    label = { Text("初始金額") }, prefix = { Text("$") }, singleLine = true,
+                    label = { Text(if (type == AccountType.CARD) "初始金額（欠款請填負數）" else "初始金額") },
+                    prefix = { Text("$") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (type == AccountType.CARD) {
+                    Text("💳 信用卡設定", style = MaterialTheme.typography.labelLarge)
+                    OutlinedTextField(
+                        limit, { limit = it.filter { c -> c.isDigit() }.take(9) },
+                        label = { Text("信用額度") }, prefix = { Text("$") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            stmt, { stmt = it.filter { c -> c.isDigit() }.take(2) },
+                            label = { Text("結帳日") }, suffix = { Text("號") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            due, { due = it.filter { c -> c.isDigit() }.take(2) },
+                            label = { Text("繳款日") }, suffix = { Text("號") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
                 if (acc != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("隱藏這個帳戶", modifier = Modifier.weight(1f))
@@ -371,18 +483,22 @@ private fun AccountDialog(
                     }
                 }
                 if (onDelete != null) {
-                    TextButton(onClick = onDelete) { Text("刪除帳戶", color = LocalCute.current.expense) }
+                    TextButton(onClick = { confirmDel = true }) { Text("刪除帳戶", color = cute.expense) }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                if (name.isNotBlank()) onSave(name.trim(), emoji, type, initial.toLongOrNull() ?: 0L, hidden)
-            }) { Text("儲存") }
+            TextButton(onClick = { if (name.isNotBlank()) onSave(build()) }) { Text("儲存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
     if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false })
+    if (confirmDel && onDelete != null) {
+        ConfirmDialog(
+            "刪除帳戶？", "如果這個帳戶還有記錄，會改成隱藏，不會真的刪掉。", "刪除",
+            { confirmDel = false; onDelete() }, { confirmDel = false },
+        )
+    }
 }
 
 // ───────────────────────── 分類 ─────────────────────────
@@ -399,22 +515,26 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
     SubPage("分類管理", onBack) {
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item { PillSegment(listOf("支出", "收入"), kindIdx, { kindIdx = it }) }
-            items(d.topCategories(kind), key = { it.id }) { c ->
-                val kids = d.childrenOf(c.id)
-                CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
-                    CatLine(c, onClick = { edit = CatEdit(c, kind, null) }, onUp = { vm.moveCategory(c.id, true) }, onDown = { vm.moveCategory(c.id, false) })
-                    kids.forEach { k ->
-                        Box(Modifier.padding(start = 28.dp)) {
-                            CatLine(k, onClick = { edit = CatEdit(k, kind, c.id) }, onUp = { vm.moveCategory(k.id, true) }, onDown = { vm.moveCategory(k.id, false) }, small = true)
+            item {
+                ReorderColumn(d.topCategories(kind), { it.id }, { vm.reorderCategories(it) }) { c, handle, _ ->
+                    val kids = d.childrenOf(c.id)
+                    CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
+                        CatLine(c, onClick = { edit = CatEdit(c, kind, null) }, handle = handle)
+                        if (kids.isNotEmpty()) {
+                            Box(Modifier.padding(start = 28.dp)) {
+                                ReorderColumn(kids, { it.id }, { vm.reorderCategories(it) }, spacing = 2.dp) { k, kHandle, _ ->
+                                    CatLine(k, onClick = { edit = CatEdit(k, kind, c.id) }, handle = kHandle, small = true)
+                                }
+                            }
                         }
+                        Text(
+                            "＋ 子分類",
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(start = 36.dp, top = 2.dp).clip(CircleShape)
+                                .clickable { edit = CatEdit(null, kind, c.id) }.padding(horizontal = 8.dp, vertical = 6.dp),
+                        )
                     }
-                    Text(
-                        "＋ 子分類",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(start = 36.dp, top = 2.dp).clip(CircleShape)
-                            .clickable { edit = CatEdit(null, kind, c.id) }.padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
                 }
             }
             item {
@@ -424,7 +544,7 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             }
             item {
                 Text(
-                    "刪除子分類時，原本的記錄會移到上層分類。",
+                    "按住右邊的 ≡ 可以拖曳排序。刪除子分類時，原本的記錄會移到上層分類。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
@@ -447,17 +567,16 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CatLine(c: Category, onClick: () -> Unit, onUp: () -> Unit, onDown: () -> Unit, small: Boolean = false) {
-    val cute = LocalCute.current
+private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: Boolean = false) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(LocalCute.current.card)
+            .clickable(onClick = onClick).padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CatBubble(c.emoji, c.color, if (small) 32.dp else 40.dp)
         Spacer(Modifier.width(10.dp))
         Text(c.name, modifier = Modifier.weight(1f), style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
-        IconButton(onClick = onUp, modifier = Modifier.size(32.dp)) { Icon(AppIcons.ChevronUp, "上移", tint = cute.sub) }
-        IconButton(onClick = onDown, modifier = Modifier.size(32.dp)) { Icon(AppIcons.ChevronDown, "下移", tint = cute.sub) }
+        DragHandle(handle)
     }
 }
 
@@ -530,18 +649,24 @@ private fun CategoryDialog(
 // ───────────────────────── 常用記帳 ─────────────────────────
 
 @Composable
-fun TemplatesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
+fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
-    var editing by remember { mutableStateOf<tw.moneybook.app.Template?>(null) }
     SubPage("常用記帳", onBack) {
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                Text(
+                    "常用記帳會出現在記一筆畫面的「⭐ 常用」分類裡，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤。",
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                )
+            }
             if (d.templates.isEmpty()) {
-                item { EmptyHint(d.prefs.mascot, "還沒有常用記帳\n在「記一筆」畫面設定好分類和金額後，\n按「⭐ 存為常用」就會出現在這裡") }
+                item { EmptyHint(d.prefs.mascot, "還沒有常用記帳\n按下面的按鈕新增一個吧") }
             }
             items(d.templates, key = { it.id }) { t ->
                 val c = t.categoryId?.let { d.catMap[it] }
-                CuteCard(Modifier.fillMaxWidth(), onClick = { editing = t }) {
+                val a = t.accountId?.let { d.accMap[it] }
+                CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(t.id) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CatBubble(c?.emoji ?: "🔁", c?.color ?: 5, 40.dp)
                         Spacer(Modifier.width(12.dp))
@@ -549,33 +674,26 @@ fun TemplatesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
                             Text(t.name, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 listOfNotNull(
-                                    c?.name,
+                                    when (t.type) { TxType.EXPENSE -> "支出"; TxType.INCOME -> "收入"; TxType.TRANSFER -> "轉帳" },
+                                    c?.let { cc -> d.topOf(cc).let { p -> if (p.id != cc.id) "${p.name}・${cc.name}" else cc.name } },
+                                    a?.name,
                                     if (t.amount > 0) formatMoney(t.amount) else "金額自訂",
-                                    t.note.takeIf { it.isNotBlank() },
                                 ).joinToString("・"),
-                                style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                                style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
                             )
+                            if (t.note.isNotBlank() || t.tags.isNotEmpty()) {
+                                Text(
+                                    (listOf(t.note.lineSequence().first()).filter { it.isNotBlank() } + t.tags.map { "#$it" }).joinToString(" "),
+                                    style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
+                                )
+                            }
                         }
+                        Icon(AppIcons.ChevronRight, contentDescription = null, tint = cute.sub)
                     }
                 }
             }
+            item { OutlinedButton(onClick = { onOpen(null) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增常用記帳") } }
         }
-    }
-    val t = editing
-    if (t != null) {
-        var name by remember(t.id) { mutableStateOf(t.name) }
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text("編輯常用記帳") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(name, { name = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    TextButton(onClick = { vm.deleteTemplate(t.id); editing = null }) { Text("刪除", color = cute.expense) }
-                }
-            },
-            confirmButton = { TextButton(onClick = { if (name.isNotBlank()) vm.renameTemplate(t.id, name.trim()); editing = null }) { Text("儲存") } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } },
-        )
     }
 }
 
@@ -698,7 +816,21 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
     }
 
     fun read(uri: android.net.Uri): String? = try {
-        context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            // 限制檔案大小，避免選到超大檔案把 App 記憶體吃光
+            val limit = 20 * 1024 * 1024
+            val buf = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(64 * 1024)
+            var total = 0
+            while (true) {
+                val n = input.read(chunk)
+                if (n < 0) break
+                total += n
+                if (total > limit) throw IllegalStateException("檔案太大")
+                buf.write(chunk, 0, n)
+            }
+            buf.toString("UTF-8")
+        }
     } catch (_: Exception) {
         null
     }
@@ -793,5 +925,150 @@ private fun DataCard(title: String, desc: String, action: String, onClick: () ->
         Text(desc, style = MaterialTheme.typography.bodySmall, color = LocalCute.current.sub)
         Spacer(Modifier.height(10.dp))
         Button(onClick = onClick) { Text(action) }
+    }
+}
+
+// ───────────────────────── 報銷 ─────────────────────────
+
+@Composable
+fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
+    val d = vm.data
+    val cute = LocalCute.current
+    val pending = d.bookTxns.pendingReimb()
+    val done = d.bookTxns.filter { it.type == TxType.EXPENSE && it.reimb == 2 }.take(50)
+    var selected by remember { mutableStateOf(setOf<Long>()) }
+    var confirm by remember { mutableStateOf(false) }
+    val selSum = pending.filter { it.id in selected }.sumOf { it.reimbAmount }
+
+    SubPage("報銷", onBack) {
+        Column(Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    CuteCard(Modifier.fillMaxWidth()) {
+                        Text("待報銷合計", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                        Text(formatMoney(pending.sumOf { it.reimbAmount }), style = MaterialTheme.typography.headlineMedium)
+                        Text(
+                            "可以報銷的部分不會算進你的支出統計和預算，沒報銷到的差額才算你自己的花費。收到錢時勾選項目，按「收到報銷款」，每筆可以填實際收到的金額。",
+                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                        )
+                    }
+                }
+                if (pending.isEmpty()) {
+                    item { EmptyHint(d.prefs.mascot, "沒有待報銷的項目\n記帳時點「🧾 報銷」就會出現在這裡") }
+                } else {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("待報銷 ${pending.size} 筆", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            TextButton(onClick = {
+                                selected = if (selected.size == pending.size) emptySet() else pending.map { it.id }.toSet()
+                            }) { Text(if (selected.size == pending.size) "全部取消" else "全選") }
+                        }
+                    }
+                    items(pending, key = { it.id }) { t ->
+                        val on = t.id in selected
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(26.dp).clip(RoundedCornerShape(8.dp))
+                                    .background(if (on) MaterialTheme.colorScheme.primary else cute.soft)
+                                    .clickable { selected = if (on) selected - t.id else selected + t.id },
+                                contentAlignment = Alignment.Center,
+                            ) { if (on) Text("✓", color = MaterialTheme.colorScheme.onPrimary) }
+                            Spacer(Modifier.width(8.dp))
+                            Box(Modifier.weight(1f)) { TxnRow(d, t) { onEdit(t.id) } }
+                        }
+                    }
+                }
+                if (done.isNotEmpty()) {
+                    item { SectionTitle("已報銷（最近 ${done.size} 筆）") }
+                    items(done, key = { "done${it.id}" }) { t ->
+                        Column {
+                            TxnRow(d, t) { onEdit(t.id) }
+                            val acc = t.reimbAccountId?.let { d.accMap[it] }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 12.dp)) {
+                                Text(
+                                    "${t.reimbDay?.let { dayLabel(it) } ?: ""} 收到 ${formatMoney(t.reimbAmount)}・存入 ${acc?.name ?: "未指定帳戶"}",
+                                    style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f),
+                                )
+                                TextButton(onClick = { vm.undoReimbursed(t.id) }) { Text("改回待報銷") }
+                            }
+                        }
+                    }
+                }
+            }
+            if (pending.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().background(cute.card).padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("已選 ${selected.size} 筆", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Text(formatMoney(selSum), style = MaterialTheme.typography.titleMedium)
+                    }
+                    Button(onClick = { confirm = true }, enabled = selected.isNotEmpty()) { Text("收到報銷款") }
+                }
+            }
+        }
+    }
+
+    if (confirm) {
+        val chosen = pending.filter { it.id in selected }
+        var accId by remember { mutableStateOf(d.visibleAccounts.firstOrNull()?.id) }
+        var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
+        var pickDate by remember { mutableStateOf(false) }
+        val amounts = remember { mutableStateOf(chosen.associate { it.id to it.reimbAmount.toString() }) }
+        val total = chosen.sumOf { (amounts.value[it.id]?.toLongOrNull() ?: 0L).coerceIn(0L, it.reimbCap) }
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("收到報銷款 ${formatMoney(total)}") },
+            text = {
+                Column(
+                    Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("每筆實際收到多少？", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                    chosen.forEach { t ->
+                        val c = t.categoryId?.let { d.catMap[it] }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${c?.emoji ?: "📦"} ${c?.name ?: "未分類"}", maxLines = 1)
+                                Text(
+                                    "${shortDate(t.day)}・實付 ${formatMoney(t.paid)}",
+                                    style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                                )
+                            }
+                            OutlinedTextField(
+                                amounts.value[t.id] ?: "",
+                                { v -> amounts.value = amounts.value + (t.id to v.filter { ch -> ch.isDigit() }.take(9)) },
+                                prefix = { Text("$") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.width(120.dp),
+                            )
+                        }
+                    }
+                    Text("錢存進哪個帳戶？", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        d.visibleAccounts.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
+                    }
+                    CuteChip("📅 ${dayLabel(day)}", false, { pickDate = true })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val map = chosen.associate { t -> t.id to ((amounts.value[t.id]?.toLongOrNull() ?: 0L).coerceIn(0L, t.reimbCap)) }
+                    vm.markReimbursed(map, accId, day)
+                    selected = emptySet()
+                    confirm = false
+                }) { Text("確認") }
+            },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } },
+        )
+        if (pickDate) {
+            CuteDatePickerDialog(day, { day = it; pickDate = false }, { pickDate = false }, "收到報銷款的日期")
+        }
     }
 }

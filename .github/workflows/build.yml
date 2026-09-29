@@ -3,6 +3,11 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'CLAUDE.md'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -14,17 +19,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Unpack source
-        run: |
-          rm -rf src-build && mkdir src-build
-          unzip -q MoneyBook-src.zip -d src-build
-
       - name: Read version
         id: ver
         run: |
-          V=$(grep -E '^versionName=' src-build/version.properties | cut -d= -f2 | tr -d '\r ')
+          V=$(grep -E '^versionName=' version.properties | cut -d= -f2 | tr -d '\r ')
+          if [ -z "$V" ]; then
+            echo "::error::version.properties 裡找不到 versionName"
+            exit 1
+          fi
           echo "name=$V" >> "$GITHUB_OUTPUT"
           echo "版本：$V"
+
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::還沒設定簽章金鑰。請依照 docs/signing.md 在 GitHub Secrets 加入 KEYSTORE_BASE64、KEYSTORE_PASSWORD、KEY_ALIAS、KEY_PASSWORD"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -32,19 +47,21 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
 
-      - name: Build APK
-        working-directory: src-build
+      - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          chmod +x gradlew
           set -o pipefail
-          gradle assembleDebug --console=plain 2>&1 | tee build.log
+          ./gradlew assembleRelease --console=plain 2>&1 | tee build.log
 
       - name: Report compile errors
         if: failure()
-        working-directory: src-build
         run: |
+          [ -f build.log ] || exit 0
           grep -E "^e: " build.log | sed -E 's#file://[^ ]*/app/src/main/java/##' | head -40 | while IFS= read -r line; do
             echo "::error::${line}"
           done
@@ -53,19 +70,21 @@ jobs:
           done
 
       - name: Rename APK
-        run: cp src-build/app/build/outputs/apk/debug/app-debug.apk "MoneyBook-v${{ steps.ver.outputs.name }}.apk"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: MoneyBook-v${{ steps.ver.outputs.name }}-build${{ github.run_number }}
-          path: MoneyBook-v${{ steps.ver.outputs.name }}.apk
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$APK" ]; then
+            echo "::error::找不到已簽章的 APK，請確認四個簽章 Secrets 都設定正確"
+            ls -R app/build/outputs/apk || true
+            exit 1
+          fi
+          cp "$APK" "MoneyBook-v${{ steps.ver.outputs.name }}.apk"
 
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.name }}
           name: 記帳本 v${{ steps.ver.outputs.name }}
-          body_path: src-build/RELEASE_NOTES.md
+          body_path: RELEASE_NOTES.md
           files: MoneyBook-v${{ steps.ver.outputs.name }}.apk
           overwrite_files: true
           make_latest: true

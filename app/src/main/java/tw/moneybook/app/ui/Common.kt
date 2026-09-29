@@ -1,7 +1,5 @@
 package tw.moneybook.app.ui
 
-import android.app.DatePickerDialog
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import tw.moneybook.app.Defaults
 import java.time.LocalDate
 import java.time.YearMonth
@@ -301,17 +300,6 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () ->
     )
 }
 
-fun showDatePicker(context: Context, day: Long, onPick: (Long) -> Unit) {
-    val d = LocalDate.ofEpochDay(day)
-    DatePickerDialog(
-        context,
-        { _, y, m, dd -> onPick(LocalDate.of(y, m + 1, dd).toEpochDay()) },
-        d.year,
-        d.monthValue - 1,
-        d.dayOfMonth,
-    ).show()
-}
-
 fun dayLabel(day: Long): String {
     val d = LocalDate.ofEpochDay(day)
     val today = LocalDate.now()
@@ -320,5 +308,140 @@ fun dayLabel(day: Long): String {
         today -> "今天・${d.monthValue}/${d.dayOfMonth}"
         today.minusDays(1) -> "昨天・${d.monthValue}/${d.dayOfMonth}"
         else -> "${d.monthValue}月${d.dayOfMonth}日 週$w"
+    }
+}
+
+fun shortDate(day: Long): String {
+    val d = LocalDate.ofEpochDay(day)
+    return "${d.year}/${d.monthValue}/${d.dayOfMonth}"
+}
+
+/** 自己設計的日期選擇器：快速按鈕 + 月曆 */
+@Composable
+fun CuteDatePickerDialog(
+    initial: Long,
+    onPick: (Long) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "選擇日期",
+) {
+    val cute = LocalCute.current
+    val primary = MaterialTheme.colorScheme.primary
+    val today = LocalDate.now()
+    var sel by remember { mutableStateOf(LocalDate.ofEpochDay(initial)) }
+    var shown by remember { mutableStateOf(YearMonth.from(sel)) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.background)
+                .padding(18.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = cute.sub)
+            Text(
+                "${sel.monthValue} 月 ${sel.dayOfMonth} 日・週${WEEKDAYS[sel.dayOfWeek.value - 1]}",
+                style = MaterialTheme.typography.headlineSmall,
+                color = primary,
+            )
+            if (sel.year != today.year) {
+                Text("${sel.year} 年", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("今天" to 0L, "昨天" to 1L, "前天" to 2L).forEach { (label, back) ->
+                    val d = today.minusDays(back)
+                    CuteChip(label, sel == d, {
+                        sel = d
+                        shown = YearMonth.from(d)
+                    })
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(cute.card).padding(10.dp)
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "«",
+                        fontSize = 20.sp,
+                        color = cute.sub,
+                        modifier = Modifier.clip(CircleShape).clickable { shown = shown.minusYears(1) }.padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                    IconButton(onClick = { shown = shown.minusMonths(1) }, modifier = Modifier.size(36.dp)) {
+                        Icon(AppIcons.ChevronLeft, contentDescription = "上個月")
+                    }
+                    Text(
+                        "${shown.year} 年 ${shown.monthValue} 月",
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { shown = shown.plusMonths(1) }, modifier = Modifier.size(36.dp)) {
+                        Icon(AppIcons.ChevronRight, contentDescription = "下個月")
+                    }
+                    Text(
+                        "»",
+                        fontSize = 20.sp,
+                        color = cute.sub,
+                        modifier = Modifier.clip(CircleShape).clickable { shown = shown.plusYears(1) }.padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    listOf("日", "一", "二", "三", "四", "五", "六").forEachIndexed { i, w ->
+                        Text(
+                            w,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (i == 0 || i == 6) cute.expense.copy(alpha = 0.7f) else cute.sub,
+                        )
+                    }
+                }
+                val lead = shown.atDay(1).dayOfWeek.value % 7
+                val days = shown.lengthOfMonth()
+                val weeks = (lead + days + 6) / 7
+                for (w in 0 until weeks) {
+                    Row(Modifier.fillMaxWidth()) {
+                        for (c in 0 until 7) {
+                            val n = w * 7 + c - lead + 1
+                            Box(Modifier.weight(1f).height(40.dp), contentAlignment = Alignment.Center) {
+                                if (n in 1..days) {
+                                    val date = shown.atDay(n)
+                                    val isSel = date == sel
+                                    val isToday = date == today
+                                    Box(
+                                        Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSel) primary else Color.Transparent)
+                                            .then(if (isToday && !isSel) Modifier.border(1.5.dp, primary, CircleShape) else Modifier)
+                                            .clickable { sel = date },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "$n",
+                                            color = when {
+                                                isSel -> MaterialTheme.colorScheme.onPrimary
+                                                isToday -> primary
+                                                else -> cute.ink
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("取消") }
+                Spacer(Modifier.width(4.dp))
+                androidx.compose.material3.Button(onClick = { onPick(sel.toEpochDay()) }) { Text("確定") }
+            }
+        }
     }
 }

@@ -33,7 +33,9 @@ object Codec {
 
         root.put("books", JSONArray().apply {
             d.books.forEach { b ->
-                put(JSONObject().put("id", b.id).put("name", b.name).put("emoji", b.emoji).put("budget", b.budget))
+                val mb = JSONObject()
+                b.monthBudgets.forEach { (k, v) -> mb.put(k, v) }
+                put(JSONObject().put("id", b.id).put("name", b.name).put("emoji", b.emoji).put("budget", b.budget).put("monthBudgets", mb))
             }
         })
         root.put("accounts", JSONArray().apply {
@@ -42,6 +44,8 @@ object Codec {
                     JSONObject().put("id", a.id).put("name", a.name).put("emoji", a.emoji)
                         .put("type", a.type.name).put("initial", a.initial).put("order", a.order)
                         .put("hidden", a.hidden)
+                        .put("badge", a.badge).put("badgeColor", a.badgeColor)
+                        .put("creditLimit", a.creditLimit).put("statementDay", a.statementDay).put("dueDay", a.dueDay)
                 )
             }
         })
@@ -63,6 +67,9 @@ object Codec {
                         .put("day", t.day).put("note", t.note).put("tags", JSONArray(t.tags))
                         .put("instGroup", nullable(t.instGroup)).put("instIndex", t.instIndex)
                         .put("instTotal", t.instTotal)
+                        .put("fee", t.fee).put("discount", t.discount).put("reimb", t.reimb)
+                        .put("reimbAccountId", nullable(t.reimbAccountId)).put("reimbDay", nullable(t.reimbDay))
+                        .put("reimbAmount", t.reimbAmount)
                 )
             }
         })
@@ -88,7 +95,16 @@ object Codec {
     fun decode(text: String): AppData {
         val root = JSONObject(text)
         val books = objects(root.optJSONArray("books")) { o ->
-            Book(o.getLong("id"), o.getString("name"), o.optString("emoji", "📒"), o.optLong("budget", 0L))
+            val mbo = o.optJSONObject("monthBudgets")
+            val mb = HashMap<String, Long>()
+            if (mbo != null) {
+                val it = mbo.keys()
+                while (it.hasNext()) {
+                    val k = it.next()
+                    mb[k] = mbo.optLong(k, 0L)
+                }
+            }
+            Book(o.getLong("id"), o.getString("name"), o.optString("emoji", "📒"), o.optLong("budget", 0L), mb)
         }
         val accounts = objects(root.optJSONArray("accounts")) { o ->
             Account(
@@ -99,6 +115,11 @@ object Codec {
                 initial = o.optLong("initial", 0L),
                 order = o.optInt("order", 0),
                 hidden = o.optBoolean("hidden", false),
+                badge = o.optString("badge", ""),
+                badgeColor = o.optInt("badgeColor", 0),
+                creditLimit = o.optLong("creditLimit", 0L),
+                statementDay = o.optInt("statementDay", 0),
+                dueDay = o.optInt("dueDay", 0),
             )
         }
         val categories = objects(root.optJSONArray("categories")) { o ->
@@ -113,7 +134,7 @@ object Codec {
             )
         }
         val txns = objects(root.optJSONArray("txns")) { o ->
-            Txn(
+            val t = Txn(
                 id = o.getLong("id"),
                 bookId = o.getLong("bookId"),
                 type = runCatching { TxType.valueOf(o.getString("type")) }.getOrDefault(TxType.EXPENSE),
@@ -127,7 +148,15 @@ object Codec {
                 instGroup = o.optLongOrNull("instGroup"),
                 instIndex = o.optInt("instIndex", 0),
                 instTotal = o.optInt("instTotal", 0),
+                fee = o.optLong("fee", 0L),
+                discount = o.optLong("discount", 0L),
+                reimb = o.optInt("reimb", 0),
+                reimbAccountId = o.optLongOrNull("reimbAccountId"),
+                reimbDay = o.optLongOrNull("reimbDay"),
+                reimbAmount = o.optLong("reimbAmount", -1L),
             )
+            // 舊資料沒有報銷金額時視為全額
+            if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
         }
         val templates = objects(root.optJSONArray("templates")) { o ->
             Template(
@@ -286,10 +315,21 @@ object Calc {
 
 /** CSV 匯出與匯入 */
 object CsvIO {
-    private val header = listOf("日期", "類型", "金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "備註", "標籤")
+    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤")
 
     private fun esc(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
+
+    /**
+     * 文字欄位：開頭是 = + - @ 的內容，Excel 會當成公式執行（CSV 公式注入）。
+     * 前面加一個 ' 讓它只被當成文字。
+     */
+    private fun txt(s: String): String =
+        if (s.isNotEmpty() && s[0] in "=+-@\t\r") "'$s" else s
+
+    /** 匯入時把我們加的 ' 拿掉 */
+    private fun untxt(s: String): String =
+        if (s.length >= 2 && s[0] == '\'' && s[1] in "=+-@\t\r") s.substring(1) else s
 
     private fun typeLabel(t: TxType) = when (t) {
         TxType.EXPENSE -> "支出"
@@ -310,13 +350,18 @@ object CsvIO {
                 t.date.toString(),
                 typeLabel(t.type),
                 t.amount.toString(),
-                top?.name ?: "",
-                sub,
-                t.accountId?.let { d.accMap[it]?.name } ?: "",
-                t.toAccountId?.let { d.accMap[it]?.name } ?: "",
-                bookName[t.bookId] ?: "",
-                t.note,
-                t.tags.joinToString(" "),
+                t.fee.toString(),
+                t.discount.toString(),
+                t.paid.toString(),
+                txt(top?.name ?: ""),
+                txt(sub),
+                txt(t.accountId?.let { d.accMap[it]?.name } ?: ""),
+                txt(t.toAccountId?.let { d.accMap[it]?.name } ?: ""),
+                txt(bookName[t.bookId] ?: ""),
+                when (t.reimb) { 1 -> "待報銷"; 2 -> "已報銷"; else -> "" },
+                if (t.reimb != 0) t.reimbAmount.toString() else "",
+                txt(t.note),
+                txt(t.tags.joinToString(" ")),
             )
             sb.append(row.joinToString(",") { esc(it) }).append('\n')
         }
@@ -371,6 +416,10 @@ object CsvIO {
         val cTo = col("轉入帳戶")
         val cNote = col("備註", "Note", "note", "描述")
         val cTags = col("標籤", "Tags")
+        val cFee = col("手續費")
+        val cDisc = col("優惠", "折扣")
+        val cReimb = col("報銷")
+        val cReimbAmt = col("報銷金額")
         if (cDate < 0 || cAmt < 0) return Pair(d0, 0)
 
         var d = d0
@@ -404,7 +453,7 @@ object CsvIO {
 
         val added = ArrayList<Txn>()
         for (r in rows.drop(1)) {
-            fun get(c: Int): String = if (c >= 0 && c < r.size) r[c].trim() else ""
+            fun get(c: Int): String = if (c >= 0 && c < r.size) untxt(r[c].trim()) else ""
             val date = try {
                 LocalDate.parse(get(cDate).replace('/', '-').let { s ->
                     val parts = s.split('-')
@@ -439,7 +488,13 @@ object CsvIO {
                     day = date.toEpochDay(),
                     note = get(cNote),
                     tags = parseTags(get(cTags)),
-                )
+                    fee = get(cFee).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L,
+                    discount = if (type == TxType.EXPENSE) get(cDisc).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L else 0L,
+                    reimb = if (type == TxType.EXPENSE) when (get(cReimb)) { "待報銷" -> 1; "已報銷" -> 2; else -> 0 } else 0,
+                ).let { t ->
+                    if (t.reimb == 0) t
+                    else t.copy(reimbAmount = get(cReimbAmt).replace(",", "").toDoubleOrNull()?.let { Math.round(it) }?.coerceIn(0L, t.paid) ?: t.paid)
+                }
             )
         }
         d = d.copy(

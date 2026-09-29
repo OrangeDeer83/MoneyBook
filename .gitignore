@@ -1,0 +1,16 @@
+# 編譯產物
+.gradle/
+build/
+*.apk
+*.aab
+
+# 個人設定
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# 簽章金鑰：絕對不要放進 git
+*.jks
+*.keystore
+keystore.properties

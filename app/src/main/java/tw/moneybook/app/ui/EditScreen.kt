@@ -1,205 +1,720 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-
 package tw.moneybook.app.ui
 
-import android.app.DatePickerDialog
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import tw.moneybook.app.Categories
-import tw.moneybook.app.Txn
+import androidx.compose.ui.unit.sp
+import tw.moneybook.app.AppData
+import tw.moneybook.app.Calc
+import tw.moneybook.app.MoneyViewModel
+import tw.moneybook.app.TxType
+import tw.moneybook.app.TxnDraft
+import tw.moneybook.app.formatMoney
 import java.time.LocalDate
+
+private fun defaultCat(d: AppData, type: TxType): Long? =
+    if (type == TxType.TRANSFER) null else d.topCategories(type).firstOrNull()?.id
 
 @Composable
 fun EditScreen(
-    initial: Txn?,
-    onSave: (Txn) -> Unit,
-    onDelete: (Long) -> Unit,
+    vm: MoneyViewModel,
+    editId: Long?,
+    presetTo: Long? = null,
+    presetAmount: Long? = null,
+    tplMode: Boolean = false,
+    tplId: Long? = null,
     onClose: () -> Unit,
 ) {
+    val d = vm.data
+    val cute = LocalCute.current
     val context = LocalContext.current
-    var isExpense by rememberSaveable { mutableStateOf(initial?.isExpense ?: true) }
-    var amountText by rememberSaveable { mutableStateOf(initial?.amount?.toString() ?: "") }
-    var category by rememberSaveable { mutableStateOf(initial?.category ?: Categories.expense.first().name) }
-    var dateStr by rememberSaveable { mutableStateOf((initial?.date ?: LocalDate.now()).toString()) }
-    var note by rememberSaveable { mutableStateOf(initial?.note ?: "") }
-    var confirmDelete by remember { mutableStateOf(false) }
+    val orig = remember(editId) { editId?.let { id -> d.txns.firstOrNull { it.id == id } } }
+    val accs = d.visibleAccounts
+    val tpl = remember(tplId) { tplId?.let { id -> d.templates.firstOrNull { it.id == id } } }
+    var tplName by rememberSaveable { mutableStateOf(tpl?.name ?: "") }
+    var showTpl by remember { mutableStateOf(false) }
 
-    BackHandler { onClose() }
+    var type by rememberSaveable {
+        mutableStateOf(orig?.type ?: tpl?.type ?: if (presetTo != null) TxType.TRANSFER else TxType.EXPENSE)
+    }
+    var expr by rememberSaveable {
+        mutableStateOf(orig?.amount?.toString() ?: tpl?.amount?.takeIf { it > 0 }?.toString() ?: presetAmount?.takeIf { it > 0 }?.toString() ?: "")
+    }
+    var catId by rememberSaveable { mutableStateOf(orig?.categoryId ?: tpl?.categoryId ?: defaultCat(d, type)) }
+    var accId by rememberSaveable {
+        mutableStateOf(
+            orig?.accountId
+                ?: tpl?.accountId
+                ?: (if (presetTo != null) accs.firstOrNull { it.id != presetTo && it.type != tw.moneybook.app.AccountType.CARD }?.id else null)
+                ?: accs.firstOrNull()?.id
+        )
+    }
+    var toAccId by rememberSaveable { mutableStateOf(orig?.toAccountId ?: presetTo ?: accs.getOrNull(1)?.id) }
+    var day by rememberSaveable { mutableLongStateOf(orig?.day ?: LocalDate.now().toEpochDay()) }
+    var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: "") }
+    var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags)?.joinToString("\n") ?: "") }
+    var inst by rememberSaveable { mutableIntStateOf(1) }
+    var fee by rememberSaveable { mutableLongStateOf(orig?.fee ?: 0L) }
+    var discount by rememberSaveable { mutableLongStateOf(orig?.discount ?: 0L) }
+    var reimb by rememberSaveable { mutableIntStateOf(orig?.reimb ?: 0) }
+    var reimbAmt by rememberSaveable {
+        mutableLongStateOf(if (orig != null && orig.reimb != 0 && orig.reimbAmount < orig.paid) orig.reimbAmount else -1L)
+    }
+    var noteFocused by remember { mutableStateOf(false) }
+    var dialog by remember { mutableStateOf("") }
+    val focus = LocalFocusManager.current
 
-    val date = LocalDate.parse(dateStr)
-    val cats = if (isExpense) Categories.expense else Categories.income
-    val amount = amountText.toLongOrNull() ?: 0L
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (initial == null) "新增記錄" else "編輯記錄") },
-                navigationIcon = {
-                    IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "關閉") }
-                },
-                actions = {
-                    if (initial != null) {
-                        IconButton(onClick = { confirmDelete = true }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "刪除")
-                        }
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .imePadding()
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = isExpense,
-                    onClick = {
-                        if (!isExpense) {
-                            isExpense = true
-                            category = Categories.expense.first().name
-                        }
-                    },
-                    label = { Text("支出") },
-                )
-                FilterChip(
-                    selected = !isExpense,
-                    onClick = {
-                        if (isExpense) {
-                            isExpense = false
-                            category = Categories.income.first().name
-                        }
-                    },
-                    label = { Text("收入") },
-                )
-            }
+    val amount = Calc.eval(expr)
+    val pending = Calc.hasOp(expr)
+    val tags = tagsText.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+    val effDiscount = if (type == TxType.EXPENSE) discount else 0L
+    val actual = when (type) {
+        TxType.EXPENSE -> (amount - effDiscount + fee).coerceAtLeast(0L)
+        TxType.INCOME -> (amount - fee).coerceAtLeast(0L)
+        TxType.TRANSFER -> amount + fee
+    }
+    val cat = catId?.let { d.catMap[it] }
+    val parent = cat?.let { d.topOf(it) }
+    val targetOk = when (type) {
+        TxType.TRANSFER -> accId != null && toAccId != null && accId != toAccId
+        else -> catId != null
+    }
+    val canSave = if (tplMode) targetOk else amount > 0 && targetOk
 
-            OutlinedTextField(
-                value = amountText,
-                onValueChange = { s -> amountText = s.filter { it.isDigit() }.take(10) },
-                label = { Text("金額") },
-                prefix = { Text("$") },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.headlineSmall,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-            )
+    fun draft() = TxnDraft(
+        type = type, amount = amount,
+        categoryId = if (type == TxType.TRANSFER) null else catId,
+        accountId = accId,
+        toAccountId = if (type == TxType.TRANSFER) toAccId else null,
+        day = day, note = note.trim(), tags = tags,
+        installments = if (orig == null && type == TxType.EXPENSE) inst else 1,
+        fee = fee,
+        discount = effDiscount,
+        reimb = if (type == TxType.EXPENSE) reimb else 0,
+        reimbAmount = reimbAmt,
+    )
 
-            Text("分類", style = MaterialTheme.typography.titleSmall)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                cats.forEach { c ->
-                    FilterChip(
-                        selected = category == c.name,
-                        onClick = { category = c.name },
-                        label = { Text("${c.emoji} ${c.name}") },
-                    )
+    val initialDraft = remember { draft() }
+    val initialName = remember { tplName }
+    val dirty = draft() != initialDraft || (tplMode && tplName != initialName)
+
+    fun applyTemplate(tp: tw.moneybook.app.Template) {
+        if (tp.amount > 0) expr = tp.amount.toString()
+        tp.categoryId?.let { c -> if (d.catMap[c] != null) catId = c }
+        tp.accountId?.let { a -> if (d.accMap[a]?.hidden == false) accId = a }
+        if (tp.note.isNotBlank()) note = tp.note
+        if (tp.tags.isNotEmpty()) tagsText = tp.tags.joinToString("\n")
+        showTpl = false
+    }
+
+    /** 儲存；成功回傳 true */
+    fun doSave(): Boolean {
+        if (!canSave) {
+            vm.toast(
+                when {
+                    !tplMode && amount <= 0 -> "請先輸入金額"
+                    type == TxType.TRANSFER -> "請選擇兩個不同的帳戶"
+                    else -> "請選擇分類"
                 }
-            }
-
-            OutlinedButton(
-                onClick = {
-                    DatePickerDialog(
-                        context,
-                        { _, y, m, d -> dateStr = LocalDate.of(y, m + 1, d).toString() },
-                        date.year,
-                        date.monthValue - 1,
-                        date.dayOfMonth,
-                    ).show()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("📅  ${date.year} / ${date.monthValue} / ${date.dayOfMonth}")
-            }
-
-            OutlinedTextField(
-                value = note,
-                onValueChange = { note = it.take(100) },
-                label = { Text("備註（選填）") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
             )
-
-            Button(
-                onClick = {
-                    onSave(
-                        Txn(
-                            id = initial?.id ?: System.currentTimeMillis(),
-                            isExpense = isExpense,
-                            amount = amount,
-                            category = category,
-                            date = date,
-                            note = note.trim(),
-                        )
-                    )
-                },
-                enabled = amount > 0,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                Text("儲存")
+            return false
+        }
+        if (tplMode) {
+            if (tplName.isBlank()) {
+                dialog = "tplname"
+                return false
             }
+            vm.saveTemplate(tplId, tplName.trim(), draft())
+            vm.toast("常用記帳已儲存")
+        } else {
+            vm.saveTxn(editId, draft())
+        }
+        onClose()
+        return true
+    }
+
+    fun tryClose() {
+        when {
+            noteFocused -> focus.clearFocus()
+            dirty -> dialog = "unsaved"
+            else -> onClose()
         }
     }
 
-    if (confirmDelete && initial != null) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("刪除這筆記錄？") },
-            text = { Text("${initial.category} ${tw.moneybook.app.formatMoney(initial.amount)}") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    onDelete(initial.id)
-                }) { Text("刪除") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
-            },
+    BackHandler { tryClose() }
+
+    fun setType(t: TxType) {
+        if (t == type) return
+        type = t
+        catId = defaultCat(d, t)
+        if (t != TxType.EXPENSE) inst = 1
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 14.dp),
+    ) {
+        // 標題列
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { tryClose() }) { Icon(Icons.Filled.Close, contentDescription = "關閉") }
+            Spacer(Modifier.weight(1f))
+            PillSegment(
+                listOf("支出", "收入", "轉帳"),
+                when (type) { TxType.EXPENSE -> 0; TxType.INCOME -> 1; TxType.TRANSFER -> 2 },
+                { i -> setType(listOf(TxType.EXPENSE, TxType.INCOME, TxType.TRANSFER)[i]) },
+            )
+            Spacer(Modifier.weight(1f))
+            if (orig != null || (tplMode && tplId != null)) {
+                IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除") }
+            } else {
+                Spacer(Modifier.width(48.dp))
+            }
+        }
+
+        // 金額
+        CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val label = when {
+                    type == TxType.TRANSFER -> "🔁 轉帳"
+                    cat != null && parent != null && parent.id != cat.id -> "${cat.emoji} ${parent.name}・${cat.name}"
+                    cat != null -> "${cat.emoji} ${cat.name}"
+                    else -> "請選分類"
+                }
+                Text(label, style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f), maxLines = 1)
+                if (pending) Text("= ${formatMoney(amount)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                if (expr.isEmpty()) "$0" else "$" + Calc.pretty(expr),
+                style = MaterialTheme.typography.displaySmall,
+                color = when (type) {
+                    TxType.EXPENSE -> cute.expense
+                    TxType.INCOME -> cute.income
+                    TxType.TRANSFER -> cute.ink
+                },
+                textAlign = TextAlign.End,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (fee > 0 || effDiscount > 0) {
+                val parts = ArrayList<String>()
+                parts.add(if (type == TxType.TRANSFER) "轉帳 ${formatMoney(amount)}" else "金額 ${formatMoney(amount)}")
+                if (effDiscount > 0) parts.add("− 優惠 ${formatMoney(effDiscount)}")
+                if (fee > 0) parts.add((if (type == TxType.INCOME) "− " else "+ ") + "手續費 ${formatMoney(fee)}")
+                val label = when (type) {
+                    TxType.EXPENSE -> "實付"
+                    TxType.INCOME -> "實收"
+                    TxType.TRANSFER -> "共扣"
+                }
+                Text(
+                    parts.joinToString(" ") + " ＝ $label ${formatMoney(actual)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = cute.sub,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        // 分類或轉帳帳戶
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (type == TxType.TRANSFER) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AccountPick("從", accId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶") { dialog = "from" }
+                    Text("⬇", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = cute.sub, fontSize = 20.sp)
+                    AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶") { dialog = "to" }
+                    if (accs.size < 2) {
+                        Text("轉帳需要至少兩個帳戶，可以到「我的 → 帳戶管理」新增。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                    }
+                }
+            } else {
+                Column {
+                    // 大分類：上方的小膠囊；「⭐ 常用」也是一個大分類
+                    val tops = d.topCategories(type)
+                    val tpls = if (!tplMode && orig == null) d.templates.filter { it.type == type } else emptyList()
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                        if (tpls.isNotEmpty()) {
+                            item { CuteChip("⭐ 常用", showTpl, { showTpl = true }) }
+                        }
+                        items(tops, key = { it.id }) { c ->
+                            CuteChip("${c.emoji} ${c.name}", !showTpl && parent?.id == c.id, { catId = c.id; showTpl = false })
+                        }
+                    }
+                    if (showTpl) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(4),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            items(tpls, key = { it.id }) { tp ->
+                                val tc = tp.categoryId?.let { d.catMap[it] }
+                                Column(
+                                    Modifier.clip(RoundedCornerShape(16.dp)).clickable { applyTemplate(tp) }.padding(vertical = 6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    CatBubble(tc?.emoji ?: "⭐", tc?.color ?: 1, 46.dp)
+                                    Text(tp.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+                                    if (tp.amount > 0) Text(formatMoney(tp.amount), style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                                }
+                            }
+                        }
+                    } else {
+                    // 子分類：下方的大圖示（第一格代表大分類本身）
+                    val kids = parent?.let { d.childrenOf(it.id) } ?: emptyList()
+                    val tiles = if (parent != null) listOf(parent) + kids else emptyList()
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(5),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        items(tiles, key = { it.id }) { c ->
+                            val on = catId == c.id
+                            val isParent = c.id == parent?.id
+                            Column(
+                                Modifier.clip(RoundedCornerShape(16.dp))
+                                    .background(if (on) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .clickable { catId = c.id }
+                                    .padding(vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                CatBubble(c.emoji, c.color, 46.dp)
+                                Text(
+                                    if (isParent && kids.isNotEmpty()) "不細分" else c.name,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (on) cute.ink else cute.sub,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 3.dp),
+                                )
+                            }
+                        }
+                    }
+                    }
+                }
+            }
+        }
+
+        // 備註：直接打字
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it.take(300) },
+            placeholder = { Text("✏️ 備註：寫下細節，例如品項、跟誰一起…") },
+            minLines = 1,
+            maxLines = if (noteFocused) 5 else 2,
+            shape = RoundedCornerShape(18.dp),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+            trailingIcon = if (noteFocused) {
+                { TextButton(onClick = { focus.clearFocus() }) { Text("完成") } }
+            } else null,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).onFocusChanged { noteFocused = it.isFocused },
         )
+
+        // 附加資訊
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (tplMode) CuteChip("📝 名稱：" + tplName.ifBlank { "未命名" }, tplName.isNotBlank(), { dialog = "tplname" })
+            if (!tplMode) CuteChip("📅 ${dayLabel(day)}", false, { dialog = "date" })
+            if (type != TxType.TRANSFER && accs.isNotEmpty()) {
+                val a = accId?.let { d.accMap[it] }
+                CuteChip(a?.let { accLabel(it) } ?: "👛 帳戶", false, { dialog = "from" })
+            }
+            CuteChip(if (tags.isEmpty()) "🏷️ 新增標籤" else "🏷️ " + tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" })
+            val feeLabel = when {
+                fee > 0 && effDiscount > 0 -> "💸 手續費・優惠"
+                fee > 0 -> "💸 手續費 ${formatMoney(fee)}"
+                effDiscount > 0 -> "🎟️ 優惠 ${formatMoney(effDiscount)}"
+                type == TxType.EXPENSE -> "💸 手續費／優惠"
+                else -> "💸 手續費"
+            }
+            CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" })
+            if (type == TxType.EXPENSE && !tplMode) {
+                val part = if (reimbAmt >= 0 && reimbAmt != actual) " ${formatMoney(reimbAmt)}" else ""
+                CuteChip(
+                    when (reimb) { 1 -> "🧾 待報銷$part"; 2 -> "✅ 已報銷$part"; else -> "🧾 報銷" },
+                    reimb != 0,
+                    { dialog = "reimb" },
+                )
+            }
+            if (orig == null && type == TxType.EXPENSE && !tplMode) {
+                CuteChip(if (inst > 1) "📆 分 $inst 期" else "📆 分期", inst > 1, { dialog = "inst" })
+            }
+            if (orig == null && !tplMode) CuteChip("⭐ 存為常用", false, { dialog = "tpl" })
+            if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
+        }
+
+        if (!noteFocused) Keypad(
+            onKey = { k -> expr = Calc.press(expr, k) },
+            doneLabel = if (pending) "=" else "完成",
+            doneEnabled = pending || canSave,
+            onDone = {
+                if (pending) {
+                    expr = if (amount > 0) amount.toString() else ""
+                } else {
+                    doSave()
+                }
+            },
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
+    }
+
+    // ───── 對話框 ─────
+    when (dialog) {
+        "reimb" -> {
+            var on by remember { mutableStateOf(reimb != 0) }
+            var full by remember { mutableStateOf(reimbAmt < 0) }
+            var text by remember { mutableStateOf(if (reimbAmt >= 0) reimbAmt.toString() else "") }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("報銷") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("這筆可以報銷", modifier = Modifier.weight(1f))
+                            androidx.compose.material3.Switch(checked = on, onCheckedChange = { on = it })
+                        }
+                        if (on) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                CuteChip("全額 ${formatMoney(actual)}", full, { full = true })
+                                CuteChip("部分報銷", !full, { full = false })
+                            }
+                            if (!full) {
+                                OutlinedTextField(
+                                    text, { text = it.filter { c -> c.isDigit() }.take(9) },
+                                    label = { Text("可以報銷的金額") }, prefix = { Text("$") }, singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                val a = (text.toLongOrNull() ?: 0L).coerceIn(0L, amount + fee)
+                                Text(
+                                    if (a > actual) "比實付多 ${formatMoney(a - actual)}（例如刷卡優惠），收到後這部分會算成收入。"
+                                    else "自己負擔 ${formatMoney(actual - a)}，這部分會算進支出統計。",
+                                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                                )
+                            }
+                            if (reimb == 2) {
+                                Text("這筆已經收到報銷款了。", style = MaterialTheme.typography.bodySmall, color = cute.income)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (!on) {
+                            reimb = 0; reimbAmt = -1L
+                        } else {
+                            if (reimb == 0) reimb = 1
+                            reimbAmt = if (full) -1L else (text.toLongOrNull() ?: 0L).coerceIn(0L, amount + fee)
+                        }
+                        dialog = ""
+                    }) { Text("好") }
+                },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "unsaved" -> AlertDialog(
+            onDismissRequest = { dialog = "" },
+            title = { Text("要儲存修改嗎？") },
+            text = { Text(if (canSave) "你有還沒儲存的修改。" else "你有還沒儲存的修改，但目前的內容還不能儲存（${if (!tplMode && amount <= 0) "沒有金額" else "資料不完整"}）。") },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = { dialog = "" }) { Text("繼續編輯") }
+                    if (canSave) TextButton(onClick = { dialog = ""; doSave() }) { Text("儲存") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { dialog = ""; onClose() }) { Text("不儲存", color = cute.expense) } },
+        )
+        "tplname" -> {
+            var text by remember { mutableStateOf(tplName.ifBlank { cat?.name ?: "" }) }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("常用記帳的名稱") },
+                text = {
+                    OutlinedTextField(text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                },
+                confirmButton = { TextButton(onClick = { tplName = text.trim(); dialog = "" }) { Text("好") } },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "date" -> CuteDatePickerDialog(
+            initial = day,
+            onPick = { day = it; dialog = "" },
+            onDismiss = { dialog = "" },
+        )
+        "tags" -> {
+            var list by remember { mutableStateOf(tags) }
+            var input by remember { mutableStateOf("") }
+            val known = d.allTags().filter { it !in list }.take(15)
+            fun addTag() {
+                val t = input.trim().trimStart('#', '＃').trim()
+                if (t.isNotEmpty() && t !in list && list.size < 10) list = list + t
+                input = ""
+            }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("標籤") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (list.isNotEmpty()) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                list.forEach { t -> CuteChip("#$t  ✕", true, { list = list - t }) }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                input, { input = it.take(12) },
+                                placeholder = { Text("輸入一個標籤") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { addTag() }),
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { addTag() }, enabled = input.isNotBlank()) { Text("新增") }
+                        }
+                        if (known.isNotEmpty()) {
+                            Text("用過的標籤", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                known.forEach { k -> CuteChip("#$k", false, { if (list.size < 10) list = list + k }) }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val t = input.trim().trimStart('#', '＃').trim()
+                        val final = if (t.isNotEmpty() && t !in list) list + t else list
+                        tagsText = final.joinToString("\n")
+                        dialog = ""
+                    }) { Text("完成") }
+                },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "fee" -> {
+            var feeText by remember { mutableStateOf(if (fee > 0) fee.toString() else "") }
+            var discText by remember { mutableStateOf(if (discount > 0) discount.toString() else "") }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text(if (type == TxType.EXPENSE) "手續費與優惠" else "手續費") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            when (type) {
+                                TxType.EXPENSE -> "上面輸入的是原價。優惠會從原價扣掉，手續費會加上去，帳戶扣的是實付金額。"
+                                TxType.INCOME -> "手續費會從收到的金額扣掉，例如匯款手續費。"
+                                TxType.TRANSFER -> "手續費從轉出帳戶多扣，例如跨行轉帳 $15，會算進支出統計。"
+                            },
+                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                        )
+                        OutlinedTextField(
+                            feeText, { feeText = it.filter { c -> c.isDigit() }.take(8) },
+                            label = { Text("手續費") }, prefix = { Text("$") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (type == TxType.EXPENSE) {
+                            OutlinedTextField(
+                                discText, { discText = it.filter { c -> c.isDigit() }.take(8) },
+                                label = { Text("優惠／折扣") }, prefix = { Text("$") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        fee = feeText.toLongOrNull() ?: 0L
+                        discount = discText.toLongOrNull() ?: 0L
+                        dialog = ""
+                    }) { Text("好") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { fee = 0L; discount = 0L; dialog = "" }) { Text("清除") }
+                },
+            )
+        }
+        "inst" -> {
+            var text by remember { mutableStateOf(if (inst > 1) inst.toString() else "") }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("分期付款") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("金額會平均分成每月一筆，從選擇的日期開始。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(3, 6, 12, 24).forEach { n -> CuteChip("$n 期", text == n.toString(), { text = n.toString() }) }
+                        }
+                        OutlinedTextField(
+                            text, { text = it.filter { c -> c.isDigit() }.take(2) },
+                            label = { Text("期數") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        val n = text.toIntOrNull() ?: 1
+                        if (n > 1 && amount > 0) Text("每期約 ${formatMoney(amount / n)}", color = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                confirmButton = { TextButton(onClick = { inst = (text.toIntOrNull() ?: 1).coerceIn(1, 60); dialog = "" }) { Text("好") } },
+                dismissButton = { TextButton(onClick = { inst = 1; dialog = "" }) { Text("不分期") } },
+            )
+        }
+        "tpl" -> {
+            var text by remember { mutableStateOf(cat?.name ?: "") }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("存為常用記帳") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "會記住目前的分類、帳戶、金額、備註和標籤，下次在上方一點就帶入。金額留 0 代表每次自己輸入。",
+                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                        )
+                        OutlinedTextField(text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (text.isNotBlank()) vm.addTemplate(text.trim(), draft())
+                        dialog = ""
+                    }) { Text("儲存") }
+                },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "from", "to" -> {
+            val isTo = dialog == "to"
+            val bal = remember(d) { d.balances() }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text(if (isTo) "轉入帳戶" else "選擇帳戶") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        accs.forEach { a ->
+                            val on = if (isTo) toAccId == a.id else accId == a.id
+                            AccountLine(a, bal[a.id] ?: 0L, on) {
+                                if (isTo) toAccId = a.id else accId = a.id
+                                dialog = ""
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { dialog = "" }) { Text("關閉") } },
+            )
+        }
+        "delete" -> {
+            if (tplMode && tplId != null) {
+                ConfirmDialog(
+                    title = "刪除這個常用記帳？",
+                    text = "刪除後不會影響已經記好的帳。",
+                    confirm = "刪除",
+                    onConfirm = { vm.deleteTemplate(tplId); dialog = ""; onClose() },
+                    onDismiss = { dialog = "" },
+                )
+            }
+            val o = orig
+            if (o != null && o.instGroup != null && o.instTotal > 1) {
+                AlertDialog(
+                    onDismissRequest = { dialog = "" },
+                    title = { Text("刪除分期記錄") },
+                    text = { Text("這筆是分期 ${o.instIndex}/${o.instTotal}，要只刪這一期，還是整組分期一起刪？") },
+                    confirmButton = {
+                        TextButton(onClick = { vm.deleteTxn(o.id, true); dialog = ""; onClose() }) { Text("全部刪除") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { vm.deleteTxn(o.id, false); dialog = ""; onClose() }) { Text("只刪這期") }
+                    },
+                )
+            } else if (o != null) {
+                ConfirmDialog(
+                    title = "刪除這筆記錄？",
+                    text = "刪除後無法復原。",
+                    confirm = "刪除",
+                    onConfirm = { vm.deleteTxn(o.id, false); dialog = ""; onClose() },
+                    onDismiss = { dialog = "" },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountPick(label: String, value: String, onClick: () -> Unit) {
+    val cute = LocalCute.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card).clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = cute.sub, modifier = Modifier.width(48.dp))
+        Text(value, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Box(Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
     }
 }

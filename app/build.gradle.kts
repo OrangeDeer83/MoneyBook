@@ -1,7 +1,13 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val versionProps = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { stream -> this.load(stream) }
 }
 
 android {
@@ -12,23 +18,35 @@ android {
         applicationId = "tw.moneybook.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // 版本名稱來自 version.properties；版本代碼用編譯次數，確保每次都比上次大
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = versionProps.getProperty("versionName", "0.0.0").trim()
     }
 
-    // 固定簽章：每次編譯出來的 APK 都能直接覆蓋安裝，資料不會消失
+    // 正式版簽章：金鑰不放在 repo 裡。
+    // GitHub Actions 從 Secrets 取得（環境變數）；自己電腦上則讀 keystore.properties（已加入 .gitignore）。
+    val localSigning = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { stream -> this.load(stream) }
+    }
+    val ksPath = System.getenv("KEYSTORE_PATH") ?: localSigning.getProperty("storeFile")
+    val hasSigning = !ksPath.isNullOrBlank() && file(ksPath).exists()
+
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        if (hasSigning) {
+            create("release") {
+                storeFile = file(ksPath!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: localSigning.getProperty("storePassword")
+                keyAlias = System.getenv("KEY_ALIAS") ?: localSigning.getProperty("keyAlias")
+                keyPassword = System.getenv("KEY_PASSWORD") ?: localSigning.getProperty("keyPassword")
+            }
         }
     }
 
     buildTypes {
-        getByName("debug") {
-            signingConfig = signingConfigs.getByName("debug")
+        getByName("release") {
+            isMinifyEnabled = false
+            if (hasSigning) signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -41,6 +59,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
