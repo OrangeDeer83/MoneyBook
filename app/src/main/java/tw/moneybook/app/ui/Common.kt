@@ -74,7 +74,8 @@ fun CatBubble(emoji: String, color: Int, size: Dp = 40.dp) {
             .background(catColor(color).copy(alpha = if (LocalCute.current.dark) 0.30f else 0.32f)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(emoji, fontSize = (size.value * 0.46f).sp)
+        if (AppImages.isImg(emoji)) IconImage(emoji, size * 0.7f)
+        else Text(emoji, fontSize = (size.value * 0.46f).sp)
     }
 }
 
@@ -244,22 +245,26 @@ fun AmountText(amount: Long, color: Color, modifier: Modifier = Modifier, big: B
     )
 }
 
-/** 表情符號挑選對話框 */
+/** 圖示挑選對話框：表情符號或內建圖片 */
 @Composable
 fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
     var custom by remember { mutableStateOf("") }
+    var tab by remember { mutableStateOf(if (AppImages.isImg(current)) 1 else 0) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("選一個圖示") },
         text = {
             Column {
+                PillSegment(listOf("表情符號", "圖片"), tab, { tab = it }, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(10.dp))
+                val list = if (tab == 0) Defaults.emojis else AppImages.all.keys.toList()
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(6),
                     modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    items(Defaults.emojis) { e ->
+                    items(list) { e ->
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
@@ -267,22 +272,24 @@ fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -
                                 .background(if (e == current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                                 .clickable { onPick(e) },
                             contentAlignment = Alignment.Center,
-                        ) { Text(e, fontSize = 22.sp) }
+                        ) { IconGlyph(e, 22.sp) }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = custom,
-                    onValueChange = { custom = it.take(8) },
-                    label = { Text("或自己輸入表情符號") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (tab == 0) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = custom,
+                        onValueChange = { custom = it.take(8) },
+                        label = { Text("或自己輸入表情符號") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (custom.isNotBlank()) onPick(custom.trim()) else onDismiss() }) {
-                Text(if (custom.isNotBlank()) "使用" else "關閉")
+            TextButton(onClick = { if (tab == 0 && custom.isNotBlank()) onPick(custom.trim()) else onDismiss() }) {
+                Text(if (tab == 0 && custom.isNotBlank()) "使用" else "關閉")
             }
         },
     )

@@ -1,0 +1,51 @@
+name: Test Build
+
+# 私下測試用：只編譯 debug 版並存成附件，不會發布 Release。
+# push 到 dev 分支，或到 Actions 頁面手動執行（可選任何分支）就會觸發。
+on:
+  push:
+    branches: [ dev ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew assembleDebug --console=plain 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        run: |
+          [ -f build.log ] || exit 0
+          grep -E "^e: " build.log | sed -E 's#file://[^ ]*/app/src/main/java/##' | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          grep -E "What went wrong" -A 8 build.log | head -40 | while IFS= read -r line; do
+            echo "::warning::${line}"
+          done
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoneyBook-test-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

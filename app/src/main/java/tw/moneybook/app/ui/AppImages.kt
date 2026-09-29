@@ -1,0 +1,97 @@
+package tw.moneybook.app.ui
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import tw.moneybook.app.R
+
+/**
+ * 內建的貼紙圖示。分類、帳戶、帳本的「emoji」欄位如果是 `img:名稱`，就顯示這裡的圖片，
+ * 其他照舊當表情符號顯示，所以舊資料、舊備份都不受影響。
+ */
+object AppImages {
+    const val PREFIX = "img:"
+
+    /** 挑選器裡的順序 */
+    val all: LinkedHashMap<String, Int> = linkedMapOf(
+        "img:cat_education" to R.drawable.img_cat_education,
+        "img:cat_food" to R.drawable.img_cat_food,
+        "img:cat_fuel" to R.drawable.img_cat_fuel,
+        "img:cat_game" to R.drawable.img_cat_game,
+        "img:cat_home" to R.drawable.img_cat_home,
+        "img:cat_internet" to R.drawable.img_cat_internet,
+        "img:cat_medical" to R.drawable.img_cat_medical,
+        "img:cat_metro" to R.drawable.img_cat_metro,
+        "img:cat_movie" to R.drawable.img_cat_movie,
+        "img:cat_other" to R.drawable.img_cat_other,
+        "img:cat_parking" to R.drawable.img_cat_parking,
+        "img:cat_pet" to R.drawable.img_cat_pet,
+        "img:cat_rent" to R.drawable.img_cat_rent,
+        "img:cat_shopping" to R.drawable.img_cat_shopping,
+        "img:cat_snack" to R.drawable.img_cat_snack,
+        "img:cat_social" to R.drawable.img_cat_social,
+        "img:cat_transport" to R.drawable.img_cat_transport,
+        "img:cat_travel" to R.drawable.img_cat_travel,
+        "img:cat_utility" to R.drawable.img_cat_utility,
+        "img:pick_cat" to R.drawable.img_pick_cat,
+        "img:pick_coffee" to R.drawable.img_pick_coffee,
+        "img:pick_coin" to R.drawable.img_pick_coin,
+        "img:pick_fruit" to R.drawable.img_pick_fruit,
+        "img:pick_heart" to R.drawable.img_pick_heart,
+        "img:acc_card" to R.drawable.img_acc_card,
+        "img:acc_cash" to R.drawable.img_acc_cash,
+        "img:ui_favorite" to R.drawable.img_ui_favorite,
+        "img:ui_savings" to R.drawable.img_ui_savings,
+        "img:extra_cart" to R.drawable.img_extra_cart,
+        "img:extra_clover" to R.drawable.img_extra_clover,
+        "img:extra_diamond" to R.drawable.img_extra_diamond,
+        "img:extra_diploma" to R.drawable.img_extra_diploma,
+        "img:extra_envelope" to R.drawable.img_extra_envelope,
+        "img:extra_ghost" to R.drawable.img_extra_ghost,
+        "img:extra_glasses" to R.drawable.img_extra_glasses,
+        "img:extra_gold" to R.drawable.img_extra_gold,
+        "img:extra_house_brown" to R.drawable.img_extra_house_brown,
+        "img:extra_moon" to R.drawable.img_extra_moon,
+        "img:extra_passport" to R.drawable.img_extra_passport,
+    )
+
+    fun isImg(s: String): Boolean = s.startsWith(PREFIX)
+}
+
+/** 有圖片的圖示回傳 null（要另外畫圖），其他照原樣 */
+private fun imgRes(e: String): Int? = if (AppImages.isImg(e)) AppImages.all[e] else null
+
+/** 文字裡的圖示前綴：圖片圖示沒辦法塞進文字，就只留名稱 */
+fun iconLabel(emoji: String, name: String): String =
+    if (AppImages.isImg(emoji)) name else "$emoji $name"
+
+/** 表情符號或圖片，依 fontSize 決定大小 */
+@Composable
+fun IconGlyph(e: String, fontSize: TextUnit) {
+    if (AppImages.isImg(e)) {
+        val res = imgRes(e)
+        if (res != null) {
+            Image(painterResource(res), null, Modifier.size((fontSize.value * 1.15f).dp), contentScale = ContentScale.Fit)
+        } else {
+            Text("📦", fontSize = fontSize)
+        }
+    } else {
+        Text(e, fontSize = fontSize)
+    }
+}
+
+/** 圖片圖示，給 CatBubble 這類已知外框大小的地方用 */
+@Composable
+fun IconImage(e: String, size: Dp) {
+    val res = imgRes(e)
+    if (res != null) Image(painterResource(res), null, Modifier.size(size), contentScale = ContentScale.Fit)
+    else Text("📦", fontSize = (size.value * 0.64f).sp)
+}

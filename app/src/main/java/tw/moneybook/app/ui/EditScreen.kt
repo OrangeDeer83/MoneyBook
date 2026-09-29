@@ -238,8 +238,8 @@ fun EditScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val label = when {
                     type == TxType.TRANSFER -> "🔁 轉帳"
-                    cat != null && parent != null && parent.id != cat.id -> "${cat.emoji} ${parent.name}・${cat.name}"
-                    cat != null -> "${cat.emoji} ${cat.name}"
+                    cat != null && parent != null && parent.id != cat.id -> iconLabel(cat.emoji, "${parent.name}・${cat.name}")
+                    cat != null -> iconLabel(cat.emoji, cat.name)
                     else -> "請選分類"
                 }
                 Text(label, style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f), maxLines = 1)
@@ -300,7 +300,7 @@ fun EditScreen(
                             item { CuteChip("⭐ 常用", showTpl, { showTpl = true }) }
                         }
                         items(tops, key = { it.id }) { c ->
-                            CuteChip("${c.emoji} ${c.name}", !showTpl && parent?.id == c.id, { catId = c.id; showTpl = false })
+                            CuteChip(iconLabel(c.emoji, c.name), !showTpl && parent?.id == c.id, { catId = c.id; showTpl = false })
                         }
                     }
                     if (showTpl) {

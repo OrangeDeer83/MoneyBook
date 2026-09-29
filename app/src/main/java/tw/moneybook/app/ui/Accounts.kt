@@ -73,12 +73,12 @@ fun AccountIcon(a: Account, size: Dp = 40.dp) {
         Box(
             Modifier.size(size).clip(RoundedCornerShape(size * 0.32f)).background(LocalCute.current.soft),
             contentAlignment = Alignment.Center,
-        ) { Text(a.emoji, fontSize = (size.value * 0.5f).sp) }
+        ) { IconGlyph(a.emoji, (size.value * 0.5f).sp) }
     }
 }
 
 /** 用在按鈕文字上的帳戶名稱 */
-fun accLabel(a: Account): String = if (a.badge.isNotBlank()) a.name else "${a.emoji} ${a.name}"
+fun accLabel(a: Account): String = if (a.badge.isNotBlank()) a.name else iconLabel(a.emoji, a.name)
 
 private fun daysLeft(to: LocalDate): String {
     val n = ChronoUnit.DAYS.between(LocalDate.now(), to)

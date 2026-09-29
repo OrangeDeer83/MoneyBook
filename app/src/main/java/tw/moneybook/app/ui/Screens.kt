@@ -204,7 +204,7 @@ fun HomeScreen(
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(book.emoji, fontSize = 16.sp)
+                    IconGlyph(book.emoji, 16.sp)
                     Spacer(Modifier.width(6.dp))
                     Text(book.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.widthIn(max = 120.dp))
                     Text(" ▾", color = cute.sub)
@@ -391,7 +391,7 @@ fun HomeScreen(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(b.emoji, fontSize = 20.sp)
+                            IconGlyph(b.emoji, 20.sp)
                             Spacer(Modifier.width(10.dp))
                             Text(b.name, modifier = Modifier.weight(1f))
                             if (on) Text("使用中", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -592,7 +592,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${c?.emoji ?: "🔁"} ${c?.name ?: "轉帳"} ${formatMoney(dt.paid)}" +
+                    "${iconLabel(c?.emoji ?: "🔁", c?.name ?: "轉帳")} ${formatMoney(dt.paid)}" +
                         (hoverDay?.let { "  →  ${LocalDate.ofEpochDay(it).monthValue}/${LocalDate.ofEpochDay(it).dayOfMonth}" } ?: ""),
                     color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.labelLarge,

@@ -87,7 +87,7 @@ fun SearchScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit)
     }
     val catLabel = when {
         catIds.isEmpty() -> "全部分類"
-        catIds.size == 1 -> d.catMap[catIds.first()]?.let { "${it.emoji} ${it.name}" } ?: "1 個分類"
+        catIds.size == 1 -> d.catMap[catIds.first()]?.let { iconLabel(it.emoji, it.name) } ?: "1 個分類"
         else -> "${catIds.size} 個分類"
     }
 
@@ -225,7 +225,7 @@ private fun CheckLine(emoji: String, name: String, on: Boolean, child: Boolean, 
             contentAlignment = Alignment.Center,
         ) { if (on) Text("✓", color = MaterialTheme.colorScheme.onPrimary) }
         Spacer(Modifier.width(10.dp))
-        Text("$emoji $name", style = if (child) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+        Text(iconLabel(emoji, name), style = if (child) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
     }
 }
 

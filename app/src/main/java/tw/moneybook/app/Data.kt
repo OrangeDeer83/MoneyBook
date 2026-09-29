@@ -270,7 +270,7 @@ object Defaults {
         fun nid(): Long = id++
 
         val book = Book(nid(), "我的帳本", "📒", 0L)
-        val cash = Account(nid(), "現金", "💵", AccountType.CASH, 0L, 0)
+        val cash = Account(nid(), "現金", "img:acc_cash", AccountType.CASH, 0L, 0)
         val cats = ArrayList<Category>()
 
         fun parent(name: String, emoji: String, color: Int, kind: TxType, subs: List<Pair<String, String>>) {
@@ -281,22 +281,22 @@ object Defaults {
         }
 
         val e = TxType.EXPENSE
-        parent("餐飲", "🍜", 0, e, listOf("早餐" to "🥪", "午餐" to "🍱", "晚餐" to "🍛", "飲料" to "🧋", "點心" to "🍰"))
-        parent("交通", "🚌", 2, e, listOf("大眾運輸" to "🚇", "計程車" to "🚕", "加油" to "⛽", "停車" to "🅿️"))
-        parent("購物", "🛍️", 3, e, listOf("衣物" to "👕", "3C" to "📱", "美妝" to "💄"))
+        parent("餐飲", "img:cat_food", 0, e, listOf("早餐" to "🥪", "午餐" to "🍱", "晚餐" to "🍛", "飲料" to "img:pick_coffee", "點心" to "img:cat_snack"))
+        parent("交通", "img:cat_transport", 2, e, listOf("大眾運輸" to "img:cat_metro", "計程車" to "🚕", "加油" to "img:cat_fuel", "停車" to "img:cat_parking"))
+        parent("購物", "img:cat_shopping", 3, e, listOf("衣物" to "👕", "3C" to "📱", "美妝" to "💄"))
         parent("日用", "🧻", 1, e, emptyList())
-        parent("居住", "🏠", 5, e, listOf("房租" to "🔑", "水電" to "💡", "網路" to "📶"))
-        parent("娛樂", "🎮", 4, e, listOf("電影" to "🎬", "遊戲" to "🕹️", "旅遊" to "✈️"))
-        parent("醫療", "💊", 6, e, emptyList())
-        parent("教育", "📚", 7, e, emptyList())
-        parent("社交", "🎁", 9, e, emptyList())
-        parent("寵物", "🐶", 8, e, emptyList())
-        parent("其他", "📦", 8, e, emptyList())
+        parent("居住", "img:cat_home", 5, e, listOf("房租" to "img:cat_rent", "水電" to "img:cat_utility", "網路" to "img:cat_internet"))
+        parent("娛樂", "img:cat_game", 4, e, listOf("電影" to "img:cat_movie", "遊戲" to "🕹️", "旅遊" to "img:cat_travel"))
+        parent("醫療", "img:cat_medical", 6, e, emptyList())
+        parent("教育", "img:cat_education", 7, e, emptyList())
+        parent("社交", "img:cat_social", 9, e, emptyList())
+        parent("寵物", "img:cat_pet", 8, e, emptyList())
+        parent("其他", "img:cat_other", 8, e, emptyList())
 
         val i = TxType.INCOME
         parent("薪水", "💼", 5, i, emptyList())
         parent("獎金", "🏆", 1, i, emptyList())
-        parent("投資", "📈", 2, i, emptyList())
+        parent("投資", "img:extra_gold", 2, i, emptyList())
         parent("兼職", "🧑‍💻", 4, i, emptyList())
         parent("零用錢", "🧧", 6, i, emptyList())
         parent("其他", "💰", 8, i, emptyList())

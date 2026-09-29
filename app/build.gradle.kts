@@ -21,6 +21,7 @@ android {
         // 版本名稱來自 version.properties；版本代碼用編譯次數，確保每次都比上次大
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionName = versionProps.getProperty("versionName", "0.0.0").trim()
+        manifestPlaceholders["appLabel"] = "@string/app_name"
     }
 
     // 正式版簽章：金鑰不放在 repo 裡。
@@ -44,6 +45,12 @@ android {
     }
 
     buildTypes {
+        // 私下測試版：套件名稱不同，可以跟正式版同時安裝，資料互不影響
+        getByName("debug") {
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            manifestPlaceholders["appLabel"] = "記帳本 測試"
+        }
         getByName("release") {
             isMinifyEnabled = false
             if (hasSigning) signingConfig = signingConfigs.getByName("release")

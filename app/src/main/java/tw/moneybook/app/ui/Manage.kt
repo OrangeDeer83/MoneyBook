@@ -221,7 +221,7 @@ fun BooksScreen(vm: MoneyViewModel, onBack: () -> Unit) {
                 val count = d.txns.count { it.bookId == b.id }
                 CuteCard(Modifier.fillMaxWidth(), onClick = { editing = b }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(b.emoji, fontSize = 26.sp)
+                        IconGlyph(b.emoji, 26.sp)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(b.name, style = MaterialTheme.typography.titleMedium)
@@ -301,7 +301,7 @@ fun EmojiButton(emoji: String, onClick: () -> Unit) {
     Box(
         Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(LocalCute.current.soft).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(emoji, fontSize = 26.sp) }
+    ) { IconGlyph(emoji, 26.sp) }
 }
 
 // ───────────────────────── 帳戶 ─────────────────────────
@@ -610,7 +610,7 @@ private fun CategoryDialog(
                     Box(
                         Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(catColor(color).copy(alpha = 0.35f)).clickable { pick = true },
                         contentAlignment = Alignment.Center,
-                    ) { Text(emoji, fontSize = 26.sp) }
+                    ) { IconGlyph(emoji, 26.sp) }
                     Spacer(Modifier.width(10.dp))
                     OutlinedTextField(name, { name = it.take(10) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.weight(1f))
                 }
@@ -1034,7 +1034,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
                         val c = t.categoryId?.let { d.catMap[it] }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("${c?.emoji ?: "📦"} ${c?.name ?: "未分類"}", maxLines = 1)
+                                Text(iconLabel(c?.emoji ?: "📦", c?.name ?: "未分類"), maxLines = 1)
                                 Text(
                                     "${shortDate(t.day)}・實付 ${formatMoney(t.paid)}",
                                     style = MaterialTheme.typography.labelSmall, color = cute.sub,

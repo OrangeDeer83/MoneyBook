@@ -266,7 +266,7 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 if (sel != null) {
-                                    Text("${sel.emoji} ${sel.label}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                    Text(iconLabel(sel.emoji, sel.label), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                                     Text(formatMoney(sel.amount), style = MaterialTheme.typography.titleMedium, color = sel.color)
                                     Text(
                                         String.format("%.1f%%・%d 筆", sel.amount * 100.0 / total, sel.count),
@@ -294,7 +294,7 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
                             "gain" -> ({ t: Txn -> t.reimbGain })
                             else -> amt
                         }
-                        vm.drill = tw.moneybook.app.Drill("${sl.emoji} ${sl.label}", mode, base2, useAmt)
+                        vm.drill = tw.moneybook.app.Drill(iconLabel(sl.emoji, sl.label), mode, base2, useAmt)
                         onDrill()
                     },
                 )
@@ -374,7 +374,7 @@ private fun SliceRow(s: Slice, total: Long, big: Boolean, open: Boolean, onOpen:
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (big) "${s.emoji} ${s.label}" else s.label,
+                    if (big) iconLabel(s.emoji, s.label) else s.label,
                     style = if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                 )
