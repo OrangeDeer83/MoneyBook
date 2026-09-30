@@ -49,7 +49,7 @@ object AppImages {
         "img:cat_3c" to R.drawable.img_cat_3c,
         "img:cat_beauty" to R.drawable.img_cat_beauty,
         "img:cat_daily" to R.drawable.img_cat_daily,
-        "img:cat_game" to R.drawable.img_cat_game,
+        "img:cat_joystick" to R.drawable.img_cat_joystick,
         "img:cat_drink" to R.drawable.img_cat_drink,
         "img:cat_tote" to R.drawable.img_cat_tote,
         "img:cat_box" to R.drawable.img_cat_box,
