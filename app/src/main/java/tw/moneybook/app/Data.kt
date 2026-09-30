@@ -281,12 +281,12 @@ object Defaults {
         }
 
         val e = TxType.EXPENSE
-        parent("餐飲", "img:cat_food", 0, e, listOf("早餐" to "🥪", "午餐" to "🍱", "晚餐" to "🍛", "飲料" to "img:pick_coffee", "點心" to "img:cat_snack"))
-        parent("交通", "img:cat_transport", 2, e, listOf("大眾運輸" to "img:cat_metro", "計程車" to "🚕", "加油" to "img:cat_fuel", "停車" to "img:cat_parking"))
-        parent("購物", "img:cat_shopping", 3, e, listOf("衣物" to "👕", "3C" to "📱", "美妝" to "💄"))
-        parent("日用", "🧻", 1, e, emptyList())
+        parent("餐飲", "img:cat_food", 0, e, listOf("早餐" to "img:cat_breakfast", "午餐" to "img:cat_lunch", "晚餐" to "img:cat_dinner", "飲料" to "img:cat_drink", "點心" to "img:cat_snack"))
+        parent("交通", "img:cat_transport", 2, e, listOf("大眾運輸" to "img:cat_metro", "計程車" to "img:cat_taxi", "加油" to "img:cat_fuel", "停車" to "img:cat_parking"))
+        parent("購物", "img:cat_shopping", 3, e, listOf("衣物" to "img:cat_clothes", "3C" to "img:cat_3c", "美妝" to "img:cat_beauty"))
+        parent("日用", "img:cat_daily", 1, e, emptyList())
         parent("居住", "img:cat_home", 5, e, listOf("房租" to "img:cat_rent", "水電" to "img:cat_utility", "網路" to "img:cat_internet"))
-        parent("娛樂", "img:cat_game", 4, e, listOf("電影" to "img:cat_movie", "遊戲" to "🕹️", "旅遊" to "img:cat_travel"))
+        parent("娛樂", "img:cat_game", 4, e, listOf("電影" to "img:cat_movie", "遊戲" to "img:cat_game", "旅遊" to "img:cat_travel"))
         parent("醫療", "img:cat_medical", 6, e, emptyList())
         parent("教育", "img:cat_education", 7, e, emptyList())
         parent("社交", "img:cat_social", 9, e, emptyList())
