@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -53,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
@@ -456,6 +458,7 @@ fun EditScreen(
                 }
             }
             val cap = amount + fee
+            val lockedAny = rows.any { it.locked != null }
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = { Text("報銷") },
@@ -468,38 +471,40 @@ fun EditScreen(
                             Text("這筆可以報銷", modifier = Modifier.weight(1f))
                             androidx.compose.material3.Switch(checked = on, onCheckedChange = { on = it }, enabled = !hasPays)
                         }
-                        if (hasPays) {
-                            Text("已經有收款紀錄，要清除請到「我的 → 報銷」。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                        }
                         if (on) {
-                            val lockedAny = rows.any { it.locked != null }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (!(lockedAny && !full)) CuteChip("一人・全額 ${formatMoney(actual)}", full, { full = true })
-                                CuteChip("分給多人／部分", !full, { full = false })
+                            if (!lockedAny) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    CuteChip("一人・全額", full, { full = true })
+                                    CuteChip("分給多人／部分", !full, { full = false })
+                                }
                             }
-                            if (!full) {
+                            if (full) {
+                                Text("全額 ${formatMoney(actual)}，收到後這筆就不算你的支出。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                            } else {
                                 rows.forEachIndexed { i, r ->
                                     val lk = r.locked
                                     if (lk != null) {
-                                        Text(
-                                            "${lk.who.ifBlank { "（沒填對象）" }}・應收 ${formatMoney(lk.amount)}・已收 ${formatMoney(lk.received)}" + if (lk.closed) "・已結案" else "",
-                                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
-                                        )
+                                        Row(
+                                            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft).padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(lk.who.ifBlank { "（沒填對象）" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                                                Text(
+                                                    "已收 ${formatMoney(lk.received)}" + if (lk.closed) "・已結案" else "・還剩 ${formatMoney(lk.remaining)}",
+                                                    style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                                                )
+                                            }
+                                            Text(formatMoney(lk.amount), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
+                                        }
                                     } else {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            OutlinedTextField(
-                                                r.who, { r.who = it.take(12) },
-                                                label = { Text("對象（選填）") }, singleLine = true,
-                                                modifier = Modifier.weight(1f),
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            CompactField(r.who, { r.who = it.take(12) }, "對象（選填）", Modifier.weight(1f))
+                                            CompactField(r.amt, { r.amt = it.filter { c -> c.isDigit() }.take(9) }, "金額", Modifier.width(112.dp), number = true, prefix = "$")
+                                            Text(
+                                                "✕", color = cute.sub, style = MaterialTheme.typography.titleMedium,
+                                                modifier = Modifier.clip(CircleShape).clickable { rows.removeAt(i) }.padding(horizontal = 8.dp, vertical = 4.dp),
                                             )
-                                            Spacer(Modifier.width(6.dp))
-                                            OutlinedTextField(
-                                                r.amt, { r.amt = it.filter { c -> c.isDigit() }.take(9) },
-                                                prefix = { Text("$") }, singleLine = true,
-                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                                modifier = Modifier.width(104.dp),
-                                            )
-                                            TextButton(onClick = { rows.removeAt(i) }) { Text("✕") }
                                         }
                                     }
                                 }
@@ -507,12 +512,15 @@ fun EditScreen(
                                 val total = rows.sumOf { it.locked?.effective ?: (it.amt.toLongOrNull() ?: 0L) }
                                 Text(
                                     when {
-                                        total > cap -> "合計超過可報銷的上限 ${formatMoney(cap)}，超過的部分不會算。"
-                                        total > actual -> "比實付多 ${formatMoney(total - actual)}（例如刷卡優惠），收到後這部分會算成收入。"
-                                        else -> "合計 ${formatMoney(total)}，自己負擔 ${formatMoney(actual - total)}，這部分會算進支出統計。"
+                                        total > cap -> "合計超過上限 ${formatMoney(cap)}，超過的部分不會算。"
+                                        total > actual -> "合計 ${formatMoney(total)}，比實付多 ${formatMoney(total - actual)}（多的算成收入）。"
+                                        else -> "合計 ${formatMoney(total)}・自己負擔 ${formatMoney(actual - total)}"
                                     },
                                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                                 )
+                            }
+                            if (lockedAny) {
+                                Text("已有收款的對象不能在這裡改，請到「我的 → 報銷」處理。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                             }
                         }
                     }
@@ -783,4 +791,41 @@ private fun AccountPick(label: String, value: String, onClick: () -> Unit) {
 private class ReimbRow(val locked: ReimbItem?, who: String, amt: String) {
     var who by mutableStateOf(who)
     var amt by mutableStateOf(amt)
+}
+
+/** 精簡的輸入框：淡淡的底色，用灰色提示字代替標籤，不會把文字擠成兩行 */
+@Composable
+private fun CompactField(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    number: Boolean = false,
+    prefix: String = "",
+) {
+    val cute = LocalCute.current
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = KeyboardOptions(keyboardType = if (number) KeyboardType.Number else KeyboardType.Text),
+        modifier = modifier,
+        decorationBox = { inner ->
+            Row(
+                Modifier.clip(RoundedCornerShape(14.dp)).background(cute.soft).padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (prefix.isNotEmpty()) {
+                    Text(prefix, color = cute.sub, style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.width(4.dp))
+                }
+                Box(Modifier.weight(1f)) {
+                    if (value.isEmpty()) Text(placeholder, color = cute.sub.copy(alpha = 0.6f), style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                    inner()
+                }
+            }
+        },
+    )
 }
