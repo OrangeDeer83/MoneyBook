@@ -140,13 +140,15 @@ fun ReimbEditPage(
     initOn: Boolean,
     initFull: Boolean,
     initJson: String,
+    initWho: String,
     names: List<String>,
-    onDone: (on: Boolean, full: Boolean, json: String) -> Unit,
+    onDone: (on: Boolean, full: Boolean, json: String, who: String) -> Unit,
     onClose: () -> Unit,
 ) {
     val cute = LocalCute.current
     var on by remember { mutableStateOf(initOn) }
     var full by remember { mutableStateOf(initFull) }
+    var fullWho by remember { mutableStateOf(initWho) }
     val hasPays = origItems.any { it.pays.isNotEmpty() }
     val rows = remember {
         mutableStateListOf<ReimbRow>().apply {
@@ -160,14 +162,14 @@ fun ReimbEditPage(
 
     fun finish() {
         if (!on) {
-            onDone(false, true, "")
+            onDone(false, true, "", "")
         } else if (full) {
-            onDone(true, true, initJson)
+            onDone(true, true, initJson, fullWho.trim())
         } else {
             val list = rows.mapNotNull { r ->
                 r.locked ?: (r.amt.toLongOrNull() ?: 0L).takeIf { it > 0L }?.let { a -> ReimbItem(r.who.trim(), a.coerceAtMost(cap)) }
             }
-            if (list.isEmpty()) onDone(false, true, "") else onDone(true, false, ReimbCodec.encode(list))
+            if (list.isEmpty()) onDone(false, true, "", "") else onDone(true, false, ReimbCodec.encode(list), "")
         }
     }
 
@@ -216,9 +218,24 @@ fun ReimbEditPage(
                 }
                 if (on) {
                     if (!lockedAny) {
-                        PillSegment(listOf("一人・全額", "分給多人"), if (full) 0 else 1, { full = it == 0 }, Modifier.fillMaxWidth())
+                        PillSegment(
+                            listOf("一人・全額", "分給多人"), if (full) 0 else 1,
+                            { pick ->
+                                full = pick == 0
+                                if (!full) rows.firstOrNull { it.locked == null && it.who.isBlank() }?.let { r -> r.who = fullWho }
+                            },
+                            Modifier.fillMaxWidth(), equal = true,
+                        )
                     }
                     if (full) {
+                        CompactField(fullWho, { fullWho = it.take(12) }, "對象（選填，例如小明）", Modifier.fillMaxWidth())
+                        val fullSuggest = names.filter { it != fullWho.trim() }.take(8)
+                        if (fullSuggest.isNotEmpty()) {
+                            Text("常用對象，點一下加入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                fullSuggest.forEach { nm -> CuteChip(nm, false, { fullWho = nm }) }
+                            }
+                        }
                         Text("全額 ${formatMoney(actual)}，收到後這筆就不算你的支出。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                     } else {
                         rows.forEachIndexed { i, r ->
@@ -353,7 +370,7 @@ private fun ReimbHome(
                     }
                 }
             }
-            item { PillSegment(listOf("依對象", "依帳單", "已收款"), tab, { tab = it }, Modifier.fillMaxWidth()) }
+            item { PillSegment(listOf("依對象", "依帳單", "已收款"), tab, { tab = it }, Modifier.fillMaxWidth(), equal = true) }
 
             when (tab) {
                 0 -> {
@@ -454,6 +471,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     var pickDate by remember { mutableStateOf(false) }
     val overrides = remember { mutableStateMapOf<String, String>() }
     val chase = remember { mutableStateMapOf<String, Boolean>() }
+    var askChase by remember { mutableStateOf(false) }
 
     // 由舊到新自動分配；多收的算在最後一筆
     val amount = amountText.toLongOrNull() ?: 0L
@@ -467,6 +485,17 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     if (left > 0L && auto.isNotEmpty()) auto[auto.lastIndex] = auto.last() + left
     val alloc = claims.mapIndexed { i, c -> overrides[c.key]?.toLongOrNull() ?: auto[i] }
     val sum = alloc.sum()
+    // 收得比剩下的少、又還沒選要不要追的
+    val shortIdx = claims.indices.filter { alloc[it] in 1 until claims[it].item.remaining }
+    val undecided = shortIdx.filter { chase[claims[it].key] == null }
+
+    fun submit() {
+        val list = claims.indices.filter { alloc[it] > 0L }.map { i ->
+            ReimbReceipt(claims[i].txn.id, claims[i].index, alloc[i], chase[claims[i].key] != false)
+        }
+        vm.receiveReimb(list, accId, day)
+        onDone()
+    }
 
     SubPage("收款・${ownerLabel(who)}", onBack) {
         Column(Modifier.fillMaxSize()) {
@@ -515,7 +544,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                             Text("還差 ${formatMoney(c.item.remaining - a)}，要繼續追嗎？", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                             Spacer(Modifier.height(4.dp))
                             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                CuteChip("繼續追剩下的", chase[c.key] != false, { chase[c.key] = true })
+                                CuteChip("繼續追剩下的", chase[c.key] == true, { chase[c.key] = true })
                                 CuteChip("不追了（自己負擔）", chase[c.key] == false, { chase[c.key] = false })
                             }
                         }
@@ -527,13 +556,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
             }
             Box(Modifier.fillMaxWidth().background(cute.card).padding(horizontal = 16.dp, vertical = 10.dp)) {
                 Button(
-                    onClick = {
-                        val list = claims.indices.filter { alloc[it] > 0L }.map { i ->
-                            ReimbReceipt(claims[i].txn.id, claims[i].index, alloc[i], chase[claims[i].key] != false)
-                        }
-                        vm.receiveReimb(list, accId, day)
-                        onDone()
-                    },
+                    onClick = { if (undecided.isNotEmpty()) askChase = true else submit() },
                     enabled = sum > 0L,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("確認收款 ${formatMoney(sum)}") }
@@ -542,6 +565,37 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     }
     if (pickDate) {
         CuteDatePickerDialog(day, { day = it; pickDate = false }, { pickDate = false }, "收到報銷款的日期")
+    }
+    if (askChase) {
+        AlertDialog(
+            onDismissRequest = { askChase = false },
+            title = { Text("還有沒收到的款項") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    undecided.forEach { i ->
+                        Text("${billLabel(d, claims[i].txn)} 還差 ${formatMoney(claims[i].item.remaining - alloc[i])}")
+                    }
+                    Text("要繼續追剩下的嗎？選「不追了」的差額會算成你自己的支出。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    undecided.forEach { chase[claims[it].key] = true }
+                    askChase = false
+                    submit()
+                }) { Text("繼續追") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { askChase = false }) { Text("取消") }
+                    TextButton(onClick = {
+                        undecided.forEach { chase[claims[it].key] = false }
+                        askChase = false
+                        submit()
+                    }) { Text("不追了") }
+                }
+            },
+        )
     }
 }
 

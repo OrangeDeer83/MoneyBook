@@ -123,8 +123,9 @@ fun EditScreen(
     val origItems = remember { orig?.items ?: emptyList() }
     var reimbOn by rememberSaveable { mutableStateOf(origItems.isNotEmpty()) }
     var reimbFull by rememberSaveable {
-        mutableStateOf(origItems.isEmpty() || (origItems.size == 1 && origItems[0].who.isBlank() && origItems[0].amount >= (orig?.paid ?: 0L)))
+        mutableStateOf(origItems.isEmpty() || (origItems.size == 1 && origItems[0].amount >= (orig?.paid ?: 0L)))
     }
+    var reimbWho by rememberSaveable { mutableStateOf(origItems.singleOrNull()?.who ?: "") }
     var reimbJson by rememberSaveable { mutableStateOf(ReimbCodec.encode(origItems)) }
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
@@ -142,7 +143,7 @@ fun EditScreen(
     }
     val reimbItems: List<ReimbItem> = when {
         type != TxType.EXPENSE || !reimbOn -> emptyList()
-        reimbFull -> listOf((origItems.singleOrNull()?.takeIf { it.who.isBlank() } ?: ReimbItem("", 0L)).copy(amount = actual))
+        reimbFull -> listOf((origItems.singleOrNull() ?: ReimbItem("", 0L)).copy(who = reimbWho.trim(), amount = actual))
         else -> ReimbCodec.decode(reimbJson)
     }
     val cat = catId?.let { d.catMap[it] }
@@ -454,11 +455,13 @@ fun EditScreen(
             initOn = reimbOn,
             initFull = reimbFull,
             initJson = reimbJson,
+            initWho = reimbWho,
             names = d.reimbNames(),
-            onDone = { on2, full2, json2 ->
+            onDone = { on2, full2, json2, who2 ->
                 reimbOn = on2
                 reimbFull = full2
                 reimbJson = json2
+                reimbWho = who2
                 dialog = ""
             },
             onClose = { dialog = "" },

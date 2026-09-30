@@ -81,7 +81,13 @@ fun CatBubble(emoji: String, color: Int, size: Dp = 40.dp) {
 
 /** 膠囊狀的切換按鈕 */
 @Composable
-fun PillSegment(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun PillSegment(
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    equal: Boolean = false,
+) {
     val cute = LocalCute.current
     Row(
         modifier = modifier.clip(CircleShape).background(cute.soft).padding(3.dp),
@@ -90,7 +96,7 @@ fun PillSegment(options: List<String>, selected: Int, onSelect: (Int) -> Unit, m
         options.forEachIndexed { i, label ->
             val on = i == selected
             Box(
-                modifier = Modifier
+                modifier = (if (equal) Modifier.weight(1f) else Modifier)
                     .clip(CircleShape)
                     .background(if (on) cute.card else Color.Transparent)
                     .clickable { onSelect(i) }
@@ -255,7 +261,7 @@ fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -
         title = { Text("選一個圖示") },
         text = {
             Column {
-                PillSegment(listOf("表情符號", "圖片"), tab, { tab = it }, Modifier.fillMaxWidth())
+                PillSegment(listOf("表情符號", "圖片"), tab, { tab = it }, Modifier.fillMaxWidth(), equal = true)
                 Spacer(Modifier.height(10.dp))
                 val list = if (tab == 0) Defaults.emojis else AppImages.all.keys.toList()
                 LazyVerticalGrid(
