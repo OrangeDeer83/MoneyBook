@@ -104,7 +104,7 @@ fun mascotLine(mood: Mood, d: AppData, today: LocalDate = LocalDate.now()): Stri
     }
 }
 
-/** 吉祥物圖片；還沒有的表情（睡覺、歡呼）先用普通、開心代替 */
+/** 吉祥物圖片：每種動物有開心、普通、擔心、睡覺、歡呼五種表情 */
 private fun mascotRes(kind: String, mood: Mood): Int {
     return when (kind) {
         "deer" -> when (mood) {
@@ -118,36 +118,36 @@ private fun mascotRes(kind: String, mood: Mood): Int {
             Mood.HAPPY -> R.drawable.mascot_cat_happy
             Mood.NORMAL -> R.drawable.mascot_cat_normal
             Mood.WORRIED -> R.drawable.mascot_cat_worried
-            Mood.SLEEPY -> R.drawable.mascot_cat_normal
-            Mood.CHEER -> R.drawable.mascot_cat_happy
+            Mood.SLEEPY -> R.drawable.mascot_cat_sleepy
+            Mood.CHEER -> R.drawable.mascot_cat_cheer
         }
         "bear" -> when (mood) {
             Mood.HAPPY -> R.drawable.mascot_bear_happy
             Mood.NORMAL -> R.drawable.mascot_bear_normal
             Mood.WORRIED -> R.drawable.mascot_bear_worried
-            Mood.SLEEPY -> R.drawable.mascot_bear_normal
-            Mood.CHEER -> R.drawable.mascot_bear_happy
+            Mood.SLEEPY -> R.drawable.mascot_bear_sleepy
+            Mood.CHEER -> R.drawable.mascot_bear_cheer
         }
         "bunny" -> when (mood) {
             Mood.HAPPY -> R.drawable.mascot_bunny_happy
             Mood.NORMAL -> R.drawable.mascot_bunny_normal
             Mood.WORRIED -> R.drawable.mascot_bunny_worried
-            Mood.SLEEPY -> R.drawable.mascot_bunny_normal
-            Mood.CHEER -> R.drawable.mascot_bunny_happy
+            Mood.SLEEPY -> R.drawable.mascot_bunny_sleepy
+            Mood.CHEER -> R.drawable.mascot_bunny_cheer
         }
         "dog" -> when (mood) {
             Mood.HAPPY -> R.drawable.mascot_dog_happy
             Mood.NORMAL -> R.drawable.mascot_dog_normal
             Mood.WORRIED -> R.drawable.mascot_dog_worried
-            Mood.SLEEPY -> R.drawable.mascot_dog_normal
-            Mood.CHEER -> R.drawable.mascot_dog_happy
+            Mood.SLEEPY -> R.drawable.mascot_dog_sleepy
+            Mood.CHEER -> R.drawable.mascot_dog_cheer
         }
         "schnauzer" -> when (mood) {
             Mood.HAPPY -> R.drawable.mascot_schnauzer_happy
             Mood.NORMAL -> R.drawable.mascot_schnauzer_normal
             Mood.WORRIED -> R.drawable.mascot_schnauzer_worried
-            Mood.SLEEPY -> R.drawable.mascot_schnauzer_normal
-            Mood.CHEER -> R.drawable.mascot_schnauzer_happy
+            Mood.SLEEPY -> R.drawable.mascot_schnauzer_sleepy
+            Mood.CHEER -> R.drawable.mascot_schnauzer_cheer
         }
         else -> R.drawable.mascot_deer_normal
     }
