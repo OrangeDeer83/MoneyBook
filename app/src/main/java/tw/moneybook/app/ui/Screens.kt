@@ -113,7 +113,11 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, onClick: () -> Unit) {
                 if (t.reimb != 0) {
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        (if (t.reimb == 1) "待報銷" else "已報銷") + if (t.reimbAmount < t.paid) " ${formatMoney(t.reimbAmount)}" else "",
+                        (if (t.reimb == 1) "待報銷" else "已報銷") + when {
+                            t.reimb == 1 && t.reimbOutstanding < t.reimbAmount -> " 剩${formatMoney(t.reimbOutstanding)}"
+                            t.reimbAmount < t.paid -> " ${formatMoney(t.reimbAmount)}"
+                            else -> ""
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = if (t.reimb == 1) cute.expense else cute.income,
                         modifier = Modifier.clip(CircleShape)
@@ -323,7 +327,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "🧾 待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbAmount })}  ›",
+                            "🧾 待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbOutstanding })}  ›",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                         )

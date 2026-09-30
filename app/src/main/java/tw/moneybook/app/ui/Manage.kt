@@ -60,6 +60,9 @@ import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.TxType
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.pendingReimb
+import tw.moneybook.app.ReimbItem
+import tw.moneybook.app.ReimbReceipt
+import tw.moneybook.app.Txn
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -112,7 +115,7 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
                 MenuRow("📒", "帳本管理", "目前：${d.currentBook.name}") { open("books") }
                 MenuRow("👛", "帳戶管理", "${d.visibleAccounts.size} 個帳戶") { open("accounts") }
                 MenuRow("🗂️", "分類管理", "新增、改圖示、子分類、排序") { open("categories") }
-                MenuRow("🧾", "報銷", d.bookTxns.pendingReimb().let { p -> if (p.isEmpty()) "沒有待報銷的項目" else "待報銷 ${p.size} 筆・${formatMoney(p.sumOf { it.reimbAmount })}" }) { open("reimb") }
+                MenuRow("🧾", "報銷", d.bookTxns.pendingReimb().let { p -> if (p.isEmpty()) "沒有待報銷的項目" else "待報銷 ${p.size} 筆・${formatMoney(p.sumOf { it.reimbOutstanding })}" }) { open("reimb") }
                 MenuRow("⭐", "常用記帳", if (d.templates.isEmpty()) "在記一筆畫面按「存為常用」" else "${d.templates.size} 個") { open("templates") }
                 MenuRow(
                     "🎯", "每月預算",
@@ -930,15 +933,21 @@ private fun DataCard(title: String, desc: String, action: String, onClick: () ->
 
 // ───────────────────────── 報銷 ─────────────────────────
 
+/** 報銷頁面裡的一個待收款項：某筆帳的某個報銷對象 */
+private class ReimbTarget(val txn: Txn, val index: Int, val item: ReimbItem) {
+    val key: String get() = "${txn.id}:$index"
+}
+
 @Composable
 fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
     val pending = d.bookTxns.pendingReimb()
     val done = d.bookTxns.filter { it.type == TxType.EXPENSE && it.reimb == 2 }.take(50)
-    var selected by remember { mutableStateOf(setOf<Long>()) }
+    val targets = pending.flatMap { t -> t.items.mapIndexedNotNull { i, item -> if (item.closed) null else ReimbTarget(t, i, item) } }
+    var selected by remember { mutableStateOf(setOf<String>()) }
     var confirm by remember { mutableStateOf(false) }
-    val selSum = pending.filter { it.id in selected }.sumOf { it.reimbAmount }
+    val selSum = targets.filter { it.key in selected }.sumOf { it.item.remaining }
 
     SubPage("報銷", onBack) {
         Column(Modifier.fillMaxSize()) {
@@ -949,10 +958,10 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             ) {
                 item {
                     CuteCard(Modifier.fillMaxWidth()) {
-                        Text("待報銷合計", style = MaterialTheme.typography.labelLarge, color = cute.sub)
-                        Text(formatMoney(pending.sumOf { it.reimbAmount }), style = MaterialTheme.typography.headlineMedium)
+                        Text("還沒收到的報銷款", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                        Text(formatMoney(pending.sumOf { it.reimbOutstanding }), style = MaterialTheme.typography.headlineMedium)
                         Text(
-                            "可以報銷的部分不會算進你的支出統計和預算，沒報銷到的差額才算你自己的花費。收到錢時勾選項目，按「收到報銷款」，每筆可以填實際收到的金額。",
+                            "可以報銷的部分不會算進你的支出統計和預算。每個對象可以分次收款：收到時勾選對象，按「收到報銷款」填實際收到的金額；如果比應收少，可以選擇繼續追，或不追了（不追的差額會算成你自己的支出）。",
                             style = MaterialTheme.typography.bodySmall, color = cute.sub,
                         )
                     }
@@ -964,21 +973,40 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("待報銷 ${pending.size} 筆", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             TextButton(onClick = {
-                                selected = if (selected.size == pending.size) emptySet() else pending.map { it.id }.toSet()
-                            }) { Text(if (selected.size == pending.size) "全部取消" else "全選") }
+                                selected = if (selected.size == targets.size) emptySet() else targets.map { it.key }.toSet()
+                            }) { Text(if (selected.size == targets.size) "全部取消" else "全選") }
                         }
                     }
                     items(pending, key = { it.id }) { t ->
-                        val on = t.id in selected
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier.size(26.dp).clip(RoundedCornerShape(8.dp))
-                                    .background(if (on) MaterialTheme.colorScheme.primary else cute.soft)
-                                    .clickable { selected = if (on) selected - t.id else selected + t.id },
-                                contentAlignment = Alignment.Center,
-                            ) { if (on) Text("✓", color = MaterialTheme.colorScheme.onPrimary) }
-                            Spacer(Modifier.width(8.dp))
-                            Box(Modifier.weight(1f)) { TxnRow(d, t) { onEdit(t.id) } }
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TxnRow(d, t) { onEdit(t.id) }
+                            t.items.forEachIndexed { i, item ->
+                                if (!item.closed) {
+                                    val key = "${t.id}:$i"
+                                    val on = key in selected
+                                    Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            Modifier.size(26.dp).clip(RoundedCornerShape(8.dp))
+                                                .background(if (on) MaterialTheme.colorScheme.primary else cute.soft)
+                                                .clickable { selected = if (on) selected - key else selected + key },
+                                            contentAlignment = Alignment.Center,
+                                        ) { if (on) Text("✓", color = MaterialTheme.colorScheme.onPrimary) }
+                                        Spacer(Modifier.width(8.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(item.who.ifBlank { "報銷款" }, style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                "應收 ${formatMoney(item.amount)}" +
+                                                    (if (item.received > 0L) "・已收 ${formatMoney(item.received)}" else "") +
+                                                    "・還剩 ${formatMoney(item.remaining)}",
+                                                style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            if (t.items.any { it.pays.isNotEmpty() }) {
+                                TextButton(onClick = { vm.resetReimb(t.id) }, modifier = Modifier.padding(start = 4.dp)) { Text("清除這筆的收款紀錄") }
+                            }
                         }
                     }
                 }
@@ -987,25 +1015,38 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
                     items(done, key = { "done${it.id}" }) { t ->
                         Column {
                             TxnRow(d, t) { onEdit(t.id) }
-                            val acc = t.reimbAccountId?.let { d.accMap[it] }
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 12.dp)) {
-                                Text(
-                                    "${t.reimbDay?.let { dayLabel(it) } ?: ""} 收到 ${formatMoney(t.reimbAmount)}・存入 ${acc?.name ?: "未指定帳戶"}",
-                                    style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f),
-                                )
-                                TextButton(onClick = { vm.undoReimbursed(t.id) }) { Text("改回待報銷") }
+                            t.items.forEach { item ->
+                                val name = item.who.ifBlank { "報銷款" }
+                                item.pays.forEach { pay ->
+                                    val acc = pay.accountId?.let { d.accMap[it] }
+                                    Text(
+                                        "$name・${dayLabel(pay.day)} 收到 ${formatMoney(pay.amount)}・存入 ${acc?.name ?: "未指定帳戶"}",
+                                        style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                                        modifier = Modifier.padding(start = 12.dp),
+                                    )
+                                }
+                                if (item.closed && item.received < item.amount) {
+                                    Text(
+                                        "$name・少收 ${formatMoney(item.amount - item.received)}，不追了，已算進你的支出",
+                                        style = MaterialTheme.typography.labelMedium, color = cute.expense,
+                                        modifier = Modifier.padding(start = 12.dp),
+                                    )
+                                }
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                TextButton(onClick = { vm.resetReimb(t.id) }) { Text("改回待報銷") }
                             }
                         }
                     }
                 }
             }
-            if (pending.isNotEmpty()) {
+            if (targets.isNotEmpty()) {
                 Row(
                     Modifier.fillMaxWidth().background(cute.card).padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("已選 ${selected.size} 筆", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Text("已選 ${selected.size} 項", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         Text(formatMoney(selSum), style = MaterialTheme.typography.titleMedium)
                     }
                     Button(onClick = { confirm = true }, enabled = selected.isNotEmpty()) { Text("收到報銷款") }
@@ -1015,39 +1056,57 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
     }
 
     if (confirm) {
-        val chosen = pending.filter { it.id in selected }
+        val chosen = targets.filter { it.key in selected }
         var accId by remember { mutableStateOf(d.visibleAccounts.firstOrNull()?.id) }
         var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
         var pickDate by remember { mutableStateOf(false) }
-        val amounts = remember { mutableStateOf(chosen.associate { it.id to it.reimbAmount.toString() }) }
-        val total = chosen.sumOf { (amounts.value[it.id]?.toLongOrNull() ?: 0L).coerceIn(0L, it.reimbCap) }
+        val amounts = remember { mutableStateOf(chosen.associate { it.key to it.item.remaining.toString() }) }
+        val chase = remember { mutableStateOf(chosen.associate { it.key to true }) }
+        fun amtOf(tg: ReimbTarget): Long = amounts.value[tg.key]?.toLongOrNull() ?: 0L
+        val total = chosen.sumOf { amtOf(it) }
         AlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text("收到報銷款 ${formatMoney(total)}") },
             text = {
                 Column(
-                    Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                    Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("每筆實際收到多少？", style = MaterialTheme.typography.labelLarge, color = cute.sub)
-                    chosen.forEach { t ->
-                        val c = t.categoryId?.let { d.catMap[it] }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(iconLabel(c?.emoji ?: "img:cat_box", c?.name ?: "未分類"), maxLines = 1)
-                                Text(
-                                    "${shortDate(t.day)}・實付 ${formatMoney(t.paid)}",
-                                    style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                    Text("每個對象實際收到多少？", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                    chosen.forEach { tg ->
+                        val c = tg.txn.categoryId?.let { d.catMap[it] }
+                        val short = amtOf(tg) < tg.item.remaining
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        iconLabel(c?.emoji ?: "img:cat_box", c?.name ?: "未分類") + if (tg.item.who.isNotBlank()) "・${tg.item.who}" else "",
+                                        maxLines = 1,
+                                    )
+                                    Text(
+                                        "${shortDate(tg.txn.day)}・還剩 ${formatMoney(tg.item.remaining)}",
+                                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                                    )
+                                }
+                                OutlinedTextField(
+                                    amounts.value[tg.key] ?: "",
+                                    { v -> amounts.value = amounts.value + (tg.key to v.filter { ch -> ch.isDigit() }.take(9)) },
+                                    prefix = { Text("$") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.width(120.dp),
                                 )
                             }
-                            OutlinedTextField(
-                                amounts.value[t.id] ?: "",
-                                { v -> amounts.value = amounts.value + (t.id to v.filter { ch -> ch.isDigit() }.take(9)) },
-                                prefix = { Text("$") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.width(120.dp),
-                            )
+                            if (short) {
+                                Text(
+                                    "還差 ${formatMoney(tg.item.remaining - amtOf(tg))}，要繼續追嗎？",
+                                    style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                                )
+                                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    CuteChip("繼續追剩下的", chase.value[tg.key] != false, { chase.value = chase.value + (tg.key to true) })
+                                    CuteChip("不追了（自己負擔）", chase.value[tg.key] == false, { chase.value = chase.value + (tg.key to false) })
+                                }
+                            }
                         }
                     }
                     Text("錢存進哪個帳戶？", style = MaterialTheme.typography.labelLarge, color = cute.sub)
@@ -1059,8 +1118,10 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val map = chosen.associate { t -> t.id to ((amounts.value[t.id]?.toLongOrNull() ?: 0L).coerceIn(0L, t.reimbCap)) }
-                    vm.markReimbursed(map, accId, day)
+                    vm.receiveReimb(
+                        chosen.map { ReimbReceipt(it.txn.id, it.index, amtOf(it), chase.value[it.key] != false) },
+                        accId, day,
+                    )
                     selected = emptySet()
                     confirm = false
                 }) { Text("確認") }

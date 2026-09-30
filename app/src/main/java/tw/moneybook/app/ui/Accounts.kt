@@ -109,17 +109,19 @@ fun AccountDetailScreen(
     var month by remember { mutableStateOf(vm.month) }
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     // 這個帳戶相關的記錄（所有帳本）
-    val all = d.txns.filter { it.accountId == a.id || it.toAccountId == a.id || (it.reimb == 2 && it.reimbAccountId == a.id) }
+    val all = d.txns.filter { it.accountId == a.id || it.toAccountId == a.id || it.items.any { i -> i.pays.any { pay -> pay.accountId == a.id } } }
     val monthList = all.inMonth(month)
-    val reimbIn = d.txns.filter { it.reimb == 2 && it.reimbAccountId == a.id && it.reimbDay != null }
-        .filter { val rd = LocalDate.ofEpochDay(it.reimbDay ?: 0L); rd.year == month.year && rd.monthValue == month.monthValue }
+    // 這個帳戶這個月收到的報銷款（每一筆收款各算一筆）
+    val reimbIn = d.txns.flatMap { t -> t.items.flatMap { i -> i.pays.map { pay -> Triple(t, i.who, pay) } } }
+        .filter { it.third.accountId == a.id }
+        .filter { val rd = LocalDate.ofEpochDay(it.third.day); rd.year == month.year && rd.monthValue == month.monthValue }
 
     fun flow(t: Txn): Long = when (t.type) {
         TxType.EXPENSE -> if (t.accountId == a.id) -t.paid else 0L
         TxType.INCOME -> if (t.accountId == a.id) t.paid else 0L
         TxType.TRANSFER -> (if (t.toAccountId == a.id) t.amount else 0L) - (if (t.accountId == a.id) t.amount + t.fee else 0L)
     }
-    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.reimbAmount }
+    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.third.amount }
     val inflow = flows.filter { it > 0 }.sum()
     val outflow = -flows.filter { it < 0 }.sum()
 
@@ -169,8 +171,8 @@ fun AccountDetailScreen(
             if (monthList.isEmpty() && reimbIn.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "這個月這個帳戶沒有記錄") }
             }
-            reimbIn.forEach { t ->
-                item(key = "r${t.id}") {
+            reimbIn.forEachIndexed { n, (t, who, pay) ->
+                item(key = "r${t.id}_$n") {
                     val c = t.categoryId?.let { d.catMap[it] }
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card)
@@ -180,13 +182,13 @@ fun AccountDetailScreen(
                         CatBubble("🧾", 2, 40.dp)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("報銷入帳", style = MaterialTheme.typography.bodyLarge)
+                            Text("報銷入帳" + if (who.isNotBlank()) "・$who" else "", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                "${t.reimbDay?.let { dayLabel(it) } ?: ""}・${c?.name ?: ""}",
+                                "${dayLabel(pay.day)}・${c?.name ?: ""}",
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
                             )
                         }
-                        Text("+" + formatMoney(t.reimbAmount), color = cute.income, fontWeight = FontWeight.SemiBold)
+                        Text("+" + formatMoney(pay.amount), color = cute.income, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

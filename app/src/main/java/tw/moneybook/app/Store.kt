@@ -70,6 +70,7 @@ object Codec {
                         .put("fee", t.fee).put("discount", t.discount).put("reimb", t.reimb)
                         .put("reimbAccountId", nullable(t.reimbAccountId)).put("reimbDay", nullable(t.reimbDay))
                         .put("reimbAmount", t.reimbAmount)
+                        .put("reimbItems", ReimbCodec.toJson(t.reimbItems))
                 )
             }
         })
@@ -154,6 +155,7 @@ object Codec {
                 reimbAccountId = o.optLongOrNull("reimbAccountId"),
                 reimbDay = o.optLongOrNull("reimbDay"),
                 reimbAmount = o.optLong("reimbAmount", -1L),
+                reimbItems = ReimbCodec.fromJson(o.optJSONArray("reimbItems")),
             )
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
@@ -505,4 +507,43 @@ object CsvIO {
         )
         return Pair(d, added.size)
     }
+}
+
+/** 報銷明細的 JSON 轉換（存檔用；記一筆畫面也用它把明細暫存成文字） */
+object ReimbCodec {
+    fun toJson(list: List<ReimbItem>): JSONArray = JSONArray().apply {
+        list.forEach { i ->
+            put(
+                JSONObject().put("who", i.who).put("amount", i.amount).put("closed", i.closed)
+                    .put(
+                        "pays",
+                        JSONArray().apply {
+                            i.pays.forEach { p ->
+                                put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount))
+                            }
+                        },
+                    )
+            )
+        }
+    }
+
+    fun fromJson(arr: JSONArray?): List<ReimbItem> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<ReimbItem>()
+        for (n in 0 until arr.length()) {
+            val o = arr.getJSONObject(n)
+            val pa = o.optJSONArray("pays")
+            val pays = ArrayList<ReimbPay>()
+            if (pa != null) for (k in 0 until pa.length()) {
+                val po = pa.getJSONObject(k)
+                pays.add(ReimbPay(po.optLong("day", 0L), if (po.isNull("accountId")) null else po.getLong("accountId"), po.optLong("amount", 0L)))
+            }
+            out.add(ReimbItem(o.optString("who", ""), o.optLong("amount", 0L), pays, o.optBoolean("closed", false)))
+        }
+        return out
+    }
+
+    fun encode(list: List<ReimbItem>): String = if (list.isEmpty()) "" else toJson(list).toString()
+
+    fun decode(s: String): List<ReimbItem> = if (s.isBlank()) emptyList() else try { fromJson(JSONArray(s)) } catch (e: Exception) { emptyList() }
 }

@@ -36,13 +36,31 @@ data class TxnDraft(
     val installments: Int,
     val fee: Long = 0L,
     val discount: Long = 0L,
-    val reimb: Int = 0,
-    /** 報銷金額，-1 代表全額 */
-    val reimbAmount: Long = -1L,
+    /** 報銷明細（每個對象一項），空的代表不報銷 */
+    val reimbItems: List<ReimbItem> = emptyList(),
 )
 
-/** want = -1 代表全額（實付）；上限是原價 + 手續費 */
-private fun reimbOf(t: Txn, want: Long): Long = if (want < 0) t.paid else want.coerceIn(0L, t.reimbCap)
+/** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
+class ReimbReceipt(val txnId: Long, val index: Int, val amount: Long, val chase: Boolean)
+
+/** 報銷總額不能超過原價 + 手續費；沒有收款紀錄又是 0 元的對象直接拿掉 */
+private fun capItems(t: Txn, items: List<ReimbItem>): List<ReimbItem> {
+    var left = t.reimbCap
+    val out = ArrayList<ReimbItem>()
+    for (i in items) {
+        if (i.closed || i.pays.isNotEmpty()) {
+            left -= i.effective
+            out.add(i)
+        } else {
+            val a = i.amount.coerceIn(0L, left.coerceAtLeast(0L))
+            if (a > 0L) {
+                left -= a
+                out.add(i.copy(amount = a))
+            }
+        }
+    }
+    return out
+}
 
 class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -99,10 +117,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 accountId = dr.accountId, toAccountId = dr.toAccountId, day = dr.day,
                 note = dr.note, tags = dr.tags,
                 fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
-                reimb = if (dr.type == TxType.EXPENSE) dr.reimb else 0,
-                reimbAccountId = if (dr.type == TxType.EXPENSE && dr.reimb == 2) old.reimbAccountId else null,
-                reimbDay = if (dr.type == TxType.EXPENSE && dr.reimb == 2) old.reimbDay else null,
-            ).let { it.copy(reimbAmount = if (it.reimb != 0) reimbOf(it, dr.reimbAmount) else 0L) }
+            ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             return
         }
@@ -117,8 +132,12 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     categoryId = dr.categoryId, accountId = dr.accountId, toAccountId = dr.toAccountId,
                     day = dr.day, note = dr.note, tags = dr.tags,
                     fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
-                    reimb = if (dr.type == TxType.EXPENSE && dr.reimb == 1) 1 else 0,
-                ).let { it.copy(reimbAmount = if (it.reimb != 0) reimbOf(it, dr.reimbAmount) else 0L) }
+                ).let {
+                    it.withItems(
+                        if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
+                        else emptyList()
+                    )
+                }
             )
         } else {
             val group = next
@@ -136,10 +155,12 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                         instGroup = group, instIndex = i + 1, instTotal = n,
                         fee = if (i == 0) dr.fee else 0L,
                         discount = if (i == 0) dr.discount else 0L,
-                        reimb = if (dr.reimb == 1) 1 else 0,
                     ).let {
-                        val share = if (dr.reimbAmount < 0) -1L else dr.reimbAmount / n + if (i == 0) dr.reimbAmount % n else 0L
-                        it.copy(reimbAmount = if (it.reimb != 0) reimbOf(it, share) else 0L)
+                        // 每個報銷對象的金額也平均分到每一期
+                        val shares = dr.reimbItems.map { r ->
+                            r.copy(amount = r.amount / n + if (i == 0) r.amount % n else 0L, pays = emptyList(), closed = false)
+                        }
+                        it.withItems(capItems(it, shares))
                     }
                 )
             }
@@ -182,21 +203,32 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     // ───────── 報銷 ─────────
 
-    /** amounts：每筆實際收到的報銷金額 */
-    fun markReimbursed(amounts: Map<Long, Long>, accountId: Long?, day: Long) {
+    /** 收到報銷款：每一筆收款對應一個報銷對象；收齊自動結案，沒收齊時看 chase 決定繼續追或結案不追 */
+    fun receiveReimb(list: List<ReimbReceipt>, accountId: Long?, day: Long) {
         update { d ->
-            d.copy(txns = d.txns.map {
-                val a = amounts[it.id]
-                if (a != null && it.reimb == 1) it.copy(reimb = 2, reimbAccountId = accountId, reimbDay = day, reimbAmount = a.coerceIn(0L, it.reimbCap)) else it
+            d.copy(txns = d.txns.map { t ->
+                val mine = list.filter { it.txnId == t.id }
+                if (mine.isEmpty()) t
+                else {
+                    val items = t.items.toMutableList()
+                    for (r in mine) {
+                        val cur = items.getOrNull(r.index) ?: continue
+                        if (cur.closed) continue
+                        val pays = if (r.amount > 0L) cur.pays + ReimbPay(day, accountId, r.amount) else cur.pays
+                        items[r.index] = cur.copy(pays = pays, closed = pays.sumOf { it.amount } >= cur.amount || !r.chase)
+                    }
+                    t.withItems(items)
+                }
             })
         }
-        toast("已收到 ${amounts.size} 筆報銷，共 ${formatMoney(amounts.values.sum())}")
+        toast("已收到 ${list.count { it.amount > 0L }} 筆報銷，共 ${formatMoney(list.sumOf { it.amount })}")
     }
 
-    fun undoReimbursed(id: Long) {
+    /** 清掉這筆的收款紀錄，全部改回待報銷 */
+    fun resetReimb(id: Long) {
         update { d ->
             d.copy(txns = d.txns.map {
-                if (it.id == id && it.reimb == 2) it.copy(reimb = 1, reimbAccountId = null, reimbDay = null) else it
+                if (it.id == id && it.reimb != 0) it.withItems(it.items.map { i -> i.copy(pays = emptyList(), closed = false) }) else it
             })
         }
     }

@@ -54,6 +54,28 @@ data class Category(
     val order: Int,
 )
 
+/** 一筆實際收到的報銷款 */
+data class ReimbPay(val day: Long, val accountId: Long?, val amount: Long)
+
+/**
+ * 一個報銷對象（例如幫 5 個人付款，每個人一項）：應收金額與實際收款紀錄。
+ * 可以分次收款；收到的比應收少時，可以選擇繼續追，或結案不追了（不追的部分算自己的支出）。
+ */
+data class ReimbItem(
+    val who: String = "",
+    val amount: Long,
+    val pays: List<ReimbPay> = emptyList(),
+    val closed: Boolean = false,
+) {
+    val received: Long get() = pays.sumOf { it.amount }
+
+    /** 還沒收到的金額（結案後就沒有了） */
+    val remaining: Long get() = if (closed) 0L else (amount - received).coerceAtLeast(0L)
+
+    /** 算進「報銷、不算支出」的金額：還在追就用應收，結案後只算實際收到的 */
+    val effective: Long get() = if (closed) received else amount
+}
+
 data class Txn(
     val id: Long,
     val bookId: Long,
@@ -76,6 +98,8 @@ data class Txn(
     val reimbDay: Long? = null,
     /** 可報銷／已報銷的金額（可以少於實付，代表部分報銷） */
     val reimbAmount: Long = 0L,
+    /** 各報銷對象的明細；舊資料沒有這個欄位，由上面的舊欄位換算（見 items） */
+    val reimbItems: List<ReimbItem> = emptyList(),
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -87,6 +111,28 @@ data class Txn(
             TxType.INCOME -> (amount - fee).coerceAtLeast(0L)
             TxType.TRANSFER -> amount
         }
+
+    /** 報銷明細：新資料用 reimbItems，舊資料（只有單一報銷）換算成一個對象 */
+    val items: List<ReimbItem>
+        get() = when {
+            reimbItems.isNotEmpty() -> reimbItems
+            reimb == 1 -> listOf(ReimbItem("", reimbAmount))
+            reimb == 2 -> listOf(ReimbItem("", reimbAmount, listOf(ReimbPay(reimbDay ?: day, reimbAccountId, reimbAmount)), true))
+            else -> emptyList()
+        }
+
+    /** 還沒收到的報銷款 */
+    val reimbOutstanding: Long get() = if (type == TxType.EXPENSE) items.sumOf { it.remaining } else 0L
+
+    /** 換上新的報銷明細，並更新 reimb（0 無、1 有沒收完的、2 全部結案）與 reimbAmount（不算支出的金額） */
+    fun withItems(list: List<ReimbItem>): Txn =
+        if (list.isEmpty()) copy(reimb = 0, reimbAmount = 0L, reimbAccountId = null, reimbDay = null, reimbItems = emptyList())
+        else copy(
+            reimb = if (list.all { it.closed }) 2 else 1,
+            reimbAmount = list.sumOf { it.effective },
+            reimbAccountId = null, reimbDay = null,
+            reimbItems = list,
+        )
 
     /** 報銷上限：原價 + 手續費（刷卡有優惠時，對方可能還是給你原價） */
     val reimbCap: Long get() = if (type == TxType.EXPENSE) amount + fee else 0L
@@ -168,7 +214,7 @@ data class AppData(
                     t.toAccountId?.let { m[it] = (m[it] ?: 0L) + t.amount }
                 }
             }
-            if (t.reimb == 2) t.reimbAccountId?.let { m[it] = (m[it] ?: 0L) + t.reimbAmount }
+            for (p in t.items.flatMap { it.pays }) p.accountId?.let { m[it] = (m[it] ?: 0L) + p.amount }
         }
         return m
     }

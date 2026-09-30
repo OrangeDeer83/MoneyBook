@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -43,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -64,6 +67,8 @@ import tw.moneybook.app.AppData
 import tw.moneybook.app.Calc
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.TxType
+import tw.moneybook.app.ReimbCodec
+import tw.moneybook.app.ReimbItem
 import tw.moneybook.app.TxnDraft
 import tw.moneybook.app.formatMoney
 import java.time.LocalDate
@@ -112,10 +117,13 @@ fun EditScreen(
     var inst by rememberSaveable { mutableIntStateOf(1) }
     var fee by rememberSaveable { mutableLongStateOf(orig?.fee ?: 0L) }
     var discount by rememberSaveable { mutableLongStateOf(orig?.discount ?: 0L) }
-    var reimb by rememberSaveable { mutableIntStateOf(orig?.reimb ?: 0) }
-    var reimbAmt by rememberSaveable {
-        mutableLongStateOf(if (orig != null && orig.reimb != 0 && orig.reimbAmount < orig.paid) orig.reimbAmount else -1L)
+    // 報銷：reimbFull = 一個人、全額（金額跟著實付走）；否則用 reimbJson 存多個對象
+    val origItems = remember { orig?.items ?: emptyList() }
+    var reimbOn by rememberSaveable { mutableStateOf(origItems.isNotEmpty()) }
+    var reimbFull by rememberSaveable {
+        mutableStateOf(origItems.isEmpty() || (origItems.size == 1 && origItems[0].who.isBlank() && origItems[0].amount >= (orig?.paid ?: 0L)))
     }
+    var reimbJson by rememberSaveable { mutableStateOf(ReimbCodec.encode(origItems)) }
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     val focus = LocalFocusManager.current
@@ -129,6 +137,11 @@ fun EditScreen(
         TxType.EXPENSE -> (amount - effDiscount + fee).coerceAtLeast(0L)
         TxType.INCOME -> (amount - fee).coerceAtLeast(0L)
         TxType.TRANSFER -> amount + fee
+    }
+    val reimbItems: List<ReimbItem> = when {
+        type != TxType.EXPENSE || !reimbOn -> emptyList()
+        reimbFull -> listOf((origItems.singleOrNull()?.takeIf { it.who.isBlank() } ?: ReimbItem("", 0L)).copy(amount = actual))
+        else -> ReimbCodec.decode(reimbJson)
     }
     val cat = catId?.let { d.catMap[it] }
     val parent = cat?.let { d.topOf(it) }
@@ -147,8 +160,7 @@ fun EditScreen(
         installments = if (orig == null && type == TxType.EXPENSE) inst else 1,
         fee = fee,
         discount = effDiscount,
-        reimb = if (type == TxType.EXPENSE) reimb else 0,
-        reimbAmount = reimbAmt,
+        reimbItems = reimbItems,
     )
 
     val initialDraft = remember { draft() }
@@ -395,10 +407,16 @@ fun EditScreen(
             }
             CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" })
             if (type == TxType.EXPENSE && !tplMode) {
-                val part = if (reimbAmt >= 0 && reimbAmt != actual) " ${formatMoney(reimbAmt)}" else ""
+                val totalReimb = reimbItems.sumOf { it.effective }
+                val part = if (reimbItems.isNotEmpty() && totalReimb != actual) " ${formatMoney(totalReimb)}" else ""
+                val people = if (reimbItems.size > 1) "・${reimbItems.size} 人" else ""
                 CuteChip(
-                    when (reimb) { 1 -> "🧾 待報銷$part"; 2 -> "✅ 已報銷$part"; else -> "🧾 報銷" },
-                    reimb != 0,
+                    when {
+                        reimbItems.isEmpty() -> "🧾 報銷"
+                        reimbItems.all { it.closed } -> "✅ 已報銷$part"
+                        else -> "🧾 待報銷$part$people"
+                    },
+                    reimbItems.isNotEmpty(),
                     { dialog = "reimb" },
                 )
             }
@@ -427,39 +445,74 @@ fun EditScreen(
     // ───── 對話框 ─────
     when (dialog) {
         "reimb" -> {
-            var on by remember { mutableStateOf(reimb != 0) }
-            var full by remember { mutableStateOf(reimbAmt < 0) }
-            var text by remember { mutableStateOf(if (reimbAmt >= 0) reimbAmt.toString() else "") }
+            var on by remember { mutableStateOf(reimbOn) }
+            var full by remember { mutableStateOf(reimbFull) }
+            val hasPays = origItems.any { it.pays.isNotEmpty() }
+            val rows = remember {
+                mutableStateListOf<ReimbRow>().apply {
+                    val src = if (reimbFull) origItems.map { if (it.pays.isEmpty() && !it.closed) it.copy(amount = actual) else it } else ReimbCodec.decode(reimbJson)
+                    if (src.isEmpty()) add(ReimbRow(null, "", actual.toString()))
+                    else src.forEach { add(if (it.pays.isNotEmpty() || it.closed) ReimbRow(it, it.who, it.amount.toString()) else ReimbRow(null, it.who, it.amount.toString())) }
+                }
+            }
+            val cap = amount + fee
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = { Text("報銷") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(
+                        Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("這筆可以報銷", modifier = Modifier.weight(1f))
-                            androidx.compose.material3.Switch(checked = on, onCheckedChange = { on = it })
+                            androidx.compose.material3.Switch(checked = on, onCheckedChange = { on = it }, enabled = !hasPays)
+                        }
+                        if (hasPays) {
+                            Text("已經有收款紀錄，要清除請到「我的 → 報銷」。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                         }
                         if (on) {
+                            val lockedAny = rows.any { it.locked != null }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                CuteChip("全額 ${formatMoney(actual)}", full, { full = true })
-                                CuteChip("部分報銷", !full, { full = false })
+                                if (!(lockedAny && !full)) CuteChip("一人・全額 ${formatMoney(actual)}", full, { full = true })
+                                CuteChip("分給多人／部分", !full, { full = false })
                             }
                             if (!full) {
-                                OutlinedTextField(
-                                    text, { text = it.filter { c -> c.isDigit() }.take(9) },
-                                    label = { Text("可以報銷的金額") }, prefix = { Text("$") }, singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                                val a = (text.toLongOrNull() ?: 0L).coerceIn(0L, amount + fee)
+                                rows.forEachIndexed { i, r ->
+                                    val lk = r.locked
+                                    if (lk != null) {
+                                        Text(
+                                            "${lk.who.ifBlank { "（沒填對象）" }}・應收 ${formatMoney(lk.amount)}・已收 ${formatMoney(lk.received)}" + if (lk.closed) "・已結案" else "",
+                                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                                        )
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            OutlinedTextField(
+                                                r.who, { r.who = it.take(12) },
+                                                label = { Text("對象（選填）") }, singleLine = true,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            OutlinedTextField(
+                                                r.amt, { r.amt = it.filter { c -> c.isDigit() }.take(9) },
+                                                prefix = { Text("$") }, singleLine = true,
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                modifier = Modifier.width(104.dp),
+                                            )
+                                            TextButton(onClick = { rows.removeAt(i) }) { Text("✕") }
+                                        }
+                                    }
+                                }
+                                TextButton(onClick = { rows.add(ReimbRow(null, "", "")) }) { Text("＋ 新增對象") }
+                                val total = rows.sumOf { it.locked?.effective ?: (it.amt.toLongOrNull() ?: 0L) }
                                 Text(
-                                    if (a > actual) "比實付多 ${formatMoney(a - actual)}（例如刷卡優惠），收到後這部分會算成收入。"
-                                    else "自己負擔 ${formatMoney(actual - a)}，這部分會算進支出統計。",
+                                    when {
+                                        total > cap -> "合計超過可報銷的上限 ${formatMoney(cap)}，超過的部分不會算。"
+                                        total > actual -> "比實付多 ${formatMoney(total - actual)}（例如刷卡優惠），收到後這部分會算成收入。"
+                                        else -> "合計 ${formatMoney(total)}，自己負擔 ${formatMoney(actual - total)}，這部分會算進支出統計。"
+                                    },
                                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                                 )
-                            }
-                            if (reimb == 2) {
-                                Text("這筆已經收到報銷款了。", style = MaterialTheme.typography.bodySmall, color = cute.income)
                             }
                         }
                     }
@@ -467,10 +520,17 @@ fun EditScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         if (!on) {
-                            reimb = 0; reimbAmt = -1L
+                            reimbOn = false; reimbFull = true; reimbJson = ""
                         } else {
-                            if (reimb == 0) reimb = 1
-                            reimbAmt = if (full) -1L else (text.toLongOrNull() ?: 0L).coerceIn(0L, amount + fee)
+                            reimbOn = true
+                            reimbFull = full
+                            if (!full) {
+                                val list = rows.mapNotNull { r ->
+                                    r.locked ?: (r.amt.toLongOrNull() ?: 0L).takeIf { it > 0L }?.let { a -> ReimbItem(r.who.trim(), a.coerceAtMost(cap)) }
+                                }
+                                reimbJson = ReimbCodec.encode(list)
+                                if (list.isEmpty()) { reimbOn = false; reimbFull = true }
+                            }
                         }
                         dialog = ""
                     }) { Text("好") }
@@ -717,4 +777,10 @@ private fun AccountPick(label: String, value: String, onClick: () -> Unit) {
         Text(value, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         Box(Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
     }
+}
+
+/** 報銷對話框裡的一列：locked 有值代表這個對象已經有收款紀錄，只能看不能改 */
+private class ReimbRow(val locked: ReimbItem?, who: String, amt: String) {
+    var who by mutableStateOf(who)
+    var amt by mutableStateOf(amt)
 }
