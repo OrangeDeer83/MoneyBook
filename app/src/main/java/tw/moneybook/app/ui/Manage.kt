@@ -735,28 +735,35 @@ fun AppearanceScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             }
             item { SectionTitle("吉祥物") }
             item {
-                val options = MascotKinds.map { it.first } + "none"
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    options.chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            row.forEach { k ->
-                                val on = p.mascot == k
-                                Column(
-                                    Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(cute.card)
-                                        .then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp)) else Modifier)
-                                        .clickable { vm.setMascot(k) }.padding(vertical = 10.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    if (k == "none") {
-                                        Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) { Text("🙈", fontSize = 34.sp) }
-                                        Text("不需要", style = MaterialTheme.typography.labelLarge)
-                                    } else {
+                CuteCard(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("顯示吉祥物", style = MaterialTheme.typography.bodyLarge)
+                            Text("首頁和空白畫面會出現，並依預算換表情", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        }
+                        androidx.compose.material3.Switch(checked = p.mascot != "none", onCheckedChange = { vm.setMascotOn(it) })
+                    }
+                }
+            }
+            if (p.mascot != "none") {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MascotKinds.map { it.first }.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                row.forEach { k ->
+                                    val on = p.mascot == k
+                                    Column(
+                                        Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(cute.card)
+                                            .then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp)) else Modifier)
+                                            .clickable { vm.setMascot(k) }.padding(vertical = 10.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    ) {
                                         Mascot(k, if (on) Mood.HAPPY else Mood.NORMAL, Modifier.size(64.dp), animate = on)
                                         Text(mascotDefaultName(k), style = MaterialTheme.typography.labelLarge)
                                     }
                                 }
+                                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                             }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }

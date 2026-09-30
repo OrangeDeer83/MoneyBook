@@ -463,7 +463,18 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     // ───────── 外觀 ─────────
 
     fun setPalette(key: String) = update { it.copy(prefs = it.prefs.copy(palette = key)) }
-    fun setMascot(key: String) = update { it.copy(prefs = it.prefs.copy(mascot = key)) }
+    fun setMascot(key: String) = update {
+        it.copy(prefs = it.prefs.copy(mascot = key, mascotLast = if (key != "none") key else it.prefs.mascotLast))
+    }
+
+    /** 開關吉祥物：關掉時記住目前選的，打開時還原 */
+    fun setMascotOn(on: Boolean) = update {
+        val p = it.prefs
+        it.copy(
+            prefs = if (on) p.copy(mascot = p.mascotLast.ifBlank { "deer" }.takeIf { k -> k != "none" } ?: "deer")
+            else p.copy(mascot = "none", mascotLast = if (p.mascot != "none") p.mascot else p.mascotLast)
+        )
+    }
     fun setMascotName(name: String) = update { it.copy(prefs = it.prefs.copy(mascotName = name.take(12))) }
     fun setDark(mode: Int) = update { it.copy(prefs = it.prefs.copy(dark = mode)) }
     fun setCelebrate(on: Boolean) = update { it.copy(prefs = it.prefs.copy(celebrate = on)) }

@@ -165,6 +165,8 @@ data class Prefs(
     val palette: String = "milktea",
     val mascot: String = "deer",
     val mascotName: String = "",
+    /** 關掉吉祥物前選的是哪一種，重新打開時還原 */
+    val mascotLast: String = "deer",
     val dark: Int = 0, // 0 跟隨系統, 1 淺色, 2 深色
     val celebrate: Boolean = true,
 )

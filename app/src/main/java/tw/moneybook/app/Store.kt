@@ -88,7 +88,7 @@ object Codec {
         root.put(
             "prefs",
             JSONObject().put("bookId", p.bookId).put("palette", p.palette).put("mascot", p.mascot)
-                .put("mascotName", p.mascotName).put("dark", p.dark).put("celebrate", p.celebrate)
+                .put("mascotName", p.mascotName).put("mascotLast", p.mascotLast).put("dark", p.dark).put("celebrate", p.celebrate)
         )
         return root.toString()
     }
@@ -179,6 +179,7 @@ object Codec {
             palette = po.optString("palette", "milktea"),
             mascot = po.optString("mascot", "deer"),
             mascotName = po.optString("mascotName", ""),
+            mascotLast = po.optString("mascotLast", "deer"),
             dark = po.optInt("dark", 0),
             celebrate = po.optBoolean("celebrate", true),
         )
