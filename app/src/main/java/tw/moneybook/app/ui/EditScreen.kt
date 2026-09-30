@@ -1,6 +1,12 @@
 package tw.moneybook.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -436,19 +442,26 @@ fun EditScreen(
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
 
-        if (!(noteFocused && imeOpen)) Keypad(
-            onKey = { k -> expr = Calc.press(expr, k) },
-            doneLabel = if (pending) "=" else "完成",
-            doneEnabled = pending || canSave,
-            onDone = {
-                if (pending) {
-                    expr = if (amount > 0) amount.toString() else ""
-                } else {
-                    doSave()
-                }
-            },
-            modifier = Modifier.padding(bottom = 10.dp),
-        )
+        // 系統鍵盤收起時，數字鍵盤用滑入＋淡入的方式回來，不要突然彈出
+        AnimatedVisibility(
+            visible = !(noteFocused && imeOpen),
+            enter = expandVertically(tween(220)) + fadeIn(tween(220)),
+            exit = shrinkVertically(tween(120)) + fadeOut(tween(120)),
+        ) {
+            Keypad(
+                onKey = { k -> expr = Calc.press(expr, k) },
+                doneLabel = if (pending) "=" else "完成",
+                doneEnabled = pending || canSave,
+                onDone = {
+                    if (pending) {
+                        expr = if (amount > 0) amount.toString() else ""
+                    } else {
+                        doSave()
+                    }
+                },
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
+        }
     }
 
     // ───── 對話框 ─────
