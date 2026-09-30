@@ -33,7 +33,7 @@ enum class Mood { HAPPY, NORMAL, WORRIED }
 
 /** 可選的吉祥物：key 與預設名字 */
 val MascotKinds: List<Pair<String, String>> = listOf(
-    "deer" to "橙鹿",
+    "deer" to "小鹿",
     "cat" to "小貓",
     "bear" to "小熊",
     "bunny" to "小兔",
@@ -41,7 +41,7 @@ val MascotKinds: List<Pair<String, String>> = listOf(
     "schnauzer" to "雪納瑞",
 )
 
-fun mascotDefaultName(kind: String): String = MascotKinds.firstOrNull { it.first == kind }?.second ?: "橙鹿"
+fun mascotDefaultName(kind: String): String = MascotKinds.firstOrNull { it.first == kind }?.second ?: "小鹿"
 
 fun moodOf(d: AppData, today: LocalDate = LocalDate.now()): Mood {
     val book = d.currentBook
@@ -99,7 +99,7 @@ private fun lookOf(kind: String): Look = when (kind) {
     else -> Look(Color(0xFFF4A261), Color(0xFFFFC9A8), Color(0xFFFFE9D4), Color(0xFF9A6440))
 }
 
-/** 吉祥物：橙鹿用貼紙圖（依心情換表情），其他用 Canvas 畫的；都會輕輕上下晃動 */
+/** 吉祥物：小鹿用貼紙圖（依心情換表情），其他用 Canvas 畫的；都會輕輕上下晃動 */
 @Composable
 fun Mascot(kind: String, mood: Mood, modifier: Modifier = Modifier, animate: Boolean = true) {
     val t = rememberInfiniteTransition(label = "bob")
