@@ -118,7 +118,9 @@ private fun claimsOf(txns: List<Txn>): List<Claim> =
 
 private fun billLabel(d: AppData, t: Txn): String {
     val c = t.categoryId?.let { d.catMap[it] }
-    return (c?.name ?: "未分類") + " " + shortDate(t.day)
+    val date = LocalDate.ofEpochDay(t.day)
+    val md = if (date.year == LocalDate.now().year) "${date.monthValue}/${date.dayOfMonth}" else "${date.year}/${date.monthValue}/${date.dayOfMonth}"
+    return (c?.name ?: "未分類") + " " + md
 }
 
 private fun daysSince(day: Long): Long = ChronoUnit.DAYS.between(LocalDate.ofEpochDay(day), LocalDate.now()).coerceAtLeast(0L)
@@ -379,7 +381,7 @@ private fun ReimbHome(
                     }
                     items(groups, key = { "g" + it.key }) { g ->
                         val who = g.key
-                        val list = g.value.sortedBy { it.txn.day }
+                        val list = g.value.sortedWith(compareBy({ it.txn.day }, { it.txn.id }))
                         val days = daysSince(list.first().txn.day)
                         CuteCard(Modifier.fillMaxWidth().clickable { onReceive(who) }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -394,12 +396,14 @@ private fun ReimbHome(
                                 Icon(AppIcons.ChevronRight, contentDescription = null, tint = cute.sub)
                             }
                             Spacer(Modifier.height(6.dp))
+                            val oldest = list.first()
                             Text(
-                                list.take(3).joinToString("・") { billLabel(d, it.txn) + " " + formatMoney(it.item.remaining) } + if (list.size > 3) "…" else "",
+                                "欠最久：${billLabel(d, oldest.txn)} ${formatMoney(oldest.item.remaining)}" +
+                                    if (list.size > 1) "（另有 ${list.size - 1} 筆）" else "",
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub,
                             )
                             Text(
-                                if (days >= 1L) "最早的一筆已經 $days 天" else "最早的一筆是今天",
+                                if (days >= 1L) "已經 $days 天" else "今天記的",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (days >= 30L) cute.expense else cute.sub,
                             )

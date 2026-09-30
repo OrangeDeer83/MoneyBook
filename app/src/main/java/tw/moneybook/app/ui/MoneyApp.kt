@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SnackbarHostState
@@ -69,12 +71,16 @@ fun MoneyApp(vm: MoneyViewModel) {
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
-        vm.messages.collect { m ->
-            val r = snackbar.showSnackbar(
-                message = m.text,
-                actionLabel = m.action,
-                duration = if (m.action != null) SnackbarDuration.Long else SnackbarDuration.Short,
-            )
+        vm.messages.collectLatest { m ->
+            // 有「復原」的訊息也只停 4 秒，避免擋住最下面的項目；新訊息會直接取代舊的
+            val r = withTimeoutOrNull(4000L) {
+                snackbar.showSnackbar(
+                    message = m.text,
+                    actionLabel = m.action,
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Indefinite,
+                )
+            }
             if (r == SnackbarResult.ActionPerformed) m.onAction?.invoke()
         }
     }
