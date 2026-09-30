@@ -50,6 +50,8 @@ android {
             applicationIdSuffix = ".test"
             versionNameSuffix = "-test"
             manifestPlaceholders["appLabel"] = "記帳本 測試"
+            // 用固定金鑰簽章，這樣每次測試版才能互相覆蓋安裝（否則 CI 每次會臨時產生新的 debug 金鑰）
+            if (hasSigning) signingConfig = signingConfigs.getByName("release")
         }
         getByName("release") {
             isMinifyEnabled = false
