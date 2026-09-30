@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -58,6 +60,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -130,6 +133,9 @@ fun EditScreen(
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     val focus = LocalFocusManager.current
+    // 系統鍵盤有沒有真的開著：用手機的「收起鍵盤」或返回鍵收掉時，備註框還是有焦點，
+    // 所以數字鍵盤要看鍵盤是否開著，不能只看焦點
+    val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
 
     val amount = Calc.eval(expr)
@@ -430,7 +436,7 @@ fun EditScreen(
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
 
-        if (!noteFocused) Keypad(
+        if (!(noteFocused && imeOpen)) Keypad(
             onKey = { k -> expr = Calc.press(expr, k) },
             doneLabel = if (pending) "=" else "完成",
             doneEnabled = pending || canSave,
