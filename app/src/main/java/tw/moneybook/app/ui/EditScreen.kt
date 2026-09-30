@@ -260,51 +260,20 @@ fun EditScreen(
             }
         }
 
-        // 金額
-        CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val label = when {
-                    type == TxType.TRANSFER -> "🔁 轉帳"
-                    cat != null && parent != null && parent.id != cat.id -> iconLabel(cat.emoji, "${parent.name}・${cat.name}")
-                    cat != null -> iconLabel(cat.emoji, cat.name)
-                    else -> "請選分類"
-                }
-                Text(label, style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f), maxLines = 1)
-                if (pending) Text("= ${formatMoney(amount)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            }
-            Text(
-                if (expr.isEmpty()) "$0" else "$" + Calc.pretty(expr),
-                style = MaterialTheme.typography.displaySmall,
-                color = when (type) {
-                    TxType.EXPENSE -> cute.expense
-                    TxType.INCOME -> cute.income
-                    TxType.TRANSFER -> cute.ink
-                },
-                textAlign = TextAlign.End,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (fee > 0 || effDiscount > 0) {
-                val parts = ArrayList<String>()
-                parts.add(if (type == TxType.TRANSFER) "轉帳 ${formatMoney(amount)}" else "金額 ${formatMoney(amount)}")
-                if (effDiscount > 0) parts.add("− 優惠 ${formatMoney(effDiscount)}")
-                if (fee > 0) parts.add((if (type == TxType.INCOME) "− " else "+ ") + "手續費 ${formatMoney(fee)}")
-                val label = when (type) {
-                    TxType.EXPENSE -> "實付"
-                    TxType.INCOME -> "實收"
-                    TxType.TRANSFER -> "共扣"
-                }
-                Text(
-                    parts.joinToString(" ") + " ＝ $label ${formatMoney(actual)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = cute.sub,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-        Spacer(Modifier.height(8.dp))
+        // 備註：放在最上面，鍵盤開關時不會跟著移動
+        OutlinedTextField(
+            value = note,
+            onValueChange = { note = it.take(300) },
+            placeholder = { Text("✏️ 備註（選填）") },
+            minLines = 1,
+            maxLines = if (noteFocused) 3 else 1,
+            shape = RoundedCornerShape(18.dp),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+            trailingIcon = if (noteFocused) {
+                { TextButton(onClick = { focus.clearFocus() }) { Text("完成") } }
+            } else null,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).onFocusChanged { noteFocused = it.isFocused },
+        )
 
         // 分類或轉帳帳戶
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -386,21 +355,6 @@ fun EditScreen(
             }
         }
 
-        // 備註：直接打字
-        OutlinedTextField(
-            value = note,
-            onValueChange = { note = it.take(300) },
-            placeholder = { Text("✏️ 備註：寫下細節，例如品項、跟誰一起…") },
-            minLines = 1,
-            maxLines = if (noteFocused) 5 else 2,
-            shape = RoundedCornerShape(18.dp),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-            trailingIcon = if (noteFocused) {
-                { TextButton(onClick = { focus.clearFocus() }) { Text("完成") } }
-            } else null,
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).onFocusChanged { noteFocused = it.isFocused },
-        )
-
         // 附加資訊
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -441,6 +395,52 @@ fun EditScreen(
             if (orig == null && !tplMode) CuteChip("⭐ 存為常用", false, { dialog = "tpl" })
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
+
+        // 金額（貼在數字鍵盤正上方）
+        Spacer(Modifier.height(8.dp))
+        CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+            if (pending || (cat == null && type != TxType.TRANSFER)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (cat == null && type != TxType.TRANSFER) "請先選分類" else "",
+                        style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f),
+                    )
+                    if (pending) Text("= ${formatMoney(amount)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Text(
+                if (expr.isEmpty()) "$0" else "$" + Calc.pretty(expr),
+                style = MaterialTheme.typography.displaySmall,
+                color = when (type) {
+                    TxType.EXPENSE -> cute.expense
+                    TxType.INCOME -> cute.income
+                    TxType.TRANSFER -> cute.ink
+                },
+                textAlign = TextAlign.End,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (fee > 0 || effDiscount > 0) {
+                val parts = ArrayList<String>()
+                parts.add(if (type == TxType.TRANSFER) "轉帳 ${formatMoney(amount)}" else "金額 ${formatMoney(amount)}")
+                if (effDiscount > 0) parts.add("− 優惠 ${formatMoney(effDiscount)}")
+                if (fee > 0) parts.add((if (type == TxType.INCOME) "− " else "+ ") + "手續費 ${formatMoney(fee)}")
+                val label = when (type) {
+                    TxType.EXPENSE -> "實付"
+                    TxType.INCOME -> "實收"
+                    TxType.TRANSFER -> "共扣"
+                }
+                Text(
+                    parts.joinToString(" ") + " ＝ $label ${formatMoney(actual)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = cute.sub,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
 
         // 系統鍵盤收起時，數字鍵盤用滑入＋淡入的方式回來，不要突然彈出
         AnimatedVisibility(

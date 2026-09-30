@@ -58,9 +58,18 @@ jobs:
             echo "::warning::${line}"
           done
 
+      - name: Name the APK
+        id: name
+        run: |
+          V=$(grep -E '^versionName=' version.properties | cut -d= -f2 | tr -d '\r ')
+          # 版本-dev-月日-時分-commit 前 7 碼，例如 MoneyBook-3.1.0-dev-1001-1530-be2f7fc
+          N="MoneyBook-${V}-dev-$(TZ=Asia/Taipei date +%m%d-%H%M)-${GITHUB_SHA::7}"
+          cp app/build/outputs/apk/debug/app-debug.apk "$N.apk"
+          echo "name=$N" >> "$GITHUB_OUTPUT"
+
       - name: Upload test APK
         uses: actions/upload-artifact@v4
         with:
-          name: MoneyBook-test-${{ github.run_number }}
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ steps.name.outputs.name }}
+          path: ${{ steps.name.outputs.name }}.apk
           retention-days: 14

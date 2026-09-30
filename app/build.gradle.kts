@@ -48,7 +48,8 @@ android {
         // 私下測試版：套件名稱不同，可以跟正式版同時安裝，資料互不影響
         getByName("debug") {
             applicationIdSuffix = ".test"
-            versionNameSuffix = "-test"
+            // 測試版名稱帶上 commit 的前 7 碼（例如 3.1.0-dev.be2f7fc），不用靠不斷變大的編號分辨
+            versionNameSuffix = "-dev" + (System.getenv("GITHUB_SHA")?.take(7)?.let { ".$it" } ?: "")
             manifestPlaceholders["appLabel"] = "記帳本 測試"
             // 用固定金鑰簽章，這樣每次測試版才能互相覆蓋安裝（否則 CI 每次會臨時產生新的 debug 金鑰）
             if (hasSigning) signingConfig = signingConfigs.getByName("release")
