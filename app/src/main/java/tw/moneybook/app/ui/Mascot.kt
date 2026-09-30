@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -18,6 +19,9 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import tw.moneybook.app.R
 import tw.moneybook.app.AppData
 import tw.moneybook.app.TxType
 import tw.moneybook.app.expenseSum
@@ -29,7 +33,7 @@ enum class Mood { HAPPY, NORMAL, WORRIED }
 
 /** 可選的吉祥物：key 與預設名字 */
 val MascotKinds: List<Pair<String, String>> = listOf(
-    "deer" to "小鹿",
+    "deer" to "橙鹿",
     "cat" to "小貓",
     "bear" to "小熊",
     "bunny" to "小兔",
@@ -37,7 +41,7 @@ val MascotKinds: List<Pair<String, String>> = listOf(
     "schnauzer" to "雪納瑞",
 )
 
-fun mascotDefaultName(kind: String): String = MascotKinds.firstOrNull { it.first == kind }?.second ?: "小鹿"
+fun mascotDefaultName(kind: String): String = MascotKinds.firstOrNull { it.first == kind }?.second ?: "橙鹿"
 
 fun moodOf(d: AppData, today: LocalDate = LocalDate.now()): Mood {
     val book = d.currentBook
@@ -95,7 +99,7 @@ private fun lookOf(kind: String): Look = when (kind) {
     else -> Look(Color(0xFFF4A261), Color(0xFFFFC9A8), Color(0xFFFFE9D4), Color(0xFF9A6440))
 }
 
-/** 吉祥物：用 Canvas 畫的，會輕輕上下晃動 */
+/** 吉祥物：橙鹿用貼紙圖（依心情換表情），其他用 Canvas 畫的；都會輕輕上下晃動 */
 @Composable
 fun Mascot(kind: String, mood: Mood, modifier: Modifier = Modifier, animate: Boolean = true) {
     val t = rememberInfiniteTransition(label = "bob")
@@ -105,8 +109,18 @@ fun Mascot(kind: String, mood: Mood, modifier: Modifier = Modifier, animate: Boo
         animationSpec = infiniteRepeatable(tween(1400), RepeatMode.Reverse),
         label = "bob",
     )
-    Canvas(modifier.graphicsLayer { translationY = bob * density }) {
-        drawMascot(kind, mood)
+    val bobbing = modifier.graphicsLayer { translationY = bob * density }
+    if (kind == "deer") {
+        val res = when (mood) {
+            Mood.HAPPY -> R.drawable.mascot_deer_happy
+            Mood.NORMAL -> R.drawable.mascot_deer_normal
+            Mood.WORRIED -> R.drawable.mascot_deer_worried
+        }
+        Image(painterResource(res), null, bobbing, contentScale = ContentScale.Fit)
+    } else {
+        Canvas(bobbing) {
+            drawMascot(kind, mood)
+        }
     }
 }
 
