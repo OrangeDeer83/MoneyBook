@@ -224,6 +224,47 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         toast("已收到 ${list.count { it.amount > 0L }} 筆報銷，共 ${formatMoney(list.sumOf { it.amount })}")
     }
 
+    /** 改動某個對象的收款紀錄後，重新判斷這個對象是否收齊 */
+    private fun changePays(txnId: Long, itemIndex: Int, f: (List<ReimbPay>) -> List<ReimbPay>) {
+        update { d ->
+            d.copy(txns = d.txns.map { t ->
+                if (t.id != txnId) t
+                else {
+                    val items = t.items.toMutableList()
+                    val cur = items.getOrNull(itemIndex)
+                    if (cur == null) t
+                    else {
+                        val pays = f(cur.pays)
+                        val received = pays.sumOf { it.amount }
+                        val closed = when {
+                            received >= cur.amount -> true
+                            cur.received >= cur.amount -> false
+                            else -> cur.closed
+                        }
+                        items[itemIndex] = cur.copy(pays = pays, closed = closed)
+                        t.withItems(items)
+                    }
+                }
+            })
+        }
+    }
+
+    /** 修改一筆收款（金額、帳戶、日期） */
+    fun editReimbPay(txnId: Long, itemIndex: Int, payIndex: Int, pay: ReimbPay) {
+        changePays(txnId, itemIndex) { list -> list.toMutableList().also { if (payIndex in it.indices) it[payIndex] = pay } }
+        toast("已修改這筆收款")
+    }
+
+    /** 刪除一筆收款，並提供「復原」 */
+    fun deleteReimbPay(txnId: Long, itemIndex: Int, payIndex: Int) {
+        val old = data.txns.firstOrNull { it.id == txnId } ?: return
+        changePays(txnId, itemIndex) { list -> list.filterIndexed { i, _ -> i != payIndex } }
+        _messages.tryEmit(UiMsg("已刪除這筆收款", "復原") {
+            val now = data
+            if (now.txns.any { it.id == txnId }) commit(now.copy(txns = now.txns.map { if (it.id == txnId) old else it }))
+        })
+    }
+
     /** 清掉這筆的收款紀錄，全部改回待報銷 */
     fun resetReimb(id: Long) {
         update { d ->

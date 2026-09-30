@@ -219,6 +219,11 @@ data class AppData(
         return m
     }
 
+    /** 過去報銷過的對象名字，最常用的排前面 */
+    fun reimbNames(): List<String> =
+        txns.flatMap { t -> t.items.map { it.who.trim() } }.filter { it.isNotEmpty() }
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+
     fun allTags(): List<String> =
         txns.flatMap { it.tags }.groupingBy { it }.eachCount().entries
             .sortedByDescending { it.value }.map { it.key }
