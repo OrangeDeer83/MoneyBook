@@ -87,21 +87,21 @@ private fun byCategory(d: AppData, list: List<Txn>, amt: (Txn) -> Long): List<Sl
             .filter { (cid, _) -> cid != topId }
             .map { (cid, sts) ->
                 val c = d.catMap[cid]
-                Slice("c$cid", c?.name ?: "未分類", c?.emoji ?: "📦", Color.Gray, sts.sumOf { amt(it) }, sts.size,
+                Slice("c$cid", c?.name ?: "未分類", c?.emoji ?: "img:cat_box", Color.Gray, sts.sumOf { amt(it) }, sts.size,
                     { t -> t.categoryId == cid }, emptyList())
             }
         val directList = ts.filter { it.categoryId == topId }
         val children = if (subs.isEmpty()) emptyList() else {
             val all = subs.toMutableList()
             if (directList.isNotEmpty()) {
-                all.add(Slice("d$topId", "未細分", top?.emoji ?: "📦", Color.Gray, directList.sumOf { amt(it) }, directList.size,
+                all.add(Slice("d$topId", "未細分", top?.emoji ?: "img:cat_box", Color.Gray, directList.sumOf { amt(it) }, directList.size,
                     { t -> t.categoryId == topId }, emptyList()))
             }
             all.sortedByDescending { it.amount }
         }
         val pred: (Txn) -> Boolean = if (topId == -1L) ({ t -> t.categoryId == null || d.catMap[t.categoryId] == null })
         else ({ t -> t.categoryId == topId || (t.categoryId != null && t.categoryId in kidIds) })
-        Slice("t$topId", top?.name ?: "未分類", top?.emoji ?: "📦", Color.Gray, ts.sumOf { amt(it) }, ts.size, pred, children)
+        Slice("t$topId", top?.name ?: "未分類", top?.emoji ?: "img:cat_box", Color.Gray, ts.sumOf { amt(it) }, ts.size, pred, children)
     }
 }
 

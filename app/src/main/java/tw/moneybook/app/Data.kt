@@ -7,12 +7,12 @@ import java.time.YearMonth
 enum class TxType { EXPENSE, INCOME, TRANSFER }
 
 enum class AccountType(val label: String, val emoji: String) {
-    CASH("現金", "💵"),
-    BANK("銀行", "🏦"),
-    CARD("信用卡", "💳"),
-    ECARD("電子票證", "🎫"),
-    EPAY("電子支付", "📱"),
-    OTHER("其他", "👛"),
+    CASH("現金", "img:acc_cash"),
+    BANK("銀行", "img:acc_bank"),
+    CARD("信用卡", "img:acc_card"),
+    ECARD("電子票證", "img:acc_transit"),
+    EPAY("電子支付", "img:acc_epay"),
+    OTHER("其他", "img:acc_purse"),
 }
 
 data class Book(
@@ -269,7 +269,7 @@ object Defaults {
         var id = 1L
         fun nid(): Long = id++
 
-        val book = Book(nid(), "我的帳本", "📒", 0L)
+        val book = Book(nid(), "我的帳本", "img:ui_ledger", 0L)
         val cash = Account(nid(), "現金", "img:acc_cash", AccountType.CASH, 0L, 0)
         val cats = ArrayList<Category>()
 
@@ -294,12 +294,12 @@ object Defaults {
         parent("其他", "img:cat_other", 8, e, emptyList())
 
         val i = TxType.INCOME
-        parent("薪水", "💼", 5, i, emptyList())
-        parent("獎金", "🏆", 1, i, emptyList())
+        parent("薪水", "img:cat_salary", 5, i, emptyList())
+        parent("獎金", "img:cat_bonus", 1, i, emptyList())
         parent("投資", "img:extra_gold", 2, i, emptyList())
-        parent("兼職", "🧑‍💻", 4, i, emptyList())
-        parent("零用錢", "🧧", 6, i, emptyList())
-        parent("其他", "💰", 8, i, emptyList())
+        parent("兼職", "img:cat_parttime", 4, i, emptyList())
+        parent("零用錢", "img:cat_redpacket", 6, i, emptyList())
+        parent("其他", "img:cat_moneybag", 8, i, emptyList())
 
         return AppData(
             books = listOf(book),

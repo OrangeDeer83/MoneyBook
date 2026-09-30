@@ -439,7 +439,7 @@ fun AccountDialog(
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     AccountType.values().forEach { t ->
-                        CuteChip("${t.emoji} ${t.label}", type == t, {
+                        CuteChip(iconLabel(t.emoji, t.label), type == t, {
                             if (emoji == type.emoji) emoji = t.emoji
                             type = t
                         })
@@ -589,7 +589,7 @@ private fun CategoryDialog(
     onDismiss: () -> Unit,
 ) {
     var name by remember { mutableStateOf(cat?.name ?: "") }
-    var emoji by remember { mutableStateOf(cat?.emoji ?: parent?.emoji ?: "📦") }
+    var emoji by remember { mutableStateOf(cat?.emoji ?: parent?.emoji ?: "img:cat_box") }
     var color by remember { mutableStateOf(cat?.color ?: parent?.color ?: 0) }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
@@ -668,7 +668,7 @@ fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> U
                 val a = t.accountId?.let { d.accMap[it] }
                 CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(t.id) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CatBubble(c?.emoji ?: "🔁", c?.color ?: 5, 40.dp)
+                        CatBubble(c?.emoji ?: "img:ui_transfer", c?.color ?: 5, 40.dp)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(t.name, style = MaterialTheme.typography.titleMedium)
@@ -1034,7 +1034,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
                         val c = t.categoryId?.let { d.catMap[it] }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(iconLabel(c?.emoji ?: "📦", c?.name ?: "未分類"), maxLines = 1)
+                                Text(iconLabel(c?.emoji ?: "img:cat_box", c?.name ?: "未分類"), maxLines = 1)
                                 Text(
                                     "${shortDate(t.day)}・實付 ${formatMoney(t.paid)}",
                                     style = MaterialTheme.typography.labelSmall, color = cute.sub,

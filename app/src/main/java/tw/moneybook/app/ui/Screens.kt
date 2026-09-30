@@ -80,13 +80,13 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, onClick: () -> Unit) {
     val details = ArrayList<String>()
     if (t.type == TxType.TRANSFER) {
         title = "轉帳"
-        emoji = "🔁"
+        emoji = "img:ui_transfer"
         color = 5
         val to = t.toAccountId?.let { d.accMap[it] }
         details.add("${acc?.name ?: "?"} → ${to?.name ?: "?"}")
     } else {
         title = cat?.name ?: "未分類"
-        emoji = cat?.emoji ?: "📦"
+        emoji = cat?.emoji ?: "img:cat_box"
         color = cat?.color ?: 8
         cat?.parentId?.let { pid -> d.catMap[pid]?.let { details.add(it.name) } }
         if (acc != null && d.accounts.size > 1) details.add(acc.name)
@@ -592,7 +592,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${iconLabel(c?.emoji ?: "🔁", c?.name ?: "轉帳")} ${formatMoney(dt.paid)}" +
+                    "${iconLabel(c?.emoji ?: "img:ui_transfer", c?.name ?: "轉帳")} ${formatMoney(dt.paid)}" +
                         (hoverDay?.let { "  →  ${LocalDate.ofEpochDay(it).monthValue}/${LocalDate.ofEpochDay(it).dayOfMonth}" } ?: ""),
                     color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.labelLarge,
