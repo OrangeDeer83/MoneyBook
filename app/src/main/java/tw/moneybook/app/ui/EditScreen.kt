@@ -1,5 +1,8 @@
 package tw.moneybook.app.ui
 
+import android.app.Activity
+import android.content.ContextWrapper
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -51,6 +54,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -139,9 +143,16 @@ fun EditScreen(
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     val focus = LocalFocusManager.current
-    // 系統鍵盤有沒有真的開著：用手機的「收起鍵盤」或返回鍵收掉時，備註框還是有焦點，
-    // 所以數字鍵盤要看鍵盤是否開著，不能只看焦點
-    val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    // 系統鍵盤直接蓋在畫面上，不要把畫面往上推（備註在最上面，不會被蓋到）
+    val hostContext = LocalContext.current
+    DisposableEffect(Unit) {
+        var c = hostContext
+        while (c is ContextWrapper && c !is Activity) c = c.baseContext
+        val window = (c as? Activity)?.window
+        val old = window?.attributes?.softInputMode
+        window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+        onDispose { if (window != null && old != null) window.setSoftInputMode(old) }
+    }
 
 
     val amount = Calc.eval(expr)
@@ -240,7 +251,6 @@ fun EditScreen(
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .imePadding()
             .padding(horizontal = 14.dp),
     ) {
         // 標題列
@@ -442,26 +452,19 @@ fun EditScreen(
         }
         Spacer(Modifier.height(8.dp))
 
-        // 系統鍵盤收起時，數字鍵盤用滑入＋淡入的方式回來，不要突然彈出
-        AnimatedVisibility(
-            visible = !(noteFocused && imeOpen),
-            enter = expandVertically(tween(220)) + fadeIn(tween(220)),
-            exit = shrinkVertically(tween(120)) + fadeOut(tween(120)),
-        ) {
-            Keypad(
-                onKey = { k -> expr = Calc.press(expr, k) },
-                doneLabel = if (pending) "=" else "完成",
-                doneEnabled = pending || canSave,
-                onDone = {
-                    if (pending) {
-                        expr = if (amount > 0) amount.toString() else ""
-                    } else {
-                        doSave()
-                    }
-                },
-                modifier = Modifier.padding(bottom = 10.dp),
-            )
-        }
+        Keypad(
+            onKey = { k -> expr = Calc.press(expr, k) },
+            doneLabel = if (pending) "=" else "完成",
+            doneEnabled = pending || canSave,
+            onDone = {
+                if (pending) {
+                    expr = if (amount > 0) amount.toString() else ""
+                } else {
+                    doSave()
+                }
+            },
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
     }
 
     // ───── 對話框 ─────
