@@ -190,17 +190,17 @@ private fun BottomBar(tab: Int, onTab: (Int) -> Unit, onAdd: () -> Unit) {
             Tabs.forEachIndexed { i, t ->
                 if (i == 2) Spacer(Modifier.size(64.dp))
                 val on = i == tab
+                // 選取時整顆（圖示加文字）一起變色
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).clickable { onTab(i) }.padding(vertical = 6.dp),
+                    Modifier.weight(1f).padding(horizontal = 3.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (on) cute.soft else androidx.compose.ui.graphics.Color.Transparent)
+                        .clickable { onTab(i) }
+                        .padding(vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(12.dp))
-                            .background(if (on) cute.soft else androidx.compose.ui.graphics.Color.Transparent)
-                            .padding(horizontal = 14.dp, vertical = 3.dp)
-                    ) {
-                        Icon(t.icon, contentDescription = t.label, tint = if (on) primary else cute.sub, modifier = Modifier.size(22.dp))
-                    }
+                    Icon(t.icon, contentDescription = t.label, tint = if (on) primary else cute.sub, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.height(2.dp))
                     Text(t.label, fontSize = 11.sp, color = if (on) primary else cute.sub)
                 }
             }

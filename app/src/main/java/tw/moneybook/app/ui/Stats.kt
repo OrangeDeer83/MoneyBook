@@ -118,7 +118,7 @@ private fun byTag(list: List<Txn>, amt: (Txn) -> Long): List<Slice> {
     return m.entries.map { e ->
         val tag = e.key
         Slice(
-            "g$tag", if (tag.isEmpty()) "未加標籤" else "#$tag", "🏷️", Color.Gray, e.value, n[tag] ?: 0,
+            "g$tag", if (tag.isEmpty()) "未加標籤" else "#$tag", "img:stat_tag", Color.Gray, e.value, n[tag] ?: 0,
             if (tag.isEmpty()) ({ t -> t.tags.isEmpty() }) else ({ t -> tag in t.tags }),
             emptyList(),
         )
@@ -247,11 +247,11 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
                 val extra = ArrayList<Slice>()
                 if (transferFees > 0) {
                     val n = scope.count { it.type == TxType.TRANSFER && it.fee > 0 }
-                    extra.add(Slice("fee", "轉帳手續費", "🏧", Color.Gray, transferFees, n, { t -> t.type == TxType.TRANSFER && t.fee > 0 }, emptyList()))
+                    extra.add(Slice("fee", "轉帳手續費", "img:stat_atm", Color.Gray, transferFees, n, { t -> t.type == TxType.TRANSFER && t.fee > 0 }, emptyList()))
                 }
                 if (reimbGain > 0) {
                     val n = scope.count { it.reimbGain > 0 }
-                    extra.add(Slice("gain", "報銷回饋", "🎁", Color.Gray, reimbGain, n, { t -> t.reimbGain > 0 }, emptyList()))
+                    extra.add(Slice("gain", "報銷回饋", "img:stat_cashback", Color.Gray, reimbGain, n, { t -> t.reimbGain > 0 }, emptyList()))
                 }
                 val slices = recolor(base + extra)
                 val sel = slices.getOrNull(selected)

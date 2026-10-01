@@ -179,7 +179,7 @@ fun AccountDetailScreen(
                             .clickable { onEdit(t.id) }.padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CatBubble("🧾", 2, 40.dp)
+                        CatBubble("img:acc_receipt", 2, 40.dp)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text("報銷入帳" + if (who.isNotBlank()) "・$who" else "", style = MaterialTheme.typography.bodyLarge)
