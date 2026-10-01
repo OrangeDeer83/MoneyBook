@@ -11,11 +11,56 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".widget.QuickAddWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_quick_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick" />
+        </receiver>
+        <receiver
+            android:name=".widget.MonthWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_month_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_month" />
+        </receiver>
+        <receiver
+            android:name=".widget.BudgetWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_budget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_budget" />
+        </receiver>
+        <receiver
+            android:name=".widget.ReimbWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_reimb_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_reimb" />
+        </receiver>
     </application>
 </manifest>

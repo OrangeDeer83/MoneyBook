@@ -105,7 +105,7 @@ fun mascotLine(mood: Mood, d: AppData, today: LocalDate = LocalDate.now()): Stri
 }
 
 /** 吉祥物圖片：每種動物有開心、普通、擔心、睡覺、歡呼五種表情 */
-private fun mascotRes(kind: String, mood: Mood): Int {
+internal fun mascotRes(kind: String, mood: Mood): Int {
     return when (kind) {
         "deer" -> when (mood) {
             Mood.HAPPY -> R.drawable.mascot_deer_happy

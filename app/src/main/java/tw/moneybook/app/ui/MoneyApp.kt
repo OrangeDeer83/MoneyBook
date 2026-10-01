@@ -65,7 +65,7 @@ private val Tabs = listOf(
 )
 
 @Composable
-fun MoneyApp(vm: MoneyViewModel) {
+fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () -> Unit = {}) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var stack by remember { mutableStateOf(listOf<Route>()) }
     val snackbar = remember { SnackbarHostState() }
@@ -87,6 +87,15 @@ fun MoneyApp(vm: MoneyViewModel) {
 
     fun push(r: Route) {
         stack = stack + r
+    }
+
+    // 桌面小工具點下去：直接開記一筆或報銷
+    LaunchedEffect(openRequest) {
+        when (openRequest) {
+            "add" -> { stack = emptyList(); push(Route.Edit(null)) }
+            "reimb" -> { stack = emptyList(); push(Route.Page("reimb")) }
+        }
+        if (openRequest != null) onOpenHandled()
     }
 
     fun pop() {

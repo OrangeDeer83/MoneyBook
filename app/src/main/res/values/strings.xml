@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">記帳本</string>
+    <string name="widget_quick_name">快速記一筆</string>
+    <string name="widget_quick_desc">一點就進記一筆畫面</string>
+    <string name="widget_month_name">本月支出</string>
+    <string name="widget_month_desc">本月支出、剩餘預算，加上吉祥物的表情</string>
+    <string name="widget_budget_name">當月剩餘預算</string>
+    <string name="widget_budget_desc">還剩多少預算、平均每天可以花多少</string>
+    <string name="widget_reimb_name">待報銷提醒</string>
+    <string name="widget_reimb_desc">還沒收到的報銷款、欠最久的對象</string>
 </resources>

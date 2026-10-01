@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import java.time.LocalDate
@@ -95,10 +97,19 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 撒花：只在新增記錄時觸發，播過就不再重播 */
     var celebratePlayed = 0
 
+    private val appContext = app.applicationContext
+
     private fun commit(d: AppData) {
         data = d
         try {
             store.save(d)
+            // 讓桌面上的小工具跟著更新
+            viewModelScope.launch {
+                try {
+                    tw.moneybook.app.widget.updateAllWidgets(appContext)
+                } catch (_: Exception) {
+                }
+            }
         } catch (_: Exception) {
             toast("存檔失敗，請確認手機空間")
         }
