@@ -199,6 +199,7 @@ fun HomeScreen(
     val balances = remember(d) { d.balances() }
 
     LazyColumn(
+        state = vm.homeListState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -461,6 +462,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { boxPos = it.positionInRoot() }) {
     LazyColumn(
+        state = vm.calListState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),

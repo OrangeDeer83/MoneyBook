@@ -83,6 +83,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     var statExpanded by mutableStateOf(setOf<String>())
     var statSelected by mutableIntStateOf(-1)
     val statListState = androidx.compose.foundation.lazy.LazyListState()
+    // 首頁、日曆、我的的捲動位置：進到子頁再回來時要停在原處
+    val homeListState = androidx.compose.foundation.lazy.LazyListState()
+    val calListState = androidx.compose.foundation.lazy.LazyListState()
+    val meListState = androidx.compose.foundation.lazy.LazyListState()
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())
     var rangeEnd by mutableLongStateOf(LocalDate.now().toEpochDay())

@@ -90,6 +90,7 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
     val mascot = d.prefs.mascot
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = vm.meListState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp, top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
