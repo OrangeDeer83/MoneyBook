@@ -1,5 +1,7 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -115,7 +117,7 @@ fun PillSegment(
 
 /** 小圓角標籤按鈕 */
 @Composable
-fun CuteChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun CuteChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: String? = null) {
     val cute = LocalCute.current
     val primary = MaterialTheme.colorScheme.primary
     Box(
@@ -126,12 +128,19 @@ fun CuteChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Mod
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary else cute.ink,
-            maxLines = 1,
-        )
+        val textColor = if (selected) MaterialTheme.colorScheme.onPrimary else cute.ink
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                CompositionLocalProvider(LocalContentColor provides textColor) { IconGlyph(icon, 15.sp) }
+                Spacer(Modifier.width(5.dp))
+            }
+            Text(
+                text,
+                style = MaterialTheme.typography.labelLarge,
+                color = textColor,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -208,7 +217,9 @@ fun MenuRow(emoji: String, title: String, subtitle: String?, onClick: () -> Unit
             .padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(emoji, fontSize = 22.sp)
+        Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph(emoji, 22.sp) }
+        }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)

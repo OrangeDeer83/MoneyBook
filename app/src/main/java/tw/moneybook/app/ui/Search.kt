@@ -1,5 +1,6 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -101,7 +102,7 @@ fun SearchScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit)
                     value = keyword,
                     onValueChange = { keyword = it.take(40) },
                     placeholder = { Text("備註、分類、標籤、帳戶、金額") },
-                    leadingIcon = { Text("🔍") },
+                    leadingIcon = { IconGlyph("vec:search", 18.sp) },
                     trailingIcon = if (keyword.isNotEmpty()) {
                         { TextButton(onClick = { keyword = "" }) { Text("清除") } }
                     } else null,
@@ -122,14 +123,14 @@ fun SearchScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit)
                         CuteChip(label, type == i, { type = i })
                     }
                     Spacer(Modifier.width(6.dp))
-                    CuteChip("🗂️ $catLabel ▾", catIds.isNotEmpty(), { catDialog = true })
+                    CuteChip("$catLabel ▾", catIds.isNotEmpty(), { catDialog = true }, icon = "vec:folder")
                     Spacer(Modifier.width(6.dp))
                     val tagLabel = when {
                         tagSel.isEmpty() -> "全部標籤"
                         tagSel.size == 1 -> "#" + tagSel.first()
                         else -> "${tagSel.size} 個標籤"
                     }
-                    CuteChip("🏷️ $tagLabel ▾", tagSel.isNotEmpty(), { tagDialog = true })
+                    CuteChip("$tagLabel ▾", tagSel.isNotEmpty(), { tagDialog = true }, icon = "img:stat_tag")
                 }
             }
             item {
@@ -161,7 +162,7 @@ fun SearchScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit)
             title = { Text("篩選標籤") },
             text = {
                 if (all.isEmpty()) {
-                    Text("還沒有用過任何標籤。記帳時點「🏷️ 新增標籤」就能加上。", color = cute.sub)
+                    Text("還沒有用過任何標籤。記帳時點「新增標籤」就能加上。", color = cute.sub)
                 } else {
                     Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
                         Text("符合任一個選到的標籤就會列出", style = MaterialTheme.typography.labelMedium, color = cute.sub)

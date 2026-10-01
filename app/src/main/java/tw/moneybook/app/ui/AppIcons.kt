@@ -1,5 +1,7 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -40,4 +42,37 @@ object AppIcons {
     val ChevronRight: ImageVector = icon("right", "M10,6L8.59,7.41 13.17,12l-4.58,4.59L10,18l6,-6z")
     val ChevronUp: ImageVector = icon("up", "M7.41,15.41L12,10.83l4.59,4.58L18,14l-6,-6 -6,6z")
     val ChevronDown: ImageVector = icon("down", "M7.41,8.59L12,13.17l4.59,-4.58L18,10l-6,6 -6,-6z")
+
+    /** 單色線條圖示（線寬 2、圓角），顏色跟著 Icon 的 tint */
+    private fun lineIcon(name: String, path: String): ImageVector =
+        ImageVector.Builder(
+            name = name,
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).addPath(
+            pathData = addPathNodes(path),
+            fill = null,
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ).build()
+    val LCalendar: ImageVector = lineIcon("calendar", "M6,5h12a3,3 0 0 1 3,3v10a3,3 0 0 1 -3,3H6a3,3 0 0 1 -3,-3V8a3,3 0 0 1 3,-3z M3,10h18 M8,3v4 M16,3v4")
+    val LTicket: ImageVector = lineIcon("ticket", "M4,6h16a1,1 0 0 1 1,1v2.5a2.5,2.5 0 0 0 0,5V17a1,1 0 0 1 -1,1H4a1,1 0 0 1 -1,-1v-2.5a2.5,2.5 0 0 0 0,-5V7a1,1 0 0 1 1,-1z M14,8.5v1 M14,11.5v1 M14,14.5v1")
+    val LCheck: ImageVector = lineIcon("check", "M12,3a9,9 0 1,0 0,18a9,9 0 1,0 0,-18z M8,12.5l3,3 5,-6")
+    val LRepeat: ImageVector = lineIcon("repeat", "M17,2l4,4 -4,4 M3,11V9a4,4 0 0 1 4,-4h14 M7,22l-4,-4 4,-4 M21,13v2a4,4 0 0 1 -4,4H3")
+    val LPencil: ImageVector = lineIcon("pencil", "M4,20l1,-4L16.5,4.5a2,2 0 0 1 3,3L8,19z M14,7l3,3")
+    val LArrowDown: ImageVector = lineIcon("down", "M12,4v16 M6,14l6,6 6,-6")
+    val LFolder: ImageVector = lineIcon("folder", "M3,7a2,2 0 0 1 2,-2h4l2,2h8a2,2 0 0 1 2,2v9a2,2 0 0 1 -2,2H5a2,2 0 0 1 -2,-2z")
+    val LTarget: ImageVector = lineIcon("target", "M12,3a9,9 0 1,0 0,18a9,9 0 1,0 0,-18z M12,7a5,5 0 1,0 0,10a5,5 0 1,0 0,-10z M12,10.8a1.2,1.2 0 1,0 0,2.4a1.2,1.2 0 1,0 0,-2.4z")
+    val LPalette: ImageVector = lineIcon("palette", "M12,3a9,9 0 1,0 0,18c1.5,0 2,-1 1.5,-2.2 -0.6,-1.4 0.3,-2.8 1.8,-2.8H17a4,4 0 0 0 4,-4C21,6.5 17,3 12,3z M7.5,11h.01 M10,7.5h.01 M14.5,7.5h.01 M17,11h.01")
+    val LSave: ImageVector = lineIcon("save", "M5,3h11l4,4v13a1,1 0 0 1 -1,1H5a1,1 0 0 1 -1,-1V4a1,1 0 0 1 1,-1z M8,3v6h8V3 M8,21v-7h8v7")
+    val LRestore: ImageVector = lineIcon("restore", "M3,12a9,9 0 1,0 3,-6.7 M3,4v5h5 M12,8v4l3,2")
+    val LExport: ImageVector = lineIcon("export", "M12,15V3 M7,8l5,-5 5,5 M5,15v4a2,2 0 0 0 2,2h10a2,2 0 0 0 2,-2v-4")
+    val LImport: ImageVector = lineIcon("import", "M12,3v12 M7,10l5,5 5,-5 M5,15v4a2,2 0 0 0 2,2h10a2,2 0 0 0 2,-2v-4")
+    val LSiren: ImageVector = lineIcon("siren", "M7,18v-6a5,5 0 0 1 10,0v6 M5,21h14v-3H5z M12,3v2 M4.5,6.5L6,8 M19.5,6.5L18,8")
+    val LWarning: ImageVector = lineIcon("warning", "M12,3l10,18H2z M12,10v5 M12,18h.01")
+    val LSearch: ImageVector = lineIcon("search", "M11,4a7,7 0 1,0 0,14a7,7 0 1,0 0,-14z M16.5,16.5L21,21")
 }

@@ -1,5 +1,7 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -112,21 +114,21 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
         }
         item {
             CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(8.dp)) {
-                MenuRow("📒", "帳本管理", "目前：${d.currentBook.name}") { open("books") }
-                MenuRow("👛", "帳戶管理", "${d.visibleAccounts.size} 個帳戶") { open("accounts") }
-                MenuRow("🗂️", "分類管理", "新增、改圖示、子分類、排序") { open("categories") }
-                MenuRow("🧾", "報銷", d.bookTxns.pendingReimb().let { p -> if (p.isEmpty()) "沒有待報銷的項目" else "待報銷 ${p.size} 筆・${formatMoney(p.sumOf { it.reimbOutstanding })}" }) { open("reimb") }
-                MenuRow("⭐", "常用記帳", if (d.templates.isEmpty()) "在記一筆畫面按「存為常用」" else "${d.templates.size} 個") { open("templates") }
+                MenuRow("img:ui_ledger", "帳本管理", "目前：${d.currentBook.name}") { open("books") }
+                MenuRow("img:acc_wallet", "帳戶管理", "${d.visibleAccounts.size} 個帳戶") { open("accounts") }
+                MenuRow("vec:folder", "分類管理", "新增、改圖示、子分類、排序") { open("categories") }
+                MenuRow("img:acc_receipt", "報銷", d.bookTxns.pendingReimb().let { p -> if (p.isEmpty()) "沒有待報銷的項目" else "待報銷 ${p.size} 筆・${formatMoney(p.sumOf { it.reimbOutstanding })}" }) { open("reimb") }
+                MenuRow("img:ui_favorite", "常用記帳", if (d.templates.isEmpty()) "在記一筆畫面按「存為常用」" else "${d.templates.size} 個") { open("templates") }
                 MenuRow(
-                    "🎯", "每月預算",
+                    "vec:target", "每月預算",
                     d.currentBook.budgetFor(vm.month).let { b -> if (b > 0) "${vm.month.monthValue} 月：${formatMoney(b)}" + (if (d.currentBook.monthBudgets.isNotEmpty()) "・有個別月份設定" else "") else "尚未設定" },
                 ) { budgetDialog = true }
             }
         }
         item {
             CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(8.dp)) {
-                MenuRow("🎨", "外觀與吉祥物", "${palOf(d.prefs.palette).name}・" + (if (mascot == "none") "不顯示吉祥物" else mascotDefaultName(mascot))) { open("appearance") }
-                MenuRow("💾", "備份與匯入匯出", "備份檔、CSV") { open("data") }
+                MenuRow("vec:palette", "外觀與吉祥物", "${palOf(d.prefs.palette).name}・" + (if (mascot == "none") "不顯示吉祥物" else mascotDefaultName(mascot))) { open("appearance") }
+                MenuRow("vec:save", "備份與匯入匯出", "備份檔、CSV") { open("data") }
             }
         }
         item {
@@ -457,7 +459,11 @@ fun AccountDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (type == AccountType.CARD) {
-                    Text("💳 信用卡設定", style = MaterialTheme.typography.labelLarge)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconGlyph("img:acc_card", 18.sp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("信用卡設定", style = MaterialTheme.typography.labelLarge)
+                    }
                     OutlinedTextField(
                         limit, { limit = it.filter { c -> c.isDigit() }.take(9) },
                         label = { Text("信用額度") }, prefix = { Text("$") }, singleLine = true,
@@ -659,7 +665,7 @@ fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> U
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 Text(
-                    "常用記帳會出現在記一筆畫面的「⭐ 常用」分類裡，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤。",
+                    "常用記帳會出現在記一筆畫面的「常用」分類裡，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
@@ -880,25 +886,25 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 DataCard(
-                    "💾 備份", "把所有帳本、帳戶、分類和設定存成一個檔案。建議存到雲端硬碟，換手機時就能還原。",
+                    "vec:save", "備份", "把所有帳本、帳戶、分類和設定存成一個檔案。建議存到雲端硬碟，換手機時就能還原。",
                     "建立備份",
                 ) { backupOut.launch("記帳本備份_$stamp.json") }
             }
             item {
                 DataCard(
-                    "♻️ 還原", "從備份檔還原。目前手機上的資料會被備份檔的內容取代。",
+                    "vec:restore", "還原", "從備份檔還原。目前手機上的資料會被備份檔的內容取代。",
                     "選擇備份檔",
                 ) { backupIn.launch(arrayOf("application/json", "application/octet-stream", "text/plain", "*/*")) }
             }
             item {
                 DataCard(
-                    "📤 匯出 CSV", "所有記錄匯出成 CSV，可以用 Excel 或 Google 試算表開啟。",
+                    "vec:export", "匯出 CSV", "所有記錄匯出成 CSV，可以用 Excel 或 Google 試算表開啟。",
                     "匯出",
                 ) { csvOut.launch("記帳本_$stamp.csv") }
             }
             item {
                 DataCard(
-                    "📥 匯入 CSV",
+                    "vec:import", "匯入 CSV",
                     "把其他記帳 App 或 Excel 的資料搬進目前的帳本。需要有「日期」和「金額」欄位，也可以有「類型、分類、子分類、帳戶、備註、標籤」。找不到的分類和帳戶會自動建立。",
                     "選擇 CSV 檔",
                 ) { csvIn.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*")) }
@@ -928,9 +934,13 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun DataCard(title: String, desc: String, action: String, onClick: () -> Unit) {
+private fun DataCard(icon: String, title: String, desc: String, action: String, onClick: () -> Unit) {
     CuteCard(Modifier.fillMaxWidth()) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph(icon, 20.sp) }
+            Spacer(Modifier.width(8.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium)
+        }
         Spacer(Modifier.height(4.dp))
         Text(desc, style = MaterialTheme.typography.bodySmall, color = LocalCute.current.sub)
         Spacer(Modifier.height(10.dp))

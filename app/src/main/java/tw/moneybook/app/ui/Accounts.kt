@@ -2,6 +2,8 @@
 
 package tw.moneybook.app.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -218,7 +220,11 @@ private fun CardBillCard(vm: MoneyViewModel, a: Account, onPayCard: (Long, Long?
     val cyc = cardCycle(a, today)
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     CuteCard(Modifier.fillMaxWidth()) {
-        Text("💳 信用卡帳單", style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconGlyph("img:acc_card", 22.sp)
+            Spacer(Modifier.width(6.dp))
+            Text("信用卡帳單", style = MaterialTheme.typography.titleMedium)
+        }
         Spacer(Modifier.height(6.dp))
         var remain = 0L
         if (cyc == null) {
@@ -256,11 +262,17 @@ private fun CardBillCard(vm: MoneyViewModel, a: Account, onPayCard: (Long, Long?
                         .background(if (warn) cute.expense.copy(alpha = 0.12f) else cute.soft.copy(alpha = 0.6f))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    Text(
-                        if (remain == 0L) "✅ 上期已繳清" else "繳款日 ${due.monthValue}/${due.dayOfMonth}（${daysLeft(due)}）",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (warn) cute.expense else cute.ink,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (remain == 0L) {
+                            CompositionLocalProvider(LocalContentColor provides cute.income) { IconGlyph("vec:check", 16.sp) }
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text(
+                            if (remain == 0L) "上期已繳清" else "繳款日 ${due.monthValue}/${due.dayOfMonth}（${daysLeft(due)}）",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (warn) cute.expense else cute.ink,
+                        )
+                    }
                     Text(
                         "已繳 ${formatMoney(paid)}" + if (remain > 0) "・還要繳 ${formatMoney(remain)}" else "",
                         style = MaterialTheme.typography.labelSmall, color = cute.sub,

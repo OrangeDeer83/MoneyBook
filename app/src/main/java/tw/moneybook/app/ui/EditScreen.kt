@@ -1,5 +1,7 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import android.app.Activity
 import android.content.ContextWrapper
 import android.view.WindowManager
@@ -274,7 +276,8 @@ fun EditScreen(
         OutlinedTextField(
             value = note,
             onValueChange = { note = it.take(300) },
-            placeholder = { Text("✏️ 備註（選填）") },
+            placeholder = { Text("備註（選填）") },
+            leadingIcon = { IconGlyph("vec:pencil", 18.sp) },
             minLines = 1,
             maxLines = if (noteFocused) 3 else 1,
             shape = RoundedCornerShape(18.dp),
@@ -290,7 +293,9 @@ fun EditScreen(
             if (type == TxType.TRANSFER) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     AccountPick("從", accId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶") { dialog = "from" }
-                    Text("⬇", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, color = cute.sub, fontSize = 20.sp)
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:down", 22.sp) }
+                    }
                     AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶") { dialog = "to" }
                     if (accs.size < 2) {
                         Text("轉帳需要至少兩個帳戶，可以到「我的 → 帳戶管理」新增。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
@@ -303,7 +308,7 @@ fun EditScreen(
                     val tpls = if (!tplMode && orig == null) d.templates.filter { it.type == type } else emptyList()
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
                         if (tpls.isNotEmpty()) {
-                            item { CuteChip("⭐ 常用", showTpl, { showTpl = true }) }
+                            item { CuteChip("常用", showTpl, { showTpl = true }, icon = "img:ui_favorite") }
                         }
                         items(tops, key = { it.id }) { c ->
                             CuteChip(iconLabel(c.emoji, c.name), !showTpl && parent?.id == c.id, { catId = c.id; showTpl = false })
@@ -370,39 +375,40 @@ fun EditScreen(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (tplMode) CuteChip("📝 名稱：" + tplName.ifBlank { "未命名" }, tplName.isNotBlank(), { dialog = "tplname" })
-            if (!tplMode) CuteChip("📅 ${dayLabel(day)}", false, { dialog = "date" })
+            if (tplMode) CuteChip("名稱：" + tplName.ifBlank { "未命名" }, tplName.isNotBlank(), { dialog = "tplname" }, icon = "vec:pencil")
+            if (!tplMode) CuteChip(dayLabel(day), false, { dialog = "date" }, icon = "vec:calendar")
             if (type != TxType.TRANSFER && accs.isNotEmpty()) {
                 val a = accId?.let { d.accMap[it] }
-                CuteChip(a?.let { accLabel(it) } ?: "👛 帳戶", false, { dialog = "from" })
+                CuteChip(a?.let { accLabel(it) } ?: "帳戶", false, { dialog = "from" }, icon = "img:acc_wallet")
             }
-            CuteChip(if (tags.isEmpty()) "🏷️ 新增標籤" else "🏷️ " + tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" })
+            CuteChip(if (tags.isEmpty()) "新增標籤" else tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" }, icon = "img:stat_tag")
             val feeLabel = when {
-                fee > 0 && effDiscount > 0 -> "💸 手續費・優惠"
-                fee > 0 -> "💸 手續費 ${formatMoney(fee)}"
-                effDiscount > 0 -> "🎟️ 優惠 ${formatMoney(effDiscount)}"
-                type == TxType.EXPENSE -> "💸 手續費／優惠"
-                else -> "💸 手續費"
+                fee > 0 && effDiscount > 0 -> "手續費・優惠"
+                fee > 0 -> "手續費 ${formatMoney(fee)}"
+                effDiscount > 0 -> "優惠 ${formatMoney(effDiscount)}"
+                type == TxType.EXPENSE -> "手續費／優惠"
+                else -> "手續費"
             }
-            CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" })
+            CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "img:stat_atm")
             if (type == TxType.EXPENSE && !tplMode) {
                 val totalReimb = reimbItems.sumOf { it.effective }
                 val part = if (reimbItems.isNotEmpty() && totalReimb != actual) " ${formatMoney(totalReimb)}" else ""
                 val people = if (reimbItems.size > 1) "・${reimbItems.size} 人" else ""
                 CuteChip(
                     when {
-                        reimbItems.isEmpty() -> "🧾 報銷"
-                        reimbItems.all { it.closed } -> "✅ 已報銷$part"
-                        else -> "🧾 待報銷$part$people"
+                        reimbItems.isEmpty() -> "報銷"
+                        reimbItems.all { it.closed } -> "已報銷$part"
+                        else -> "待報銷$part$people"
                     },
                     reimbItems.isNotEmpty(),
                     { dialog = "reimb" },
+                    icon = if (reimbItems.isNotEmpty() && reimbItems.all { it.closed }) "vec:check" else "img:acc_receipt",
                 )
             }
             if (orig == null && type == TxType.EXPENSE && !tplMode) {
-                CuteChip(if (inst > 1) "📆 分 $inst 期" else "📆 分期", inst > 1, { dialog = "inst" })
+                CuteChip(if (inst > 1) "分 $inst 期" else "分期", inst > 1, { dialog = "inst" }, icon = "vec:repeat")
             }
-            if (orig == null && !tplMode) CuteChip("⭐ 存為常用", false, { dialog = "tpl" })
+            if (orig == null && !tplMode) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "img:ui_favorite")
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
 

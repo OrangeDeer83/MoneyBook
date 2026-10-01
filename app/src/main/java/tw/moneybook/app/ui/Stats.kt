@@ -1,5 +1,7 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
@@ -150,9 +152,9 @@ fun RangeBar(vm: MoneyViewModel) {
     val today = LocalDate.now()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            CuteChip("📅 ${shortDate(vm.rangeStart)}", false, { pick = 1 })
+            CuteChip(shortDate(vm.rangeStart), false, { pick = 1 }, icon = "vec:calendar")
             Text("～", color = LocalCute.current.sub)
-            CuteChip("📅 ${shortDate(vm.rangeEnd)}", false, { pick = 2 })
+            CuteChip(shortDate(vm.rangeEnd), false, { pick = 2 }, icon = "vec:calendar")
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val t = today.toEpochDay()
@@ -200,7 +202,7 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
                     .padding(horizontal = 16.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("🔍", fontSize = 16.sp)
+                CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:search", 18.sp) }
                 Spacer(Modifier.width(8.dp))
                 Text("搜尋記錄：備註、分類、標籤、金額…", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
             }
@@ -483,7 +485,11 @@ private fun trend(scope: LazyListScope, book: List<Txn>, end: YearMonth, n: Int)
     scope.item {
         val cute = LocalCute.current
         CuteCard(Modifier.fillMaxWidth()) {
-            Text("💰 存錢趨勢", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconGlyph("img:ui_savings", 22.sp)
+                Spacer(Modifier.width(6.dp))
+                Text("存錢趨勢", style = MaterialTheme.typography.titleMedium)
+            }
             val saved = cumulative.last()
             Text(
                 if (saved >= 0) "近 $n 個月一共存下 ${formatMoney(saved)}" else "近 $n 個月一共多花了 ${formatMoney(-saved)}",

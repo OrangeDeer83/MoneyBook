@@ -1,5 +1,6 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -98,16 +99,46 @@ object AppImages {
     fun isImg(s: String): Boolean = s.startsWith(PREFIX)
 }
 
+/** 單色線條圖示：key 形如 `vec:calendar`，顏色跟著文字顏色（LocalContentColor） */
+object AppLines {
+    const val PREFIX = "vec:"
+
+    val all: Map<String, androidx.compose.ui.graphics.vector.ImageVector> = mapOf(
+        "vec:calendar" to AppIcons.LCalendar,
+        "vec:ticket" to AppIcons.LTicket,
+        "vec:check" to AppIcons.LCheck,
+        "vec:repeat" to AppIcons.LRepeat,
+        "vec:pencil" to AppIcons.LPencil,
+        "vec:down" to AppIcons.LArrowDown,
+        "vec:folder" to AppIcons.LFolder,
+        "vec:target" to AppIcons.LTarget,
+        "vec:palette" to AppIcons.LPalette,
+        "vec:save" to AppIcons.LSave,
+        "vec:restore" to AppIcons.LRestore,
+        "vec:export" to AppIcons.LExport,
+        "vec:import" to AppIcons.LImport,
+        "vec:siren" to AppIcons.LSiren,
+        "vec:warning" to AppIcons.LWarning,
+        "vec:search" to AppIcons.LSearch,
+    )
+
+    fun isLine(s: String): Boolean = s.startsWith(PREFIX)
+}
+
 /** 有圖片的圖示回傳 null（要另外畫圖），其他照原樣 */
 private fun imgRes(e: String): Int? = if (AppImages.isImg(e)) AppImages.all[e] else null
 
 /** 文字裡的圖示前綴：圖片圖示沒辦法塞進文字，就只留名稱 */
 fun iconLabel(emoji: String, name: String): String =
-    if (AppImages.isImg(emoji)) name else "$emoji $name"
+    if (AppImages.isImg(emoji) || AppLines.isLine(emoji)) name else "$emoji $name"
 
 /** 表情符號或圖片，依 fontSize 決定大小 */
 @Composable
 fun IconGlyph(e: String, fontSize: TextUnit) {
+    if (AppLines.isLine(e)) {
+        AppLines.all[e]?.let { Icon(it, null, Modifier.size((fontSize.value * 1.1f).dp)) }
+        return
+    }
     if (AppImages.isImg(e)) {
         val res = imgRes(e)
         if (res != null) {

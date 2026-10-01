@@ -525,7 +525,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     d.visibleAccounts.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
                 }
-                CuteChip("📅 ${dayLabel(day)}", false, { pickDate = true })
+                CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
 
                 Text("分配到這幾筆（由舊到新自動分配，可以直接改金額）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 claims.forEachIndexed { i, c ->
@@ -701,7 +701,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         d.visibleAccounts.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
                     }
-                    CuteChip("📅 ${dayLabel(day)}", false, { pickDate = true })
+                    CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
                 }
             },
             confirmButton = {

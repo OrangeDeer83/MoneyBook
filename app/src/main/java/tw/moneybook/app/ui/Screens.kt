@@ -1,5 +1,7 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -270,11 +272,15 @@ fun HomeScreen(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        CompositionLocalProvider(LocalContentColor provides (if (level == 2) cute.expense else cute.ink)) {
+                            IconGlyph(when (level) { 2 -> "vec:siren"; 1 -> "vec:warning"; else -> "vec:target" }, 16.sp)
+                        }
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             when (level) {
-                                2 -> "🚨 已經超出預算了！"
-                                1 -> "⚠️ 預算快用完了"
-                                else -> "🎯 ${month.monthValue} 月預算"
+                                2 -> "已經超出預算了！"
+                                1 -> "預算快用完了"
+                                else -> "${month.monthValue} 月預算"
                             },
                             style = MaterialTheme.typography.labelLarge,
                             color = when (level) { 2 -> cute.expense; else -> cute.ink },
@@ -300,12 +306,14 @@ fun HomeScreen(
                     )
                 }
             } else {
-                Text(
-                    "🎯 設定每月預算",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clip(CircleShape).clickable { showBudget = true }.padding(horizontal = 10.dp, vertical = 6.dp),
-                )
+                Row(
+                    Modifier.clip(CircleShape).clickable { showBudget = true }.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph("vec:target", 16.sp) }
+                    Spacer(Modifier.width(6.dp))
+                    Text("設定每月預算", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
 
@@ -326,8 +334,10 @@ fun HomeScreen(
                             .padding(horizontal = 12.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        IconGlyph("img:acc_receipt", 16.sp)
+                        Spacer(Modifier.width(6.dp))
                         Text(
-                            "🧾 待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbOutstanding })}  ›",
+                            "待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbOutstanding })}  ›",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                         )
