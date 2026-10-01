@@ -169,7 +169,8 @@ fun EditScreen(
     val reimbItems: List<ReimbItem> = when {
         type != TxType.EXPENSE || !reimbOn -> emptyList()
         reimbFull -> listOf((origItems.singleOrNull() ?: ReimbItem("", 0L)).copy(who = reimbWho.trim(), amount = actual))
-        else -> ReimbCodec.decode(reimbJson)
+        // 上限跟著目前的金額走：先填報銷、後填金額時，金額還是 0，不能先把報銷金額截成 0
+        else -> ReimbCodec.decode(reimbJson).map { if (amount + fee > 0L && it.pays.isEmpty() && !it.closed) it.copy(amount = it.amount.coerceAtMost(amount + fee)) else it }
     }
     val cat = catId?.let { d.catMap[it] }
     val parent = cat?.let { d.topOf(it) }

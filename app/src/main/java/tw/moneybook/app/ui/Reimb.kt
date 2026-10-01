@@ -169,7 +169,7 @@ fun ReimbEditPage(
             onDone(true, true, initJson, fullWho.trim())
         } else {
             val list = rows.mapNotNull { r ->
-                r.locked ?: (r.amt.toLongOrNull() ?: 0L).takeIf { it > 0L }?.let { a -> ReimbItem(r.who.trim(), a.coerceAtMost(cap)) }
+                r.locked ?: (r.amt.toLongOrNull() ?: 0L).takeIf { it > 0L }?.let { a -> ReimbItem(r.who.trim(), a) }
             }
             if (list.isEmpty()) onDone(false, true, "", "") else onDone(true, false, ReimbCodec.encode(list), "")
         }
