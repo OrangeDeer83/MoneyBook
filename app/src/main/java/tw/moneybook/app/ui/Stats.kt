@@ -171,17 +171,19 @@ fun RangeBar(vm: MoneyViewModel) {
 fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
     val d = vm.data
     val mode = vm.statMode
-    var kind by rememberSaveable { mutableIntStateOf(0) } // 0 支出, 1 收入
-    var group by rememberSaveable { mutableIntStateOf(0) } // 0 分類, 1 標籤
-    var trendN by rememberSaveable { mutableIntStateOf(6) }
-    var gross by rememberSaveable { mutableStateOf(false) } // true = 支出含報銷的部分
-    val expanded = remember { mutableStateOf(setOf<String>()) }
-    var selected by remember { mutableIntStateOf(-1) }
+    // 這些狀態存在 ViewModel：點進明細再返回時才能還原
+    var kind by vm::statKind // 0 支出, 1 收入
+    var group by vm::statGroup // 0 分類, 1 標籤
+    var trendN by vm::statTrendN
+    var gross by vm::statGross // true = 支出含報銷的部分
+    var expandedSet by vm::statExpanded
+    var selected by vm::statSelected
     val cute = LocalCute.current
     val type = if (kind == 0) TxType.EXPENSE else TxType.INCOME
     val book = d.bookTxns
 
     LazyColumn(
+        state = vm.statListState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -285,8 +287,8 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
                     }
                 }
                 sliceRows(
-                    slices, total, expanded.value,
-                    onToggle = { key -> expanded.value = if (key in expanded.value) expanded.value - key else expanded.value + key },
+                    slices, total, expandedSet,
+                    onToggle = { key -> expandedSet = if (key in expandedSet) expandedSet - key else expandedSet + key },
                     onOpen = { sl ->
                         val base2: (Txn) -> Boolean = if (sl.key == "fee" || sl.key == "gain") sl.pred else ({ t: Txn -> typeOk(t) && sl.pred(t) })
                         val useAmt: (Txn) -> Long = when (sl.key) {
@@ -347,7 +349,9 @@ private fun LazyListScope.sliceRows(
                     onToggle = if (s.children.isNotEmpty()) ({ onToggle(s.key) }) else null)
                 if (s.key in expanded) {
                     s.children.forEach { c ->
-                        SliceRow(c, s.amount, big = false, open = false, onOpen = { onOpen(c) }, onToggle = null)
+                        Box(Modifier.padding(start = 30.dp)) {
+                            SliceRow(c, s.amount, big = false, open = false, onOpen = { onOpen(c) }, onToggle = null)
+                        }
                     }
                 }
             }
@@ -365,7 +369,7 @@ private fun SliceRow(s: Slice, total: Long, big: Boolean, open: Boolean, onOpen:
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(Modifier.width(4.dp))
-        CatBubble(s.emoji, 0, if (big) 38.dp else 34.dp)
+        CatBubble(s.emoji, 0, if (big) 38.dp else 30.dp)
         Spacer(Modifier.width(10.dp))
         Column(
             Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable(onClick = onOpen).padding(vertical = 4.dp, horizontal = 2.dp)

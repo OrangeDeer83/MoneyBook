@@ -74,6 +74,15 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 統計頁：0 月, 1 年, 2 區間, 3 趨勢 */
     var statMode by mutableIntStateOf(0)
+
+    // 統計頁其他狀態也放在這裡：點進明細再返回時，要回到原本的收入／支出、展開的項目和捲動位置
+    var statKind by mutableIntStateOf(0)
+    var statGroup by mutableIntStateOf(0)
+    var statTrendN by mutableIntStateOf(6)
+    var statGross by mutableStateOf(false)
+    var statExpanded by mutableStateOf(setOf<String>())
+    var statSelected by mutableIntStateOf(-1)
+    val statListState = androidx.compose.foundation.lazy.LazyListState()
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())
     var rangeEnd by mutableLongStateOf(LocalDate.now().toEpochDay())
