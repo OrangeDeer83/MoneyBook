@@ -322,7 +322,7 @@ fun EditScreen(
                                     Modifier.clip(RoundedCornerShape(16.dp)).clickable { applyTemplate(tp) }.padding(vertical = 6.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
-                                    CatBubble(tc?.emoji ?: "⭐", tc?.color ?: 1, 46.dp)
+                                    CatBubble(tc?.emoji ?: "img:ui_favorite", tc?.color ?: 1, 46.dp)
                                     Text(tp.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
                                     if (tp.amount > 0) Text(formatMoney(tp.amount), style = MaterialTheme.typography.labelSmall, color = cute.sub)
                                 }

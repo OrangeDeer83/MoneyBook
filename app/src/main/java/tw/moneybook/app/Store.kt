@@ -105,13 +105,13 @@ object Codec {
                     mb[k] = mbo.optLong(k, 0L)
                 }
             }
-            Book(o.getLong("id"), o.getString("name"), o.optString("emoji", "📒"), o.optLong("budget", 0L), mb)
+            Book(o.getLong("id"), o.getString("name"), o.optString("emoji", "img:ui_ledger"), o.optLong("budget", 0L), mb)
         }
         val accounts = objects(root.optJSONArray("accounts")) { o ->
             Account(
                 id = o.getLong("id"),
                 name = o.getString("name"),
-                emoji = o.optString("emoji", "👛"),
+                emoji = o.optString("emoji", "img:acc_purse"),
                 type = runCatching { AccountType.valueOf(o.getString("type")) }.getOrDefault(AccountType.OTHER),
                 initial = o.optLong("initial", 0L),
                 order = o.optInt("order", 0),
@@ -127,7 +127,7 @@ object Codec {
             Category(
                 id = o.getLong("id"),
                 name = o.getString("name"),
-                emoji = o.optString("emoji", "📦"),
+                emoji = o.optString("emoji", "img:cat_box"),
                 color = o.optInt("color", 0),
                 kind = runCatching { TxType.valueOf(o.getString("kind")) }.getOrDefault(TxType.EXPENSE),
                 parentId = o.optLongOrNull("parentId"),
@@ -435,7 +435,7 @@ object CsvIO {
         fun findAcc(name: String): Long? {
             if (name.isBlank()) return defaultAcc
             accs.firstOrNull { it.name == name }?.let { return it.id }
-            val a = Account(nextId++, name, "👛", AccountType.OTHER, 0L, accs.size)
+            val a = Account(nextId++, name, "img:acc_purse", AccountType.OTHER, 0L, accs.size)
             accs.add(a)
             return a.id
         }
@@ -444,7 +444,7 @@ object CsvIO {
             val topName = top.ifBlank { "其他" }
             var p = cats.firstOrNull { it.kind == kind && it.parentId == null && it.name == topName }
             if (p == null) {
-                p = Category(nextId++, topName, "📦", 8, kind, null, cats.count { it.kind == kind && it.parentId == null })
+                p = Category(nextId++, topName, "img:cat_box", 8, kind, null, cats.count { it.kind == kind && it.parentId == null })
                 cats.add(p)
             }
             if (sub.isBlank()) return p.id

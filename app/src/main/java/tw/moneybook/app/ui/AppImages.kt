@@ -109,7 +109,7 @@ fun IconGlyph(e: String, fontSize: TextUnit) {
         if (res != null) {
             Image(painterResource(res), null, Modifier.size((fontSize.value * 1.15f).dp), contentScale = ContentScale.Fit)
         } else {
-            Text("📦", fontSize = fontSize)
+            Image(painterResource(R.drawable.img_cat_box), null, Modifier.size((fontSize.value * 1.15f).dp), contentScale = ContentScale.Fit)
         }
     } else {
         Text(e, fontSize = fontSize)
@@ -121,5 +121,5 @@ fun IconGlyph(e: String, fontSize: TextUnit) {
 fun IconImage(e: String, size: Dp) {
     val res = imgRes(e)
     if (res != null) Image(painterResource(res), null, Modifier.size(size), contentScale = ContentScale.Fit)
-    else Text("📦", fontSize = (size.value * 0.64f).sp)
+    else Image(painterResource(R.drawable.img_cat_box), null, Modifier.size(size), contentScale = ContentScale.Fit)
 }

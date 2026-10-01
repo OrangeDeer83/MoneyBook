@@ -94,7 +94,7 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
         item {
             CuteCard(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (mascot != "none") Mascot(mascot, moodOf(d), Modifier.size(84.dp)) else Text("📒", fontSize = 48.sp)
+                    if (mascot != "none") Mascot(mascot, moodOf(d), Modifier.size(84.dp)) else IconGlyph("img:ui_ledger", 48.sp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -263,7 +263,7 @@ fun BooksScreen(vm: MoneyViewModel, onBack: () -> Unit) {
 @Composable
 private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDelete: (() -> Unit)?, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(book?.name ?: "") }
-    var emoji by remember { mutableStateOf(book?.emoji ?: "✈️") }
+    var emoji by remember { mutableStateOf(book?.emoji ?: "img:extra_passport") }
     var budget by remember { mutableStateOf(if ((book?.budget ?: 0L) > 0) book?.budget.toString() else "") }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
