@@ -102,14 +102,14 @@ fun LabeledDonut(
     val track = LocalCute.current.soft
     val sub = LocalCute.current.sub
     Layout(
-        modifier = modifier.fillMaxWidth().height(260.dp),
+        modifier = modifier.fillMaxWidth().height(280.dp),
         content = {
             Canvas(
                 Modifier.pointerInput(values, selected) {
                     detectTapGestures { pos ->
                         val w = size.width.toFloat()
                         val h = size.height.toFloat()
-                        val d = minOf(w, h) * 0.62f
+                        val d = minOf(w, h) * 0.56f
                         val thick = d * 0.22f
                         val dx = pos.x - w / 2f
                         val dy = pos.y - h / 2f
@@ -130,7 +130,7 @@ fun LabeledDonut(
                     }
                 }
             ) {
-                val d = minOf(size.width, size.height) * 0.62f
+                val d = minOf(size.width, size.height) * 0.56f
                 val thick = d * 0.22f
                 val tl = Offset((size.width - d) / 2f, (size.height - d) / 2f)
                 drawArc(track, 0f, 360f, false, topLeft = tl, size = Size(d, d), style = Stroke(width = thick))
@@ -178,10 +178,13 @@ fun LabeledDonut(
         layout(w, h) {
             canvas.place(0, 0)
             centerP.place((w - centerP.width) / 2, (h - centerP.height) / 2)
-            val d = minOf(w, h) * 0.62f
-            val r = d / 2f + d * 0.11f + 34.dp.toPx()
+            val d = minOf(w, h) * 0.56f
+            // 圓環外緣（含被選到時凸出的部分）再留一點空隙，標籤依自己的大小往外放，才不會蓋到圓環
+            val rOuter = d / 2f + d * 0.11f + 7.dp.toPx() + 6.dp.toPx()
             labelPs.forEachIndexed { i, p ->
                 val a = Math.toRadians(mids[i].toDouble())
+                val ext = kotlin.math.abs(kotlin.math.cos(a)) * p.width / 2f + kotlin.math.abs(kotlin.math.sin(a)) * p.height / 2f
+                val r = rOuter + ext
                 val cx = w / 2f + (kotlin.math.cos(a) * r).toFloat()
                 val cy = h / 2f + (kotlin.math.sin(a) * r).toFloat()
                 val x = (cx - p.width / 2f).toInt().coerceIn(0, (w - p.width).coerceAtLeast(0))

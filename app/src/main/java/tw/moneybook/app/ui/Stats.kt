@@ -364,11 +364,9 @@ private fun SliceRow(s: Slice, total: Long, big: Boolean, open: Boolean, onOpen:
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!big) {
-            Spacer(Modifier.width(4.dp))
-            CatBubble(s.emoji, 0, 34.dp)
-            Spacer(Modifier.width(10.dp))
-        }
+        Spacer(Modifier.width(4.dp))
+        CatBubble(s.emoji, 0, if (big) 38.dp else 34.dp)
+        Spacer(Modifier.width(10.dp))
         Column(
             Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable(onClick = onOpen).padding(vertical = 4.dp, horizontal = 2.dp)
         ) {
