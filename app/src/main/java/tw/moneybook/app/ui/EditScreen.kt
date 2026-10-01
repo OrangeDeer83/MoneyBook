@@ -75,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -270,6 +271,30 @@ fun EditScreen(
                 IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除") }
             } else {
                 Spacer(Modifier.width(48.dp))
+            }
+        }
+
+        // 編輯既有的帳目或常用記帳時，標示正在改的是哪一筆（內容固定為開啟時的樣子，不隨輸入變動）
+        if (orig != null || (tplMode && tplId != null)) {
+            val oc = orig?.categoryId?.let { d.catMap[it] }
+            val op = oc?.parentId?.let { d.catMap[it] }
+            val what = when {
+                tplMode -> "常用記帳「${initialName.ifBlank { "未命名" }}」"
+                orig == null -> ""
+                orig.type == TxType.TRANSFER -> "${dayLabel(orig.day)}　轉帳　${formatMoney(orig.paid)}"
+                else -> "${dayLabel(orig.day)}　" + listOfNotNull(op?.name, oc?.name ?: "未分類").joinToString(" › ") + "　${formatMoney(orig.paid)}"
+            }
+            val onBanner = MaterialTheme.colorScheme.onPrimaryContainer
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CompositionLocalProvider(LocalContentColor provides onBanner) { IconGlyph("vec:pencil", 16.sp) }
+                Spacer(Modifier.width(8.dp))
+                Text("正在編輯", style = MaterialTheme.typography.labelLarge, color = onBanner, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                Text(what, style = MaterialTheme.typography.bodyMedium, color = onBanner, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             }
         }
 

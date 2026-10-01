@@ -1,5 +1,14 @@
 package tw.moneybook.app.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -103,7 +112,22 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        when (val top = stack.lastOrNull()) {
+        AnimatedContent(
+            targetState = stack.lastOrNull(),
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                // 返回（原本那頁已不在堆疊裡）往右退場；進記一筆／編輯從下方滑上來；其他頁從右邊滑入
+                val popping = initialState != null && initialState !in stack
+                when {
+                    popping -> (fadeIn(tween(200)) + slideInHorizontally(tween(240)) { -it / 8 }) togetherWith
+                        (fadeOut(tween(160)) + (if (initialState is Route.Edit) slideOutVertically(tween(220)) { it / 8 } else slideOutHorizontally(tween(220)) { it / 8 }))
+                    targetState is Route.Edit -> (fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 8 }) togetherWith fadeOut(tween(160))
+                    else -> (fadeIn(tween(200)) + slideInHorizontally(tween(240)) { it / 8 }) togetherWith fadeOut(tween(160))
+                }
+            },
+            label = "route",
+        ) { top ->
+        when (top) {
             null -> MainTabs(
                 vm = vm,
                 tab = tab,
@@ -134,6 +158,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                     }
                 }
             }
+        }
         }
         ConfettiOverlay(vm)
         SnackbarHost(

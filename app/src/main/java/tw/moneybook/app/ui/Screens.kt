@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,21 +77,25 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, onClick: () -> Unit) {
     val cute = LocalCute.current
     val cat = t.categoryId?.let { d.catMap[it] }
     val acc = t.accountId?.let { d.accMap[it] }
-    val title: String
+    val title: androidx.compose.ui.text.AnnotatedString
     val emoji: String
     val color: Int
     val details = ArrayList<String>()
     if (t.type == TxType.TRANSFER) {
-        title = "轉帳"
+        title = androidx.compose.ui.text.AnnotatedString("轉帳")
         emoji = "img:ui_transfer"
         color = 5
         val to = t.toAccountId?.let { d.accMap[it] }
         details.add("${acc?.name ?: "?"} → ${to?.name ?: "?"}")
     } else {
-        title = cat?.name ?: "未分類"
+        // 標題一律從大分類開始：「餐飲」或「餐飲 › 午餐」，不會一筆顯示大分類、一筆顯示子分類
+        val parent = cat?.parentId?.let { d.catMap[it] }
+        title = if (cat != null && parent != null) androidx.compose.ui.text.buildAnnotatedString {
+            append(parent.name)
+            withStyle(androidx.compose.ui.text.SpanStyle(color = cute.sub)) { append(" › ${cat.name}") }
+        } else androidx.compose.ui.text.AnnotatedString(cat?.name ?: "未分類")
         emoji = cat?.emoji ?: "img:cat_box"
         color = cat?.color ?: 8
-        cat?.parentId?.let { pid -> d.catMap[pid]?.let { details.add(it.name) } }
         if (acc != null && d.accounts.size > 1) details.add(acc.name)
     }
     if (t.instTotal > 1) details.add("分期 ${t.instIndex}/${t.instTotal}")
@@ -111,7 +116,7 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (t.reimb != 0) {
                     Spacer(Modifier.width(6.dp))
                     Text(
