@@ -308,7 +308,7 @@ fun EditScreen(
                     val tpls = if (!tplMode && orig == null) d.templates.filter { it.type == type } else emptyList()
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
                         if (tpls.isNotEmpty()) {
-                            item { CuteChip("常用", showTpl, { showTpl = true }, icon = "img:ui_favorite") }
+                            item { CuteChip("常用", showTpl, { showTpl = true }, icon = "vec:star") }
                         }
                         items(tops, key = { it.id }) { c ->
                             CuteChip(iconLabel(c.emoji, c.name), !showTpl && parent?.id == c.id, { catId = c.id; showTpl = false })
@@ -379,9 +379,9 @@ fun EditScreen(
             if (!tplMode) CuteChip(dayLabel(day), false, { dialog = "date" }, icon = "vec:calendar")
             if (type != TxType.TRANSFER && accs.isNotEmpty()) {
                 val a = accId?.let { d.accMap[it] }
-                CuteChip(a?.let { accLabel(it) } ?: "帳戶", false, { dialog = "from" }, icon = "img:acc_wallet")
+                CuteChip(a?.let { accLabel(it) } ?: "帳戶", false, { dialog = "from" }, icon = "vec:wallet")
             }
-            CuteChip(if (tags.isEmpty()) "新增標籤" else tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" }, icon = "img:stat_tag")
+            CuteChip(if (tags.isEmpty()) "新增標籤" else tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" }, icon = "vec:tag")
             val feeLabel = when {
                 fee > 0 && effDiscount > 0 -> "手續費・優惠"
                 fee > 0 -> "手續費 ${formatMoney(fee)}"
@@ -389,7 +389,7 @@ fun EditScreen(
                 type == TxType.EXPENSE -> "手續費／優惠"
                 else -> "手續費"
             }
-            CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "img:stat_atm")
+            CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "vec:coin")
             if (type == TxType.EXPENSE && !tplMode) {
                 val totalReimb = reimbItems.sumOf { it.effective }
                 val part = if (reimbItems.isNotEmpty() && totalReimb != actual) " ${formatMoney(totalReimb)}" else ""
@@ -402,13 +402,13 @@ fun EditScreen(
                     },
                     reimbItems.isNotEmpty(),
                     { dialog = "reimb" },
-                    icon = if (reimbItems.isNotEmpty() && reimbItems.all { it.closed }) "vec:check" else "img:acc_receipt",
+                    icon = if (reimbItems.isNotEmpty() && reimbItems.all { it.closed }) "vec:check" else "vec:receipt",
                 )
             }
             if (orig == null && type == TxType.EXPENSE && !tplMode) {
                 CuteChip(if (inst > 1) "分 $inst 期" else "分期", inst > 1, { dialog = "inst" }, icon = "vec:repeat")
             }
-            if (orig == null && !tplMode) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "img:ui_favorite")
+            if (orig == null && !tplMode) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "vec:star")
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
 

@@ -150,7 +150,12 @@ fun MoneyTheme(paletteKey: String, dark: Boolean, content: @Composable () -> Uni
         Cute(Color(p.inc), Color(p.exp), Color(p.card), Color(p.soft), Color(p.accent2), Color(p.sub), Color(p.ink), false)
     }
     CompositionLocalProvider(LocalCute provides cute) {
-        MaterialTheme(colorScheme = scheme, typography = AppTypography, shapes = AppShapes, content = content)
+        MaterialTheme(colorScheme = scheme, typography = AppTypography, shapes = AppShapes) {
+            // 深色模式下，沒指定顏色的文字（和圖示）要用淺色，不然會是黑字配深色底
+            CompositionLocalProvider(
+                androidx.compose.material3.LocalContentColor provides (if (dark) Color(p.dInk) else androidx.compose.material3.LocalContentColor.current),
+            ) { content() }
+        }
     }
 }
 

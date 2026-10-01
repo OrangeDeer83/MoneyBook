@@ -114,11 +114,11 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
         }
         item {
             CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(8.dp)) {
-                MenuRow("img:ui_ledger", "帳本管理", "目前：${d.currentBook.name}") { open("books") }
-                MenuRow("img:acc_wallet", "帳戶管理", "${d.visibleAccounts.size} 個帳戶") { open("accounts") }
+                MenuRow("vec:book", "帳本管理", "目前：${d.currentBook.name}") { open("books") }
+                MenuRow("vec:wallet", "帳戶管理", "${d.visibleAccounts.size} 個帳戶") { open("accounts") }
                 MenuRow("vec:folder", "分類管理", "新增、改圖示、子分類、排序") { open("categories") }
-                MenuRow("img:acc_receipt", "報銷", d.bookTxns.pendingReimb().let { p -> if (p.isEmpty()) "沒有待報銷的項目" else "待報銷 ${p.size} 筆・${formatMoney(p.sumOf { it.reimbOutstanding })}" }) { open("reimb") }
-                MenuRow("img:ui_favorite", "常用記帳", if (d.templates.isEmpty()) "在記一筆畫面按「存為常用」" else "${d.templates.size} 個") { open("templates") }
+                MenuRow("vec:receipt", "報銷", d.bookTxns.pendingReimb().let { p -> if (p.isEmpty()) "沒有待報銷的項目" else "待報銷 ${p.size} 筆・${formatMoney(p.sumOf { it.reimbOutstanding })}" }) { open("reimb") }
+                MenuRow("vec:star", "常用記帳", if (d.templates.isEmpty()) "在記一筆畫面按「存為常用」" else "${d.templates.size} 個") { open("templates") }
                 MenuRow(
                     "vec:target", "每月預算",
                     d.currentBook.budgetFor(vm.month).let { b -> if (b > 0) "${vm.month.monthValue} 月：${formatMoney(b)}" + (if (d.currentBook.monthBudgets.isNotEmpty()) "・有個別月份設定" else "") else "尚未設定" },

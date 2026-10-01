@@ -75,4 +75,10 @@ object AppIcons {
     val LSiren: ImageVector = lineIcon("siren", "M7,18v-6a5,5 0 0 1 10,0v6 M5,21h14v-3H5z M12,3v2 M4.5,6.5L6,8 M19.5,6.5L18,8")
     val LWarning: ImageVector = lineIcon("warning", "M12,3l10,18H2z M12,10v5 M12,18h.01")
     val LSearch: ImageVector = lineIcon("search", "M11,4a7,7 0 1,0 0,14a7,7 0 1,0 0,-14z M16.5,16.5L21,21")
+    val LWallet: ImageVector = lineIcon("wallet", "M19,7V4a1,1 0 0 0 -1,-1H5a2,2 0 0 0 0,4h15a1,1 0 0 1 1,1v4h-3a2,2 0 0 0 0,4h3a1,1 0 0 0 1,-1v-2a1,1 0 0 0 -1,-1 M3,5v14a2,2 0 0 0 2,2h15a1,1 0 0 0 1,-1v-4")
+    val LTag: ImageVector = lineIcon("tag", "M20.6,13.4l-7.2,7.2a2,2 0 0 1 -2.8,0L3,13V3h10l7.6,7.6a2,2 0 0 1 0,2.8z M7.5,7.5h.01")
+    val LReceipt: ImageVector = lineIcon("receipt", "M5,3h14v18l-3,-2 -2,2 -2,-2 -2,2 -2,-2 -3,2z M9,8h6 M9,12h6 M9,16h3")
+    val LCoin: ImageVector = lineIcon("coin", "M12,3a9,9 0 1,0 0,18a9,9 0 1,0 0,-18z M8.5,12h7")
+    val LStar: ImageVector = lineIcon("star", "M12,3l2.7,5.6 6.1,0.9 -4.4,4.3 1,6.1L12,17l-5.5,2.9 1,-6.1L3.2,9.5l6.1,-0.9z")
+    val LBook: ImageVector = lineIcon("book", "M5,3h13a1,1 0 0 1 1,1v16a1,1 0 0 1 -1,1H6a2,2 0 0 1 -2,-2V4a1,1 0 0 1 1,-1z M8,3v18 M11,8h5")
 }

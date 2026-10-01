@@ -334,7 +334,7 @@ fun HomeScreen(
                             .padding(horizontal = 12.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconGlyph("img:acc_receipt", 16.sp)
+                        IconGlyph("vec:receipt", 16.sp)
                         Spacer(Modifier.width(6.dp))
                         Text(
                             "待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbOutstanding })}  ›",

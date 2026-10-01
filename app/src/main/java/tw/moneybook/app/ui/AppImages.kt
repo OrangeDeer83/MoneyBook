@@ -120,6 +120,12 @@ object AppLines {
         "vec:siren" to AppIcons.LSiren,
         "vec:warning" to AppIcons.LWarning,
         "vec:search" to AppIcons.LSearch,
+        "vec:wallet" to AppIcons.LWallet,
+        "vec:tag" to AppIcons.LTag,
+        "vec:receipt" to AppIcons.LReceipt,
+        "vec:coin" to AppIcons.LCoin,
+        "vec:star" to AppIcons.LStar,
+        "vec:book" to AppIcons.LBook,
     )
 
     fun isLine(s: String): Boolean = s.startsWith(PREFIX)

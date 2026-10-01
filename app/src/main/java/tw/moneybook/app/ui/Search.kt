@@ -130,7 +130,7 @@ fun SearchScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit)
                         tagSel.size == 1 -> "#" + tagSel.first()
                         else -> "${tagSel.size} 個標籤"
                     }
-                    CuteChip("$tagLabel ▾", tagSel.isNotEmpty(), { tagDialog = true }, icon = "img:stat_tag")
+                    CuteChip("$tagLabel ▾", tagSel.isNotEmpty(), { tagDialog = true }, icon = "vec:tag")
                 }
             }
             item {
