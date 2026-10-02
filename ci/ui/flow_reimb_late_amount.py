@@ -22,7 +22,7 @@ def main():
         ns = d.shot("edit_empty")
         d.check("進入記一筆", d.has_text(ns, "備註（選填）"))
 
-        d.tap_text("報銷")
+        d.tap_text_scrolling("報銷", anchor="新增標籤")
         d.wait(d.by_text("這筆的報銷"))
         ns = d.shot("reimb_page_open")
         sw = [n for n in ns if n.checkable]

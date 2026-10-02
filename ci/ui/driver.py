@@ -87,6 +87,25 @@ def tap_desc(t, timeout=20):
     tap(wait(by_desc(t), timeout, f"圖示「{t}」"))
 
 
+def swipe(x1, y1, x2, y2, ms=350):
+    adb("shell", "input", "swipe", str(x1), str(y1), str(x2), str(y2), str(ms))
+    time.sleep(0.8)
+
+
+def tap_text_scrolling(t, anchor, exact=True, tries=6):
+    """可橫向捲動的一排按鈕：找不到就往左捲。anchor 是同一排裡一定看得到的文字，用來決定高度"""
+    for _ in range(tries):
+        ns = nodes()
+        for n in ns:
+            if (n.text == t) if exact else (t in n.text):
+                tap(n)
+                return n
+        row = next((n for n in ns if anchor in n.text), None)
+        y = row.cy if row else 1400
+        swipe(900, y, 150, y)
+    raise TimeoutError(f"找不到文字「{t}」（已向左捲 {tries} 次）")
+
+
 def ime_shown():
     return "mInputShown=true" in adb("shell", "dumpsys", "input_method")
 
