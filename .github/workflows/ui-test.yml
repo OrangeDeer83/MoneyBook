@@ -1,7 +1,7 @@
 name: UI Test
 
-# 畫面自動測試：在 CI 開 Android 模擬器，安裝 debug 版，照腳本操作並截圖。
-# 結果（截圖與報告）存成附件，不會發布 Release。
+# 畫面自動測試：在 CI 開 Android 模擬器，安裝 debug 版，依腳本自動操作並截圖，最後合併成一份含截圖的報告。
+# 結果存成附件，不會發布 Release。
 # 修改 ci/ 底下的檔案並 push 到 dev，或手動執行就會觸發。
 on:
   push:
@@ -19,23 +19,43 @@ permissions:
   contents: read
 
 jobs:
-  ui:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - uses: gradle/actions/setup-gradle@v4
-
       - name: Build debug APK
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
+
+  ui:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [a, b, c]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk-debug
+          path: app/build/outputs/apk/debug
+
+      - name: Python tools
+        run: pip3 install --user --break-system-packages pillow || pip3 install --user pillow
 
       - name: Enable KVM
         run: |
@@ -43,7 +63,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run UI flows on emulator
+      - name: Run UI tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ inputs.api || '35' }}
@@ -52,16 +72,35 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell settings put secure show_ime_with_hard_keyboard 0
-            mkdir -p out
-            cd ci/ui && OUT=../../out python3 flow_reimb_late_amount.py
+          script: OUT=$PWD/out APK=$PWD/app/build/outputs/apk/debug/app-debug.apk bash ci/ui/run_shard.sh ${{ matrix.shard }}
 
-      - name: Upload screenshots and report
+      - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-test-result
+          name: ui-${{ matrix.shard }}
           path: out
+          retention-days: 7
+
+  report:
+    needs: ui
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ui-*
+          path: results
+          merge-multiple: true
+      - name: Python tools
+        run: pip3 install --user --break-system-packages pillow || pip3 install --user pillow
+      - name: Build report
+        run: python3 ci/ui/build_report.py results report.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-report
+          path: |
+            report.html
+            report.json
           retention-days: 14
