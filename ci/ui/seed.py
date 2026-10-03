@@ -68,10 +68,10 @@ class Seed:
     def transfer(self, offset, amount, frm=CASH, to=BANK, **kw):
         return self.add(offset, "TRANSFER", amount, None, acc=frm, to=to, **kw)
 
-    def trade(self, offset, symbol, buy, qty, price, fee=0, name="", acc=INVEST, txn=None):
-        """投資帳戶的買賣記錄；txn 是連動的轉帳（self.transfer 回傳的那筆）"""
+    def trade(self, offset, symbol, buy, qty, price, fee=0, name="", acc=INVEST, txn=None, market=""):
+        """投資帳戶的買賣記錄；txn 是連動的轉帳（self.transfer 回傳的那筆）；market 空白＝舊資料（自動判斷）"""
         t = dict(id=self.nid(), accountId=acc, symbol=symbol, name=name, day=self.day(offset), buy=buy,
-                 qty=qty, price=price, fee=fee, txnId=(txn["id"] if txn else None))
+                 qty=qty, price=price, fee=fee, txnId=(txn["id"] if txn else None), market=market)
         self.trades.append(t)
         return t
 

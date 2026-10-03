@@ -411,3 +411,45 @@ def t_invest_fetch_ask():
     ns = d.shot("按不要之後")
     d.check("對話框關閉，沒有開啟抓價（仍可看到「抓最新價格」，沒有關閉抓價的提示）",
             not d.has(ns, "上網抓最新價格？", True) and d.has(ns, "抓最新價格", True) and not d.has(ns, "點這裡關閉網路抓價"))
+
+
+@case(D, "買進時要選市場並顯示在持股上")
+def t_invest_market():
+    d.fresh(empty_seed(invest=True).json())
+    open_account("測試證券")
+    d.tap_text("買進", exact=True)
+    d.wait_text("買進", timeout=10)
+    d.time.sleep(1)
+    ns = d.shot("買進對話框")
+    d.check("有市場選項：台股、美股、日股、韓股、港股、加密貨幣", all(d.has(ns, m, True) for m in ("台股", "美股", "日股", "韓股", "港股", "加密貨幣")))
+    d.check("說明名稱只是方便自己辨認", d.has(ns, "名稱（選填，自己看得懂就好"))
+    d.tap_text("日股", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("選了日股")
+    d.check("代號提示跟著市場變：日股填 7203", d.has(ns, "7203"))
+    fill_dialog(["7203", "TOYOTA", "10", "3000", None])
+    d.tap_text("記錄", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("買進之後")
+    d.check("持股列出「TOYOTA 7203」並標示「日股」", d.has(ns, "TOYOTA 7203", True) and d.has(ns, "日股", True))
+
+
+@case(D, "抓最新價格要列出沒抓到的是哪一檔")
+def t_invest_fetch_fail():
+    s = empty_seed(invest=True)
+    t = s.transfer(0, 5000, S.CASH, S.INVEST)
+    s.trade(0, "ZZZZ9999", True, 10, 500, 0, "FAKE", txn=t, market="US")
+    d.fresh(s.json())
+    open_account("測試證券")
+    d.tap_text("抓最新價格", exact=True)
+    d.wait_text("上網抓最新價格？", timeout=10)
+    d.tap_text("開啟並抓價", exact=True)
+    d.wait_text("抓價結果", timeout=60)
+    ns = d.shot("抓價結果")
+    d.check("結果裡列出沒抓到的代號 ZZZZ9999", d.has(ns, "ZZZZ9999"))
+    d.check("有「沒抓到」的分類與處理建議（確認市場、代號，或手動輸入）", d.has(ns, "沒抓到") and d.has(ns, "手動輸入"))
+    d.tap_text("關閉", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("關閉之後")
+    d.check("持股那一列標示「抓不到價格」", d.has(ns, "抓不到價格"))
+
