@@ -246,7 +246,7 @@ def t_adjust_edge():
     d.tap_text("更新餘額", exact=True)
     d.wait_text("實際的餘額", exact=False, timeout=10)
     ns = d.shot("信用卡的更新餘額")
-    d.check("信用卡有「欠款請輸入負數」的提示", d.has(ns, "信用卡欠款請輸入負數"))
+    d.check("信用卡有「欠款請輸入負數」的提示", d.has(ns, "欠款請輸入負數"))
     fill_dialog(["0"])
     ns = d.shot("輸入和目前一樣的 0")
     d.check("數字相同：提示「不用調整」，更新鈕不能按", d.has(ns, "和記錄的一樣，不用調整") and disabled(ns, "更新"))
@@ -485,4 +485,82 @@ def t_invest_fetch_real():
     nums = [float(m.group(1).replace(",", "")) for n in ns for m in [re.search(r"現價 ([\d,\.]+)", n.text)] if m]
     d.check("持股現價已經不是 1.00（抓到的價格有套用）", bool(nums) and nums[0] > 5, nums)
     d.check("沒有出現「抓不到價格」", not d.has(ns, "抓不到價格"))
+
+
+# ───────────────────────── 帳戶分頁：收折、隱藏帳戶、貸款 ─────────────────────────
+@case(D, "帳戶分頁的分組可以收折")
+def t_acc_collapse():
+    d.fresh(empty_seed(extra_accounts=2).json())
+    acc_tab()
+    ns = d.shot("全部展開")
+    d.check("展開時看得到銀行組的帳戶", d.has(ns, "測試銀行", True) and d.has(ns, "帳戶01", True))
+    head = d.first(ns, "銀行", True)
+    d.check("有「銀行」分組標題", head is not None)
+    if head:
+        d.tap(head)
+        d.time.sleep(1)
+        ns = d.shot("收折銀行組")
+        d.check("收折後銀行組的帳戶不顯示，標題與其他組還在", not d.has(ns, "測試銀行", True) and not d.has(ns, "帳戶01", True) and d.has(ns, "銀行", True) and d.has(ns, "信用卡", True))
+        d.check("總資產不受收折影響", d.has(ns, "$51,000", True))
+        d.tap(d.first(ns, "銀行", True))
+        d.time.sleep(1)
+        ns = d.shot("再展開")
+        d.check("再點一次就展開", d.has(ns, "測試銀行", True) and d.has(ns, "帳戶01", True))
+
+
+@case(D, "隱藏的帳戶不在帳戶分頁顯示但可以打開")
+def t_acc_hidden():
+    d.fresh(empty_seed(hidden_account=True).json())
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("隱藏的帳戶不顯示", not d.has(ns, "隱藏帳戶"))
+    d.check("總資產不含隱藏帳戶（$51,000）", d.has(ns, "$51,000", True))
+    d.check("有「顯示已隱藏的帳戶（1）」", d.has(ns, "顯示已隱藏的帳戶（1）", True))
+    d.tap_text("顯示已隱藏的帳戶（1）", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("打開隱藏的帳戶")
+    d.check("打開後看得到「隱藏帳戶（已隱藏）」", d.has(ns, "隱藏帳戶（已隱藏）", True))
+    d.check("按鈕變成「收起已隱藏的帳戶」，總資產仍是 $51,000", d.has(ns, "收起已隱藏的帳戶", True) and d.has(ns, "$51,000", True))
+    d.tap_text("收起已隱藏的帳戶", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("再收起")
+    d.check("再收起後又看不到", not d.has(ns, "隱藏帳戶"))
+
+
+@case(D, "貸款帳戶：和信用卡同屬負債，還款是轉帳不算支出")
+def t_acc_loan():
+    s = empty_seed(loan=True)
+    s.transfer(0, 11291, S.BANK, S.LOAN, note="信貸第1期")
+    d.fresh(s.json())
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("有「貸款」分組與「信貸」帳戶", d.has(ns, "貸款", True) and d.has(ns, "信貸", True))
+    d.check("信貸餘額 -$188,709（初始 -200,000 加上還款 11,291）", d.has(ns, "-$188,709", True), [n.text for n in ns if "$" in n.text][:10])
+    d.check("總資產 -$149,000（把欠款算進去）", d.has(ns, "-$149,000", True))
+    exp, inc = home_values()
+    d.check("還款是轉帳：本月支出 $0", exp == "$0", (exp, inc))
+    open_account("信貸")
+    d.tap_text("更新餘額", exact=True)
+    d.wait_text("實際的餘額", exact=False, timeout=10)
+    ns = d.shot("貸款的更新餘額")
+    d.check("貸款的更新餘額也提示欠款請輸入負數", d.has(ns, "欠款請輸入負數"))
+
+
+# ───────────────────────── 記一筆：選帳戶分類與常用帳戶 ─────────────────────────
+@case(D, "記一筆選帳戶：常用帳戶在最上面，其餘依類型分組")
+def t_pick_account_groups():
+    d.fresh(f.base_seed())
+    f.open_add()
+    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.wait_text("選擇帳戶", timeout=10)
+    ns = d.shot("選擇帳戶")
+    d.check("有「常用帳戶」分組", d.has(ns, "常用帳戶", True))
+    fav = d.first(ns, "常用帳戶", True)
+    bank_h, card_h = d.first(ns, "銀行", True), d.first(ns, "信用卡", True)
+    d.check("有「銀行」「信用卡」分組標題（依類型分組）", bank_h is not None and card_h is not None)
+    if fav and bank_h and card_h:
+        d.check("由上到下：常用帳戶 → 銀行 → 信用卡", fav.cy < bank_h.cy < card_h.cy, (fav.cy, bank_h.cy, card_h.cy))
+    names = [n for n in ns if n.text == "測試銀行"]
+    d.check("常用的測試銀行會在常用帳戶與原本的分組各出現一次", len(names) == 2, len(names))
+    d.check("沒用過的信用卡不會出現在常用帳戶裡", len([n for n in ns if n.text == "測試信用卡"]) == 1)
 
