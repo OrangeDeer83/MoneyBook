@@ -105,3 +105,10 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
 
 /** 買賣金額（不含手續費），四捨五入到元 */
 fun tradeAmount(qty: Double, price: Double): Long = (qty * price).roundToLong()
+
+/** 數量：最多 4 位小數，去掉多餘的 0（100 → 100，0.5000 → 0.5） */
+fun qtyText(q: Double): String =
+    java.math.BigDecimal(q).setScale(4, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+
+/** 價格：1 元以上 2 位小數，不到 1 元（例如小幣種）4 位小數 */
+fun priceText(p: Double): String = String.format(java.util.Locale.US, if (p >= 1.0) "%,.2f" else "%.4f", p)

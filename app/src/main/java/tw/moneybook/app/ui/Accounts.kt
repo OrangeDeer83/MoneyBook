@@ -168,6 +168,9 @@ fun AccountDetailScreen(
             if (a.type == AccountType.CARD) {
                 item { CardBillCard(vm, a, onPayCard) }
             }
+            if (a.type == AccountType.INVEST) {
+                item { InvestSection(vm, a) }
+            }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     MonthSwitcher(month, { month = it })

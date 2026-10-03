@@ -231,6 +231,71 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         })
     }
 
+    // ───────── 投資 ─────────
+
+    /**
+     * 記一筆買賣。cashAccountId 不是 null 時，同時記一筆銀行 ⇄ 投資帳戶的轉帳：
+     * 買進＝銀行轉到投資帳戶（手續費算在轉帳上，會算進支出）；賣出＝投資帳戶轉回銀行（收入扣掉手續費）。
+     */
+    fun saveTrade(
+        accountId: Long, symbol: String, name: String, day: Long,
+        buy: Boolean, qty: Double, price: Double, fee: Long, cashAccountId: Long?,
+    ) {
+        val d = data
+        val sym = symbol.trim().uppercase()
+        if (d.accMap[accountId] == null || sym.isEmpty() || qty <= 0.0 || price <= 0.0) return
+        var next = d.nextId
+        val amount = tradeAmount(qty, price)
+        val cashAmount = if (buy) amount else (amount - fee).coerceAtLeast(0L)
+        var linked: Txn? = null
+        if (cashAccountId != null && cashAccountId != accountId && d.accMap[cashAccountId] != null && cashAmount > 0L) {
+            linked = Txn(
+                id = next++, bookId = d.currentBook.id, type = TxType.TRANSFER, amount = cashAmount,
+                categoryId = null,
+                accountId = if (buy) cashAccountId else accountId,
+                toAccountId = if (buy) accountId else cashAccountId,
+                day = day,
+                note = "${if (buy) "買進" else "賣出"} $sym ${qtyText(qty)} @ ${priceText(price)}",
+                tags = emptyList(),
+                fee = if (buy) fee else 0L,
+            )
+        }
+        val trade = Trade(next++, accountId, sym, name.trim(), day, buy, qty, price, fee, linked?.id)
+        commit(
+            d.copy(
+                txns = if (linked != null) sortTxns(d.txns + linked) else d.txns,
+                trades = d.trades + trade,
+                nextId = next,
+            )
+        )
+        toast("已記錄${if (buy) "買進" else "賣出"} $sym")
+    }
+
+    /** 刪除一筆買賣（連動的轉帳一起刪），可以復原 */
+    fun deleteTrade(id: Long) {
+        val d = data
+        val t = d.trades.firstOrNull { it.id == id } ?: return
+        val linked = t.txnId?.let { tid -> d.txns.firstOrNull { it.id == tid } }
+        commit(d.copy(trades = d.trades.filter { it.id != id }, txns = if (linked != null) d.txns.filter { it.id != linked.id } else d.txns))
+        _messages.tryEmit(UiMsg("已刪除這筆${if (t.buy) "買進" else "賣出"}", "復原") {
+            val now = data
+            if (now.trades.none { it.id == t.id }) {
+                commit(
+                    now.copy(
+                        trades = now.trades + t,
+                        txns = if (linked != null && now.txns.none { it.id == linked.id }) sortTxns(now.txns + linked) else now.txns,
+                    )
+                )
+            }
+        })
+    }
+
+    /** 手動輸入某個代號今天的價格（同一天同代號只留最後一筆） */
+    fun setPrice(symbol: String, price: Double, day: Long = LocalDate.now().toEpochDay()) {
+        if (price <= 0.0) return
+        update { d -> d.copy(prices = d.prices.filterNot { it.symbol == symbol && it.day == day } + PriceSnap(symbol, day, price)) }
+    }
+
     fun moveTxnDay(id: Long, day: Long) {
         val t = data.txns.firstOrNull { it.id == id } ?: return
         if (t.day == day) return
