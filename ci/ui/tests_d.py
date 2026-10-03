@@ -516,6 +516,8 @@ def t_acc_hidden():
     d.check("隱藏的帳戶不顯示", not d.has(ns, "隱藏帳戶"))
     d.check("總資產不含隱藏帳戶（$51,000）", d.has(ns, "$51,000", True))
     d.check("有「顯示已隱藏的帳戶（1）」", d.has(ns, "顯示已隱藏的帳戶（1）", True))
+    sw, first = d.first(ns, "顯示已隱藏的帳戶（1）", True), d.first(ns, "現金", True)
+    d.check("開關在最上方（在第一個分組「現金」之前，比較好按）", bool(sw and first) and sw.cy < first.cy, (sw and sw.cy, first and first.cy))
     d.tap_text("顯示已隱藏的帳戶（1）", exact=True)
     d.time.sleep(1)
     ns = d.shot("打開隱藏的帳戶")
@@ -563,4 +565,24 @@ def t_pick_account_groups():
     names = [n for n in ns if n.text == "測試銀行"]
     d.check("常用的測試銀行會在常用帳戶與原本的分組各出現一次", len(names) == 2, len(names))
     d.check("沒用過的信用卡不會出現在常用帳戶裡", len([n for n in ns if n.text == "測試信用卡"]) == 1)
+
+
+@case(D, "帳戶分組的收折狀態重開 App 後保留")
+def t_acc_collapse_persist():
+    d.fresh(empty_seed(extra_accounts=2).json())
+    acc_tab()
+    d.tap(d.first(d.nodes(), "銀行", True))
+    d.time.sleep(1)
+    ns = d.shot("收折銀行組")
+    d.check("收折後看不到銀行組的帳戶", not d.has(ns, "測試銀行", True) and not d.has(ns, "帳戶01", True))
+    d.restart()
+    acc_tab()
+    ns = d.shot("重開 App 後")
+    d.check("重開後銀行組仍然是收折的（帳戶沒顯示，標題還在）", not d.has(ns, "測試銀行", True) and not d.has(ns, "帳戶01", True) and d.has(ns, "銀行", True))
+    d.tap(d.first(ns, "銀行", True))
+    d.time.sleep(1)
+    d.restart()
+    acc_tab()
+    ns = d.shot("展開後再重開")
+    d.check("展開之後再重開，仍然是展開的", d.has(ns, "測試銀行", True) and d.has(ns, "帳戶01", True))
 
