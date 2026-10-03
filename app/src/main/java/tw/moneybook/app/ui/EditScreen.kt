@@ -146,6 +146,7 @@ fun EditScreen(
     var reimbJson by rememberSaveable { mutableStateOf(ReimbCodec.encode(origItems)) }
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
+    var saved by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     // 系統鍵盤直接蓋在畫面上，不要把畫面往上推（備註在最上面，不會被蓋到）
     val hostContext = LocalContext.current
@@ -209,6 +210,8 @@ fun EditScreen(
 
     /** 儲存；成功回傳 true */
     fun doSave(): Boolean {
+        // 快速連點時，換頁動畫還沒結束、畫面還能點，不能重複儲存
+        if (saved) return true
         if (!canSave) {
             vm.toast(
                 when {
@@ -224,9 +227,11 @@ fun EditScreen(
                 dialog = "tplname"
                 return false
             }
+            saved = true
             vm.saveTemplate(tplId, tplName.trim(), draft())
             vm.toast("常用記帳已儲存")
         } else {
+            saved = true
             vm.saveTxn(editId, draft())
         }
         onClose()
@@ -754,7 +759,7 @@ private fun AccountPick(label: String, value: String, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape).background(cute.card)
-            // �`��Ҧ��U�d���M�I���X�G�P��A�[�@����ؤ~�ݱo�X�O�i�H�I��
+            // 深色模式下卡片和背景幾乎同色，加一圈邊框才看得出是可以點的
             .then(if (cute.dark) Modifier.border(1.dp, cute.sub.copy(alpha = 0.5f), shape) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 16.dp),
