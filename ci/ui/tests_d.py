@@ -105,7 +105,7 @@ def t_pick_book_scroll():
     ns = d.shot("切換帳本（一開始）")
     d.check("一開始看得到「帳本02」", d.has(ns, "帳本02", True))
     d.check("一開始看不到最後一個帳本「帳本31」（超出畫面）", not d.has(ns, "帳本31", True))
-    for _ in range(4):
+    for _ in range(12):   # 31 個帳本，一次約滑過 6 個
         d.swipe(540, 1500, 540, 800)
         if d.has(d.nodes(), "帳本31", True):
             break
