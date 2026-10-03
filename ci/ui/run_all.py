@@ -5,6 +5,7 @@ import runner
 import tests_a  # noqa: F401
 import tests_b  # noqa: F401
 import tests_c  # noqa: F401
+import tests_d  # noqa: F401
 
 if __name__ == "__main__":
     import driver

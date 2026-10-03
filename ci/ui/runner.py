@@ -44,10 +44,23 @@ def _cleanup(real_now):
         pass
 
 
+def _selected(r, keys):
+    """only 模式：環境變數 ONLY（逗號分隔）裡的任何一項，等於用例編號，或包含在用例名稱裡"""
+    try:
+        cid = _match(r["key"])["id"]
+    except KeyError:
+        cid = ""
+    return any(k == cid or k in r["key"] for k in keys)
+
+
 def run(shard):
     real_now = d.dev_now()
     results = []
-    todo = [r for r in REG if r["shard"] == shard]
+    if shard == "only":
+        keys = [k.strip() for k in os.environ.get("ONLY", "").split(",") if k.strip()]
+        todo = [r for r in REG if _selected(r, keys)]
+    else:
+        todo = [r for r in REG if r["shard"] == shard]
     print(f"分流 {shard}：{len(todo)} 個用例", flush=True)
     for r in todo:
         try:

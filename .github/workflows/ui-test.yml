@@ -2,18 +2,18 @@ name: UI Test
 
 # 畫面自動測試：在 CI 開 Android 模擬器，安裝 debug 版，依腳本自動操作並截圖，最後合併成一份含截圖的報告。
 # 結果存成附件，不會發布 Release。
-# 修改 ci/ 底下的檔案並 push 到 dev，或手動執行就會觸發。
+# 只能手動執行（Actions 頁面，或 gh workflow run ui-test.yml --ref dev）：
+#   不填 only：跑全部用例（a、b、c、d 四個分流，約 30 分鐘）
+#   填 only：只跑指定的用例（用例編號或名稱的一部分，逗號分隔，例如 TC121,更新餘額），一台模擬器，幾分鐘
 on:
-  push:
-    branches: [ dev ]
-    paths:
-      - 'ci/**'
-      - '.github/workflows/ui-test.yml'
   workflow_dispatch:
     inputs:
       api:
         description: 'Android API 版本'
         default: '35'
+      only:
+        description: '只跑這些用例（編號或名稱片段，逗號分隔）；留空跑全部'
+        default: ''
 
 permissions:
   contents: read
@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [a, b, c]
+        shard: ${{ fromJSON((inputs.only || '') != '' && '["only"]' || '["a","b","c","d"]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,6 +65,8 @@ jobs:
 
       - name: Run UI tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ONLY: ${{ inputs.only }}
         with:
           api-level: ${{ inputs.api || '35' }}
           target: google_apis
@@ -72,7 +74,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: OUT=$PWD/out APK=$PWD/app/build/outputs/apk/debug/app-debug.apk bash ci/ui/run_shard.sh ${{ matrix.shard }}
+          script: ONLY="$ONLY" OUT=$PWD/out APK=$PWD/app/build/outputs/apk/debug/app-debug.apk bash ci/ui/run_shard.sh ${{ matrix.shard }}
 
       - name: Upload screenshots
         if: always()
@@ -84,7 +86,8 @@ jobs:
 
   report:
     needs: ui
-    if: always()
+    # 只跑指定用例時不產生完整報告（沒跑的用例會全部顯示成手動），直接看 ui-only 附件裡的 results_only.json
+    if: always() && (inputs.only || '') == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
