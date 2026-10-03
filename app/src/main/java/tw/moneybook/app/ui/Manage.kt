@@ -337,6 +337,14 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                 CuteChip(if (editing) "完成" else "編輯排序", editing, { editing = !editing }, icon = if (editing) null else "vec:pencil")
             }
         }
+        // 隱藏帳戶的開關放在最上方，比較好按
+        if (hiddenCount > 0) {
+            item {
+                TextButton(onClick = { vm.accShowHidden = !showHidden }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (showHidden) "收起已隱藏的帳戶" else "顯示已隱藏的帳戶（$hiddenCount）")
+                }
+            }
+        }
         item {
             val total = d.visibleAccounts.sumOf { bal[it.id] ?: 0L }
             CuteCard(Modifier.fillMaxWidth()) {
@@ -405,13 +413,6 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                             }
                         }
                     }
-                }
-            }
-        }
-        if (hiddenCount > 0) {
-            item {
-                TextButton(onClick = { vm.accShowHidden = !showHidden }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (showHidden) "收起已隱藏的帳戶" else "顯示已隱藏的帳戶（$hiddenCount）")
                 }
             }
         }
