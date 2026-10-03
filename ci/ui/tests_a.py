@@ -70,7 +70,8 @@ def t_kbd_back():
 def t_note_hint():
     d.fresh(home_seed())
     f.open_add()
-    ns = d.shot("備註框", contrast=True)
+    # 金額是 0 時，數字鍵盤的「完成」本來就是淡色（還不能存），不算對比不足
+    ns = d.shot("備註框", contrast=True, ignore=("完成",))
     d.check("提示字為「備註（選填）」", d.has(ns, "備註（選填）"))
 
 

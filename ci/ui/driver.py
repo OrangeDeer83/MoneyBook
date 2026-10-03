@@ -213,14 +213,22 @@ def swipe(x1, y1, x2, y2, ms=350):
     time.sleep(0.9)
 
 
+def _screen():
+    ns = nodes()
+    return max([n.x2 for n in ns] + [1]), max([n.y2 for n in ns] + [1])
+
+
 def scroll_down(times=1):
+    """往下捲（手指由下往上滑）。座標依目前螢幕大小算，縮小螢幕的用例也適用"""
+    w, h = _screen()
     for _ in range(times):
-        swipe(540, 1700, 540, 600)
+        swipe(w // 2, int(h * 0.71), w // 2, int(h * 0.25))
 
 
 def scroll_up(times=1):
+    w, h = _screen()
     for _ in range(times):
-        swipe(540, 600, 540, 1700)
+        swipe(w // 2, int(h * 0.25), w // 2, int(h * 0.71))
 
 
 def back():
@@ -366,7 +374,7 @@ def _lum(c):
     return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2])
 
 
-def contrast_issues(png_path, ns, threshold=1.8):
+def contrast_issues(png_path, ns, threshold=1.8, ignore=()):
     try:
         from PIL import Image
     except ImportError:
@@ -382,6 +390,8 @@ def contrast_issues(png_path, ns, threshold=1.8):
         if bar and n.cy > 2150 and t not in ("明細", "帳戶", "統計", "我的"):
             continue
         if any(b.x1 <= n.cx <= b.x2 and b.y1 <= n.cy <= b.y2 for b in off):
+            continue
+        if t in ignore:
             continue
         if not t or t.startswith("＋ 子分類") or re.match(r"^(今天|昨天|前天|\d+/\d+)", t):
             continue   # 已知誤報：節點範圍與實際文字位置不一致
@@ -401,7 +411,7 @@ def contrast_issues(png_path, ns, threshold=1.8):
     return bad
 
 
-def shot(label, contrast=False):
+def shot(label, contrast=False, ignore=()):
     """截圖＋存畫面結構；contrast=True 時順便檢查文字對比"""
     CURRENT._n += 1
     base = f"{CURRENT._n:02d}"
@@ -414,7 +424,7 @@ def shot(label, contrast=False):
         f.write(raw)
     CURRENT.shots.append((base + ".png", label))
     if contrast:
-        bad = contrast_issues(path, ns)
+        bad = contrast_issues(path, ns, ignore=ignore)
         if bad is None:
             note("沒有安裝 Pillow，略過對比檢查")
         else:
