@@ -114,11 +114,16 @@ def dump():
 
 
 def warmup():
-    """剛開機時系統程式還在忙，先等一下並關掉可能出現的無回應對話框"""
+    """剛開機時系統程式還在忙，先等一下並關掉可能出現的無回應對話框。
+    從快照啟動時系統已經穩定，連續兩次畫面結構都正常就提早結束（最多等 6 次）"""
     sh("input keyevent 3")
+    calm = 0
     for _ in range(6):
-        time.sleep(5)
-        dump()
+        time.sleep(3)
+        ns, _raw = dump()          # dump() 會順便關掉無回應對話框
+        calm = calm + 1 if len(ns) >= 5 and not any(any(h in n.text for h in ANR_HINTS) for n in ns) else 0
+        if calm >= 2:
+            break
 
 
 def recover():
