@@ -49,6 +49,19 @@ jobs:
           set -o pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee build.log
 
+      # 單元測試：純邏輯（持股計算、舊資料轉換、存檔相容…），失敗就不產生 APK
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --console=plain
+
+      - name: Upload unit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/testDebugUnitTest
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Report compile errors
         if: failure()
         run: |

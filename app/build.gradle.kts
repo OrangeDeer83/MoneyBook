@@ -86,4 +86,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.compose.ui:ui-tooling-preview")
+
+    // 單元測試（純邏輯：持股計算、舊資料轉換、存檔相容）。org.json 要用真的實作，android.jar 裡的是空殼
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }
