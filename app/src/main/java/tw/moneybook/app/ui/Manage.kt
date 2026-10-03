@@ -1046,6 +1046,7 @@ private fun LegacyPreviewDialog(r: tw.moneybook.app.LegacyImport.Result, existin
     lines.add("一般收支 ${s.expense + s.income} 筆（支出 ${s.expense}、收入 ${s.income}）")
     lines.add("轉帳 ${s.transfers} 筆" + if (s.stockTransfers > 0) "，其中 ${s.stockTransfers} 筆是股票基金買賣，轉成轉帳到證券帳戶，不算支出或收入" else "")
     if (s.adjusts > 0) lines.add("餘額調整 ${s.adjusts} 筆：更新餘額、報銷入帳、收益／虧損、借出收回，只改帳戶餘額，不算收入或支出")
+    if (s.loanPayments > 0) lines.add("還貸款 ${s.loanPayments} 筆：轉成轉帳到「${s.loanAccounts.joinToString("、")}」貸款帳戶，不算支出。舊檔沒有貸款金額，匯入後請到帳戶頁用「更新餘額」填目前的欠款（負數）")
     if (s.foreign > 0) lines.add("外幣 ${s.foreign} 筆：用檔案裡的匯率換成 NT$，原幣金額寫在備註")
     if (s.unpaired > 0) lines.add("找不到另一半的轉帳／還款 ${s.unpaired} 筆，當成一般收支")
     if (s.skipped > 0) lines.add("看不懂而略過 ${s.skipped} 筆")

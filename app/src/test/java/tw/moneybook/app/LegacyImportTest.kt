@@ -195,6 +195,32 @@ class LegacyImportTest {
     }
 
     @Test
+    fun loanRepaymentsBecomeTransfersToALoanAccountAndAreNotExpenses() {
+        val loanCsv = (
+            listOf(header) + listOf(
+                row("支出", "2026-05-17 09:00:00", "將來", "-11291", "投資", "信貸", "第1期"),
+                row("支出", "2026-06-17 09:00:00", "將來", "-11291", "投資", "信貸", "第2期"),
+                row("支出", "2026-06-18 09:00:00", "將來", "-100", "吃喝", "午餐", "便當"),
+            )
+            ).joinToString("\n")
+        val r = LegacyImport.convert(Defaults.create(), loanCsv)!!
+        val d = r.data
+        val loan = d.accounts.single { it.name == "信貸" }
+        assertEquals(AccountType.LOAN, loan.type)
+        // 兩期還款都是「將來 → 信貸」的轉帳，不算支出；只有午餐 100 是支出
+        val pays = d.txns.filter { it.toAccountId == loan.id }
+        assertEquals(2, pays.size)
+        assertTrue(pays.all { it.type == TxType.TRANSFER && it.amount == 11_291L && it.fee == 0L })
+        assertEquals(100L, d.txns.expenseSum())
+        // 舊檔沒有貸款總額，初始欠款是 0，所以還款後餘額是 +22,582（要在帳戶頁用「更新餘額」填欠款）
+        assertEquals(22_582L, d.balances()[loan.id])
+        // 銀行那邊的錢和舊 App 一樣（還款本來就是從將來扣）
+        assertEquals(-(11_291L * 2 + 100), d.balances()[d.accounts.single { it.name == "將來" }.id])
+        assertEquals(2, r.summary.loanPayments)
+        assertEquals(listOf("信貸"), r.summary.loanAccounts)
+    }
+
+    @Test
     fun existingAccountsAndCategoriesAreReused() {
         val base = Defaults.create()
         val cash = base.accounts.first()

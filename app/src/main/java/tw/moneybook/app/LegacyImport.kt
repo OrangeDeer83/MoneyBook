@@ -12,6 +12,8 @@ import kotlin.math.abs
  * - 同一個時間、分類是「轉帳」或「還款」的一收一支配成一筆轉帳（兩邊金額差額記成手續費）
  * - 「投資 → 股票基金」的支出、「收入 → 股票基金」的收入，改成轉到／轉自「○○證券」投資帳戶；
  *   舊資料的持股市值已經記在「台股／美股／幣安」這類帳戶裡，所以新建的證券帳戶最後用一筆餘額調整沖回 0，避免資產重複計算
+ * - 「投資 → 信貸」的支出（還貸款）：改成轉帳到「信貸」貸款帳戶，不算支出。舊檔沒有貸款總額，
+ *   初始欠款是 0，要到帳戶頁用「更新餘額」填目前欠款（負數）
  * - 更新餘額、更新欠款、收益、虧損、借出、收回、報銷入帳：只改餘額，不算收入或支出（餘額調整）
  * - 外幣用檔案裡的匯率換成 NT$，原幣金額寫進備註
  * - 報銷欄的金額換成已報銷（對象留白）；手續費為負數代表優惠
@@ -26,6 +28,10 @@ object LegacyImport {
         /** 股票基金的買賣，轉成轉帳到證券帳戶（已含在 transfers 裡） */
         val stockTransfers: Int,
         val adjusts: Int,
+        /** 還貸款的筆數（轉成轉帳到貸款帳戶，已含在 transfers 裡） */
+        val loanPayments: Int,
+        /** 新建的貸款帳戶：舊檔沒有貸款金額，要自己填欠款 */
+        val loanAccounts: List<String>,
         /** 找不到另一半的轉帳／還款，當成一般收支 */
         val unpaired: Int,
         val foreign: Int,
@@ -147,6 +153,7 @@ object LegacyImport {
         val books = d0.books.toMutableList()
         val newAccNames = ArrayList<String>()
         val brokerIds = LinkedHashSet<Long>()
+        val loanIds = LinkedHashSet<Long>()
         val newBookNames = ArrayList<String>()
         val catsBefore = cats.size
         val currentBookId = d0.currentBook.id
@@ -197,7 +204,7 @@ object LegacyImport {
 
         val added = ArrayList<Txn>()
         val doneGroups = HashSet<String>()
-        var nExpense = 0; var nIncome = 0; var nTransfer = 0; var nStock = 0; var nAdjust = 0; var nUnpaired = 0; var nForeign = 0
+        var nExpense = 0; var nIncome = 0; var nTransfer = 0; var nStock = 0; var nAdjust = 0; var nUnpaired = 0; var nForeign = 0; var nLoan = 0
 
         for (r in list) {
             if (r.foreign) nForeign++
@@ -223,6 +230,23 @@ object LegacyImport {
                 continue
             }
             if (r.top == "轉帳" || r.top == "還款") nUnpaired++
+
+            // 還信貸：轉帳到貸款帳戶（負債），不算支出
+            if (!r.income && r.top == "投資" && r.sub == "信貸") {
+                if (r.ntd > 0L) {
+                    val loan = findAcc("信貸", AccountType.LOAN)
+                    if (accs.first { it.id == loan }.name in newAccNames) loanIds.add(loan)
+                    added.add(
+                        Txn(
+                            id = nextId++, bookId = bookId, type = TxType.TRANSFER, amount = r.ntd, categoryId = null,
+                            accountId = findAcc(r.acc), toAccountId = loan,
+                            day = r.day, note = noteOf(r, "還款"), tags = r.tags,
+                        )
+                    )
+                    nTransfer++; nLoan++
+                }
+                continue
+            }
 
             // 股票基金的買賣：轉到／轉自證券帳戶，不算支出或收入
             if ((!r.income && r.top == "投資" && r.sub == "股票基金") || (r.income && r.top == "收入" && r.sub == "股票基金")) {
@@ -313,7 +337,8 @@ object LegacyImport {
         val summary = Summary(
             rows = list.size + skipped, skipped = skipped,
             expense = nExpense, income = nIncome, transfers = nTransfer, stockTransfers = nStock,
-            adjusts = nAdjust, unpaired = nUnpaired, foreign = nForeign,
+            adjusts = nAdjust, loanPayments = nLoan, loanAccounts = loanIds.map { id -> accs.first { it.id == id }.name },
+            unpaired = nUnpaired, foreign = nForeign,
             offsetAccounts = offsetNames,
             newAccounts = newAccNames.map { n -> n to (bal[accs.first { it.name == n }.id] ?: 0L) },
             newBooks = newBookNames, newCategories = cats.size - catsBefore,
