@@ -203,8 +203,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             text = {
                 Text(
                     "記帳本平常完全不連網。開啟後，只有按「抓最新價格」，或打開這一頁而且超過 3 天沒更新時，" +
-                        "才會把持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。
-" +
+                        "才會把持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。\n" +
                         "每個月會留下幾次價格當作當月的代表。之後可以隨時在持股頁下方關閉。",
                     style = MaterialTheme.typography.bodyMedium,
                 )
