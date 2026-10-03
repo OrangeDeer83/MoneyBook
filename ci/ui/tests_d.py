@@ -614,7 +614,7 @@ def t_favorite_switch():
     label = d.first(ns, "設為常用帳戶（記一筆選帳戶時固定放最上面）", True)
     d.check("編輯帳戶有「設為常用帳戶」開關", label is not None)
     if label:
-        sw = [n for n in ns if n.cls.endswith("Switch") and abs(n.cy - label.cy) < 80]
+        sw = [n for n in ns if n.checkable and abs(n.cy - label.cy) < 100]   # 開關在畫面結構裡是 checkable 的 View
         d.check("找得到那個開關", bool(sw))
         if sw:
             d.tap(sw[0])
