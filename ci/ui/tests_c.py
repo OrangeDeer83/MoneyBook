@@ -9,7 +9,7 @@ from runner import case
 
 C = "c"
 APK = os.environ.get("APK", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "app", "build", "outputs", "apk", "debug", "app-debug.apk"))
-SUB_PAGES = ["帳本管理", "帳戶管理", "分類管理", "報銷", "常用記帳", "外觀與吉祥物", "備份與匯入匯出"]
+SUB_PAGES = ["帳本管理", "分類管理", "報銷", "常用記帳", "外觀與吉祥物", "備份與匯入匯出"]
 
 
 def safe(label, fn):
@@ -157,9 +157,7 @@ def t_dark_misc():
     safe("統計下鑽", drill)
 
     def acc():
-        f.me_page("帳戶管理")
-        d.time.sleep(1)
-        d.tap(d.wait(lambda n: n.text == "現金", 8, "現金"))
+        f.open_acc("現金")
         d.time.sleep(1.5)
         d.shot("深色：帳戶明細", contrast=True)
     safe("帳戶明細", acc)
@@ -455,9 +453,9 @@ def t_card():
     s.expense(0, 1500, S.C_FOOD, acc=S.CARD, note="card1")
     s.expense(-3, 800, S.C_SHOP, acc=S.CARD, note="card2")
     d.fresh(s.json())
-    f.me_page("帳戶管理")
+    f.tab("帳戶")
     d.time.sleep(1)
-    d.shot("帳戶管理")
+    d.shot("帳戶分頁")
     d.tap(d.wait(lambda n: n.text == "測試信用卡", 8, "測試信用卡"))
     d.time.sleep(2)
     d.shot("信用卡明細", contrast=True)

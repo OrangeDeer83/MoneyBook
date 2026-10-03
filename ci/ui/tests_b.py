@@ -391,7 +391,7 @@ def t_zero_receive():
     d.hide_ime()
     ns = d.shot("金額清空")
     btn = next((n for n in ns if n.text.startswith("確認收款")), None)
-    d.check("確認收款按鈕存在且不可按", btn is not None and not btn.enabled, f"enabled={btn.enabled if btn else None}")
+    d.check("確認收款按鈕存在且不可按", btn is not None and f.is_disabled(ns, btn), btn and btn.text)
 
 
 def go_person(who):

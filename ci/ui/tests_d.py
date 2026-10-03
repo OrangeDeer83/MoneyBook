@@ -34,9 +34,8 @@ def to_main():
 
 
 def disabled(ns, label):
-    """對話框按鈕被停用時，畫面結構裡是一個 enabled=false 的方塊蓋在文字上"""
     t = d.first(ns, label, True)
-    return bool(t) and any((not n.enabled) and n.x1 <= t.cx <= n.x2 and n.y1 <= t.cy <= n.y2 for n in ns)
+    return bool(t) and f.is_disabled(ns, t)
 
 
 def acc_tab():

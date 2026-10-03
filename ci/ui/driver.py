@@ -374,8 +374,15 @@ def contrast_issues(png_path, ns, threshold=1.8):
     im = Image.open(png_path).convert("RGB")
     W, H = im.size
     bad = []
+    # 有底部分頁列時，捲到列底下被蓋住的內容（節點還在，但使用者看不到）不檢查
+    bar = any(n.text == "我的" and n.cy > 2000 for n in ns)
+    off = [b for b in ns if not b.enabled and (b.x2 - b.x1) > 10]   # 停用的按鈕本來就是淡色，不檢查
     for n in ns:
         t = n.text.strip()
+        if bar and n.cy > 2150 and t not in ("明細", "帳戶", "統計", "我的"):
+            continue
+        if any(b.x1 <= n.cx <= b.x2 and b.y1 <= n.cy <= b.y2 for b in off):
+            continue
         if not t or t.startswith("＋ 子分類") or re.match(r"^(今天|昨天|前天|\d+/\d+)", t):
             continue   # 已知誤報：節點範圍與實際文字位置不一致
         x1, y1, x2, y2 = max(n.x1, 0), max(n.y1, 0), min(n.x2, W), min(n.y2, H)

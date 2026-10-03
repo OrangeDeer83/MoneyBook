@@ -36,7 +36,8 @@ def save_edit():
 
 def _tap_tab(name):
     ns = d.nodes()
-    c = [n for n in ns if n.text == name and n.cy > 2000]
+    h = max([n.y2 for n in ns] + [1])          # 螢幕高度（縮小螢幕的用例也能用）
+    c = [n for n in ns if n.text == name and n.cy > 0.83 * h]
     if not c:
         raise TimeoutError(f"找不到底部分頁 {name}")
     d.tap(c[0])
@@ -63,6 +64,23 @@ def tab(name):
         _view("list")
     else:
         _tap_tab(name)
+
+
+def is_disabled(ns, node):
+    """停用的按鈕，在畫面結構裡是另一個 enabled=false 的方塊蓋在文字上（文字節點本身仍是 enabled）"""
+    return any((not n.enabled) and n.x1 <= node.cx <= n.x2 and n.y1 <= node.cy <= n.y2 for n in ns)
+
+
+def open_acc(name):
+    """進帳戶分頁並點開某個帳戶的明細（分組標題可能跟帳戶同名，例如「現金」，帳戶卡片在標題下面）"""
+    tab("帳戶")
+    d.wait_text("總資產", timeout=15)
+    d.time.sleep(0.8)
+    c = sorted([n for n in d.nodes() if n.text == name and n.cy < 2000], key=lambda n: n.cy)
+    if not c:
+        raise TimeoutError(f"帳戶分頁找不到「{name}」")
+    d.tap(c[-1])
+    d.time.sleep(1)
 
 
 def me_page(label):

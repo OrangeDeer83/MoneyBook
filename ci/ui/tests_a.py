@@ -236,7 +236,10 @@ def t_double_tap():
     ok = max([n for n in ns if n.text == "完成"], key=lambda n: n.cy)
     d.sh(f"input tap {ok.cx} {ok.cy}; input tap {ok.cx} {ok.cy}; input tap {ok.cx} {ok.cy}")
     d.time.sleep(3)
-    ns = d.shot("連點後的首頁")
+    # 第一下儲存後就回到主畫面，後面兩下會點到底部分頁（例如「我的」），所以先切回明細再數
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("連點後的明細")
     n777 = [n for n in ns if n.text == "-$777"]
     d.check("只出現 1 筆 -$777", len(n777) == 1, len(n777))
 
@@ -252,10 +255,14 @@ def t_delete_undo():
     ns = d.shot("刪除後")
     d.check("出現「復原」", d.has(ns, "復原", True))
     d.check("該筆已消失", not d.has(ns, "-$120", True))
-    d.tap_text("復原", exact=True)
+    # 提示只停 4 秒，上面截圖已經花掉時間；再刪一筆，刪完馬上按復原
+    row = d.first(d.nodes(), "-$85", True)
+    f.swipe_row_left(row)
+    d.tap_text("刪除", exact=True)
+    d.tap_text("復原", exact=True, timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("按復原後")
-    d.check("帳目回來了", d.has(ns, "-$120", True))
+    d.check("帳目回來了", d.has(ns, "-$85", True))
 
 
 @case(A, "已刪除提示 4 秒內消失且不擋最後一筆")
@@ -292,7 +299,7 @@ def t_banner():
     d.tap(d.first(d.nodes(), "關閉"))
     d.time.sleep(1.5)
     # 轉帳
-    row = next((n for n in d.nodes() if n.text.startswith("-$5") or n.text.startswith("$5")), None)
+    row = d.first(d.nodes(), "$500", True)   # 轉帳那一列的金額（不是頂端「收入 $50,000」）
     d.check("找得到轉帳那一列", row is not None)
     if row:
         d.tap(row)
@@ -355,7 +362,8 @@ def t_long_title():
     s.expense(0, 1234, 901, reimb=1, reimb_amount=1234, items=[S.reimb_item("Ming", 1234)])
     d.fresh(s.json())
     ns = d.shot("長標題", contrast=True)
-    d.check("待報銷標籤仍顯示", d.has(ns, "待報銷 $1,234") or any(n.text.startswith("待報銷") and n.cy > 1500 for n in ns))
+    # 標籤文字以「待報銷」開頭；頂端摘要條是「待報銷 N 筆…」，要排除
+    d.check("待報銷標籤仍顯示", any(n.text.startswith("待報銷") and "筆" not in n.text for n in ns), [n.text for n in ns if n.text.startswith("待報銷")])
     d.check("金額 -$1,234 沒有被擠掉", d.has(ns, "-$1,234", True))
 
 
@@ -377,7 +385,7 @@ def t_tab_state():
     ns = d.shot("日曆（預設選今天）")
     yday = f.today() - __import__("datetime").timedelta(days=1)
     d.check("測試資料的昨天與今天在同一個月", yday.month == f.today().month, f"昨天 {yday}")
-    cells = [n for n in ns if n.text == str(yday.day) and n.cy < 1500 and n.cy > 600]
+    cells = [n for n in ns if n.text == str(yday.day) and n.cy < 1300 and n.cy > 400]
     d.check("找得到昨天的日期格", bool(cells), [n.text for n in ns if n.text.isdigit()][:40])
     if cells:
         d.tap(cells[0])
@@ -498,9 +506,9 @@ def t_empty():
 def t_default_icons():
     d.fresh(None)
     d.shot("首頁（預設帳戶與帳本圖示）")
-    f.me_page("帳戶管理")
-    d.shot("帳戶管理")
-    d.tap_back()
+    f.tab("帳戶")
+    d.time.sleep(1)
+    d.shot("帳戶分頁")
     f.me_page("分類管理")
     d.shot("分類管理")
     d.tap_back()
