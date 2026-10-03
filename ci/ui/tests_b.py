@@ -17,8 +17,7 @@ def reimb_seed(**kw):
 
 
 def clear(n):
-    d.tap(n)
-    d.sh("input keyevent 123 " + " ".join(["67"] * 14))
+    d.clear(n)
 
 
 def money_after(ns, label):
@@ -89,7 +88,7 @@ def t_full():
     done_reimb()
     f.keypad("400")
     ns = d.shot("輸入金額後")
-    d.check("報銷鈕顯示待報銷 $400", d.has(ns, "待報銷 $400"))
+    d.check("報銷鈕顯示「待報銷」（金額與實付相同時不另外顯示）", d.has(ns, "待報銷"))
     f.save_edit()
     ns = d.shot("儲存後的首頁")
     d.check("本月支出變成 $0（全額報銷）", month_spent(ns) == "$0", month_spent(ns))
@@ -517,9 +516,11 @@ def t_drill_back():
     d.check("找到切換", inc is not None)
     d.tap(inc)
     d.time.sleep(1.5)
-    d.tap(d.wait(lambda n: n.text == "薪資", 8, "薪資"))
+    rows = sorted([n for n in d.nodes() if n.text == "薪資"], key=lambda n: n.cy)
+    d.tap(rows[-1])   # 最下面的是清單那一列，上面的是圓餅圖旁的標籤
     d.time.sleep(2)
-    d.shot("下鑽頁")
+    ns = d.shot("下鑽頁")
+    d.check("真的進入下鑽頁（有返回箭頭）", d.has(ns, "返回", True))
     d.tap_back()
     d.time.sleep(2)
     ns = d.shot("返回後")

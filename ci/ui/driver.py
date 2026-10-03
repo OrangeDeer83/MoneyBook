@@ -77,19 +77,55 @@ class Node:
         return f"<{self.cls.split('.')[-1]} {self.text!r} {self.desc!r} @({self.cx},{self.cy})>"
 
 
+ANR_HINTS = ("isn't responding", "isn’t responding", "has stopped", "keeps stopping", "沒有回應", "已停止")
+
+
+def dismiss_system_dialogs(ns):
+    """模擬器偶爾會跳出「某某程式沒有回應」，擋住畫面：自動按「Wait」或關閉"""
+    if not any(any(h in n.text for h in ANR_HINTS) for n in ns):
+        return False
+    for label in ("Wait", "等待", "Close app", "關閉應用程式", "OK", "確定"):
+        for b in ns:
+            if b.text == label:
+                sh(f"input tap {b.cx} {b.cy}")
+                time.sleep(1.5)
+                return True
+    return False
+
+
 def dump():
-    for _ in range(6):
+    dismissed = 0
+    for _ in range(8):
         sh("uiautomator dump /sdcard/ui.xml")
         raw = sh("cat /sdcard/ui.xml")
         i = raw.find("<?xml")
         if i >= 0:
             try:
                 root = ET.fromstring(raw[i:].strip())
-                return [Node(e) for e in root.iter("node")], raw[i:]
+                ns = [Node(e) for e in root.iter("node")]
+                if dismissed < 4 and dismiss_system_dialogs(ns):
+                    dismissed += 1
+                    continue
+                return ns, raw[i:]
             except ET.ParseError:
                 pass
         time.sleep(1)
     return [], ""
+
+
+def warmup():
+    """剛開機時系統程式還在忙，先等一下並關掉可能出現的無回應對話框"""
+    sh("input keyevent 3")
+    for _ in range(6):
+        time.sleep(5)
+        dump()
+
+
+def recover():
+    sh("input keyevent 3")
+    time.sleep(1)
+    dump()
+    stop_app()
 
 
 def nodes():
@@ -209,10 +245,27 @@ def edits():
     return sorted([n for n in nodes() if n.cls.endswith("EditText")], key=lambda n: (n.cy, n.cx))
 
 
-def fill(n, s):
-    tap(n)
+def select_all_delete():
     sh("input keyevent 123 " + " ".join(["67"] * 14))
-    type_text(s)
+    sh("input keycombination 113 29")   # Ctrl+A（Android 13 以上）
+    sh("input keyevent 67")
+
+
+def fill(n, s):
+    """點進輸入框，清空後輸入；輸入完會檢查結果，不對就重來（最多 3 次）"""
+    for _ in range(3):
+        tap(n)
+        select_all_delete()
+        type_text(s)
+        row = [e for e in edits() if abs(e.cy - n.cy) < 60 and abs(e.cx - n.cx) < 200]
+        if row and any(e.text == s for e in row):
+            return
+        n = row[0] if row else n
+
+
+def clear(n):
+    tap(n)
+    select_all_delete()
 
 
 def ime_shown():
@@ -323,8 +376,8 @@ def contrast_issues(png_path, ns, threshold=1.8):
     bad = []
     for n in ns:
         t = n.text.strip()
-        if not t:
-            continue
+        if not t or t.startswith("＋ 子分類") or re.match(r"^(今天|昨天|前天|\d+/\d+)", t):
+            continue   # 已知誤報：節點範圍與實際文字位置不一致
         x1, y1, x2, y2 = max(n.x1, 0), max(n.y1, 0), min(n.x2, W), min(n.y2, H)
         if x2 - x1 < 6 or y2 - y1 < 6 or (x2 - x1) * (y2 - y1) > 0.3 * W * H:
             continue

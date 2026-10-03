@@ -6,6 +6,7 @@ adb install -r "$APK"
 adb shell settings put secure show_ime_with_hard_keyboard 0
 adb shell settings put global stay_on_while_plugged_in 3
 adb shell input keyevent 82
+adb shell settings put global hide_error_dialogs 1
 mkdir -p "$OUT"
 cd "$(dirname "$0")"
 python3 run_all.py "$SHARD"

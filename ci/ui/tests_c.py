@@ -91,6 +91,16 @@ def t_dark_edit():
         d.back()
     safe("手續費對話框", fee)
 
+    def transfer():
+        d.tap_text("轉帳", exact=True, nth=0)
+        d.time.sleep(1.2)
+        d.shot("深色：轉帳畫面（從／轉到）", contrast=True)
+        d.tap(d.wait(lambda n: n.text == "從", 8, "從"))
+        d.time.sleep(1.2)
+        d.shot("深色：選擇轉出帳戶", contrast=True)
+        d.back()
+    safe("轉帳畫面", transfer)
+
 
 @case(C, "深色：報銷頁面", visual=True)
 def t_dark_reimb():
@@ -132,8 +142,7 @@ def t_dark_misc():
     def search():
         f.tab("統計")
         d.time.sleep(1.5)
-        btn = next(n for n in d.nodes() if "搜尋" in n.desc)
-        d.tap(btn)
+        d.tap(d.wait(lambda n: n.text.startswith("搜尋記錄"), 8, "搜尋列"))
         d.time.sleep(1.5)
         d.shot("深色：搜尋頁", contrast=True)
         d.tap_back()

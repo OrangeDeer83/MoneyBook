@@ -64,18 +64,32 @@ def run(shard):
             if r["time_at"]:
                 mo, dy, hh, mm = r["time_at"]
                 d.set_time(real_now.replace(month=mo, day=dy, hour=hh, minute=mm))
-            r["fn"]()
-        except Exception as e:  # noqa: BLE001
-            rec.error = f"{type(e).__name__}: {e}"
-            traceback.print_exc()
-            try:
-                d.shot("失敗當下的畫面")
-            except Exception:  # noqa: BLE001
-                pass
+            for attempt in (1, 2):
+                rec.checks.clear()
+                rec.shots.clear()
+                rec.error = ""
+                rec._n = 0
+                try:
+                    r["fn"]()
+                    break
+                except Exception as e:  # noqa: BLE001
+                    rec.error = f"{type(e).__name__}: {e}"
+                    traceback.print_exc()
+                    if attempt == 1 and "找不到首頁" in rec.error:
+                        print("   找不到首頁，清掉系統對話框後重試一次", flush=True)
+                        d.recover()
+                        continue
+                    try:
+                        d.shot("失敗當下的畫面")
+                    except Exception:  # noqa: BLE001
+                        pass
+                    break
         finally:
             if r["time_at"]:
                 d.reset_time(real_now)
             _cleanup(real_now)
+        if r["visual"] and not rec.checks and not rec.error and rec.shots:
+            d.check("已擷取截圖供檢視（沒有可自動判斷的數值）", True)
         failed = bool(rec.error) or any(not ok for _, ok, _ in rec.checks)
         if not rec.checks and not rec.error:
             rec.error = "沒有任何檢查項目"

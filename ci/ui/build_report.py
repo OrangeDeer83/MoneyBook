@@ -25,7 +25,7 @@ MANUAL_BY_ID = {
     "TC042": "todo", "TC068": "todo", "TC071": "todo", "TC019": "todo", "TC064": "todo",
 }
 
-STATUS_LABEL = {"pass": "通過", "review": "通過・待看圖", "fail": "失敗", "manual": "手動"}
+STATUS_LABEL = {"pass": "通過", "review": "通過・待看圖", "fail": "App 問題", "unknown": "測試未能判定", "manual": "手動"}
 
 
 def thumb(path, width=420):
@@ -45,7 +45,9 @@ def esc(s):
     return html.escape(str(s))
 
 
-def main(res_dir, out_path):
+def main(res_dir, out_path, triage_path=None, user_path=None):
+    triage = json.load(open(triage_path, encoding="utf-8")) if triage_path else {}
+    user = json.load(open(user_path, encoding="utf-8")) if user_path else []
     results = {}
     for p in glob.glob(os.path.join(res_dir, "**", "results_*.json"), recursive=True):
         base = os.path.dirname(p)
@@ -58,6 +60,11 @@ def main(res_dir, out_path):
         r = results.get(c["id"])
         if r:
             status = r["status"]
+            t = triage.get(c["id"])
+            if status == "fail" and t:
+                status = {"app": "fail", "shots": "review"}.get(t["kind"], "unknown")
+            if t:
+                r["triage"] = t
         else:
             status = "manual"
         rows.append((c, r, status))
@@ -73,9 +80,9 @@ def main(res_dir, out_path):
     w = parts.append
     w("<title>記帳本 自動測試報告</title>")
     w("""<style>
-:root{--bg:#f4f6f3;--surface:#fff;--ink:#1c2420;--sub:#5a665f;--line:#dde3de;--accent:#cf4a0c;--pass:#23844f;--fail:#c93535;--review:#8a6a00;--manual:#6d7882;--tint:#eaf0ec}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121714;--surface:#1a211d;--ink:#e6ece8;--sub:#98a69e;--line:#2b362f;--accent:#ff8d4f;--pass:#5fcf8e;--fail:#ff7d7d;--review:#e8b84a;--manual:#9aa6b0;--tint:#222c26;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#121714;--surface:#1a211d;--ink:#e6ece8;--sub:#98a69e;--line:#2b362f;--accent:#ff8d4f;--pass:#5fcf8e;--fail:#ff7d7d;--review:#e8b84a;--manual:#9aa6b0;--tint:#222c26;color-scheme:dark}
+:root{--bg:#f4f6f3;--surface:#fff;--ink:#1c2420;--sub:#5a665f;--line:#dde3de;--accent:#cf4a0c;--pass:#23844f;--fail:#c93535;--review:#8a6a00;--manual:#6d7882;--unknown:#b45309;--tint:#eaf0ec}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121714;--surface:#1a211d;--ink:#e6ece8;--sub:#98a69e;--line:#2b362f;--accent:#ff8d4f;--pass:#5fcf8e;--fail:#ff7d7d;--review:#e8b84a;--manual:#9aa6b0;--unknown:#f59e0b;--tint:#222c26;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121714;--surface:#1a211d;--ink:#e6ece8;--sub:#98a69e;--line:#2b362f;--accent:#ff8d4f;--pass:#5fcf8e;--fail:#ff7d7d;--review:#e8b84a;--manual:#9aa6b0;--unknown:#f59e0b;--tint:#222c26;color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;margin:0;padding-inline:16px;padding-block:0 60px}
 .wrap{max-width:900px;margin-inline:auto}
@@ -94,12 +101,12 @@ h1{font-size:1.7rem;margin:28px 0 4px}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 h2{font-size:1.15rem;margin:26px 0 8px;padding-bottom:4px;border-bottom:2px solid var(--ink)}
 details{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin:8px 0}
-details[data-s="fail"]{border-color:var(--fail)}
+details[data-s="fail"]{border-color:var(--fail)}details[data-s="unknown"]{border-color:var(--unknown)}
 summary{cursor:pointer;padding:10px 12px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 summary .id{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--sub)}
 summary .name{font-weight:500;flex:1;min-width:12em;overflow-wrap:anywhere}
 .badge{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
-.b-pass{color:var(--pass)}.b-fail{color:var(--fail)}.b-review{color:var(--review)}.b-manual{color:var(--manual)}
+.b-pass{color:var(--pass)}.b-fail{color:var(--fail)}.b-review{color:var(--review)}.b-manual{color:var(--manual)}.b-unknown{color:var(--unknown)}
 .lv{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--sub)}
 .body{padding:0 14px 14px;display:grid;gap:12px}
 .body h4{margin:0;font-size:13px;color:var(--sub);letter-spacing:.04em}
@@ -110,7 +117,7 @@ ul.ck{list-style:none;margin:0;padding:0;display:grid;gap:3px;font-size:14px}
 ul.ck li.ok::before{content:"✓ ";color:var(--pass)}
 ul.ck li.no::before{content:"✗ ";color:var(--fail)}
 ul.ck .d{color:var(--sub);font-size:12.5px}
-.err{background:var(--tint);border-left:3px solid var(--fail);padding:6px 10px;font-size:13px;overflow-wrap:anywhere}
+.tri{background:var(--tint);border-left:3px solid var(--unknown);padding:6px 10px;font-size:14px}.err{background:var(--tint);border-left:3px solid var(--fail);padding:6px 10px;font-size:13px;overflow-wrap:anywhere}
 .shots{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
 .shots figure{margin:0;flex:none;width:200px}
 .shots img{width:200px;border:1px solid var(--line);border-radius:8px;display:block;cursor:zoom-in;background:var(--tint)}
@@ -118,19 +125,24 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
 #lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;z-index:20;align-items:center;justify-content:center;padding:16px}
 #lb img{max-height:100%;max-width:100%;border-radius:8px}
 #lb.on{display:flex}
-.manual-note{color:var(--sub);font-size:14px}
+.tbl{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--sub);font-weight:500;font-size:12px}.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}.manual-note{color:var(--sub);font-size:14px}
 </style>""")
     w('<div class="wrap">')
     w("<h1>記帳本 自動測試報告</h1>")
     w(f'<p class="sub">在 Android 15 模擬器上自動操作 debug 版 App、逐步截圖。版本 {esc(sha)}。共 {total} 個用例，其中 {auto} 個已自動執行，{counts["manual"]} 個需要手動。</p>')
     w('<div class="sum">')
-    for k in ("pass", "review", "fail", "manual"):
-        w(f'<div><b style="color:var(--{ {"pass":"pass","review":"review","fail":"fail","manual":"manual"}[k] })">{counts[k]}</b><span>{STATUS_LABEL[k]}</span></div>')
+    for k in ("pass", "review", "fail", "unknown", "manual"):
+        w(f'<div><b style="color:var(--{k})">{counts[k]}</b><span>{STATUS_LABEL[k]}</span></div>')
     w("</div>")
     w('<div class="bar">')
-    for k in ("pass", "review", "fail", "manual"):
+    for k in ("pass", "review", "fail", "unknown", "manual"):
         w(f'<i style="width:{counts[k] / total * 100:.2f}%;background:var(--{k})"></i>')
     w("</div>")
+    if user:
+        w('<h2>你的手測結果與自動測試的對照</h2><div class="tbl"><table><thead><tr><th>用例</th><th>你的結果與備註</th><th>自動測試有找到嗎？</th></tr></thead><tbody>')
+        for u in user:
+            w(f"<tr><td class='mono'>{esc(u['id'])}<br>{esc(u['name'])}</td><td>{esc(u['yours'])}</td><td><b class='b-{u['tag']}'>{esc(u['verdict'])}</b><br>{esc(u['detail'])}</td></tr>")
+        w("</tbody></table></div>")
     w('<div class="filters"><input type="search" id="q" placeholder="搜尋用例名稱或編號" aria-label="搜尋"><div class="chips" id="fs"></div></div>')
 
     cur = None
@@ -141,7 +153,7 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
                 w("</section>")
             w(f'<section class="mod"><h2>{esc(mod.strip("/").replace("/", " › "))}</h2>')
             cur = mod
-        opn = " open" if status == "fail" else ""
+        opn = " open" if status in ("fail", "unknown") else ""
         w(f'<details data-s="{status}" data-t="{esc((c["id"] + c["n"]).lower())}"{opn}>')
         w(f'<summary><span class="id">{c["id"]}</span><span class="name">{esc(c["n"])}</span><span class="lv">{c["l"]}</span><span class="badge b-{status}">{STATUS_LABEL[status]}</span></summary>')
         w('<div class="body">')
@@ -157,7 +169,9 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
                 det = f" <span class='d'>（{esc(ck['detail'])}）</span>" if ck["detail"] else ""
                 w(f"<li class='{'ok' if ck['ok'] else 'no'}'>{esc(ck['desc'])}{det}</li>")
             w("</ul></div>")
-            if r["error"]:
+            if r.get("triage"):
+                w(f'<div class="tri"><b>分析：</b>{esc(r["triage"]["note"])}</div>')
+            elif r["error"]:
                 w(f'<div class="err">{esc(r["error"])}</div>')
             for n in r.get("notes", []):
                 w(f'<div class="manual-note">{esc(n)}</div>')
@@ -168,7 +182,7 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
                     if src:
                         w(f'<figure><img src="{src}" alt="{esc(s["label"])}"><figcaption>{esc(s["label"])}</figcaption></figure>')
                 w("</div></div>")
-            if status == "review":
+            if status == "review" and not r.get("triage"):
                 w('<div class="manual-note">數值與流程已自動檢查通過；外觀（圖示、版面、顏色）請看上面的截圖確認。</div>')
         else:
             reason = MANUAL[MANUAL_BY_ID.get(c["id"], "todo")]
@@ -180,7 +194,7 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
     w('<div id="lb"><img alt=""></div>')
     w("""<script>
 const fs=document.getElementById('fs'),q=document.getElementById('q');let cur='';
-[['','全部'],['fail','失敗'],['review','待看圖'],['pass','通過'],['manual','手動']].forEach(([v,t])=>{const b=document.createElement('button');b.className='chip';b.textContent=t;b.dataset.v=v;b.setAttribute('aria-pressed',v===''?'true':'false');b.onclick=()=>{cur=v;fs.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v?'true':'false'));apply()};fs.append(b)});
+[['','全部'],['fail','App 問題'],['unknown','未能判定'],['review','待看圖'],['pass','通過'],['manual','手動']].forEach(([v,t])=>{const b=document.createElement('button');b.className='chip';b.textContent=t;b.dataset.v=v;b.setAttribute('aria-pressed',v===''?'true':'false');b.onclick=()=>{cur=v;fs.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v?'true':'false'));apply()};fs.append(b)});
 function apply(){const t=q.value.trim().toLowerCase();document.querySelectorAll('details').forEach(d=>{d.hidden=!((!cur||d.dataset.s===cur)&&(!t||d.dataset.t.includes(t)))});document.querySelectorAll('.mod').forEach(m=>{m.hidden=![...m.querySelectorAll('details')].some(d=>!d.hidden)})}
 q.oninput=apply;
 const lb=document.getElementById('lb');document.addEventListener('click',e=>{const i=e.target.closest('.shots img');if(i){lb.querySelector('img').src=i.src;lb.classList.add('on')}else if(lb.classList.contains('on')){lb.classList.remove('on')}});
@@ -194,4 +208,4 @@ const lb=document.getElementById('lb');document.addEventListener('click',e=>{con
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None, sys.argv[4] if len(sys.argv) > 4 else None)
