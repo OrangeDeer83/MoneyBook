@@ -22,7 +22,7 @@ def eday(d):
 
 
 class Seed:
-    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False):
+    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0):
         self.today = today
         self.dark = dark
         self.mascot = mascot
@@ -33,6 +33,7 @@ class Seed:
         self.extra_cats = []
         self._id = 1000
         self.many_categories = many_categories
+        self.extra_accounts = extra_accounts
 
     def nid(self):
         self._id += 1
@@ -93,6 +94,8 @@ class Seed:
             dict(id=BANK, name="測試銀行", emoji="img:acc_bank", type="BANK", initial=50000, order=1, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0),
             dict(id=CARD, name="測試信用卡", emoji="img:acc_card", type="CARD", initial=0, order=2, hidden=False, badge="", badgeColor=0, creditLimit=100000, statementDay=25, dueDay=10),
         ]
+        for i in range(self.extra_accounts):
+            accounts.append(dict(id=500 + i, name=f"帳戶{i + 1:02d}", emoji="img:acc_bank", type="BANK", initial=0, order=10 + i, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
         mb = dict(self.month_budgets)
         root = dict(
             version=2, nextId=self._id + 100,
