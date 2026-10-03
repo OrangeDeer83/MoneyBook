@@ -421,7 +421,15 @@ def t_invest_market():
     d.wait_text("買進", timeout=10)
     d.time.sleep(1)
     ns = d.shot("買進對話框")
-    d.check("有市場選項：台股、美股、日股、韓股、港股、加密貨幣", all(d.has(ns, m, True) for m in ("台股", "美股", "日股", "韓股", "港股", "加密貨幣")))
+    d.check("有市場選項：台股、美股、日股、韓股（一排可以橫向滑）", all(d.has(ns, m, True) for m in ("台股", "美股", "日股", "韓股")))
+    row = d.first(ns, "台股", True)
+    if row:
+        d.swipe(900, row.cy, 150, row.cy, 500)   # 往右滑看後面的選項
+    ns2 = d.shot("市場選項往右滑")
+    d.check("往右滑可以看到港股、加密貨幣", d.has(ns2, "港股", True) and d.has(ns2, "加密貨幣", True))
+    row = d.first(ns2, "港股", True)
+    if row:
+        d.swipe(150, row.cy, 900, row.cy, 500)   # 滑回來，後面要選日股
     d.check("說明名稱只是方便自己辨認", d.has(ns, "名稱（選填，自己看得懂就好"))
     d.tap_text("日股", exact=True)
     d.time.sleep(0.8)
