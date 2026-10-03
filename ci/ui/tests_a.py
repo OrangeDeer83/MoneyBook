@@ -132,9 +132,11 @@ def t_add_transfer():
     f.confirm_dialog()
     d.time.sleep(1)
     ns = d.shot("設定手續費後")
+    d.check("金額卡顯示實際金額 5,015", d.has(ns, "5,015"))
     f.save_edit()
     ns = d.shot("儲存後的首頁")
-    d.check("明細出現含手續費的轉帳金額 5,015", d.has(ns, "5,015"))
+    # 明細的轉帳列顯示轉帳金額，手續費另外標在副標題
+    d.check("明細出現轉帳金額 $5,000 與「手續費 $15」", d.has(ns, "$5,000", True) and d.has(ns, "手續費 $15"))
 
 
 @case(A, "金額為 0 或空白不能儲存")
