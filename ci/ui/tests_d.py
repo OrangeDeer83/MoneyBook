@@ -25,7 +25,22 @@ def value_below(ns, label):
     return min(cand, key=lambda n: n.cy).text if cand else None
 
 
+def to_main():
+    """在帳戶明細等子頁時先返回，直到看得到底部分頁"""
+    for _ in range(3):
+        if [n for n in d.nodes() if n.text == "明細" and n.cy > 2000]:
+            return
+        d.tap_back()
+
+
+def disabled(ns, label):
+    """對話框按鈕被停用時，畫面結構裡是一個 enabled=false 的方塊蓋在文字上"""
+    t = d.first(ns, label, True)
+    return bool(t) and any((not n.enabled) and n.x1 <= t.cx <= n.x2 and n.y1 <= t.cy <= n.y2 for n in ns)
+
+
 def acc_tab():
+    to_main()
     f.tab("帳戶")
     d.wait_text("總資產", timeout=15)
     d.time.sleep(0.8)
@@ -50,6 +65,7 @@ def fill_dialog(values):
 
 def home_values():
     """回到明細分頁（列表），回傳 (本月支出, 收入)"""
+    to_main()
     f.tab("明細")
     d.time.sleep(1)
     ns = d.nodes()
@@ -83,24 +99,24 @@ def t_pick_account_scroll():
 
 @case(D, "切換帳本的清單可以往下滑")
 def t_pick_book_scroll():
-    d.fresh(empty_seed(extra_books=12).json())
+    d.fresh(empty_seed(extra_books=30).json())
     d.tap(d.wait(lambda n: n.text == "我的帳本", 10, "帳本按鈕"))
     d.wait_text("切換帳本", timeout=10)
     ns = d.shot("切換帳本（一開始）")
     d.check("一開始看得到「帳本02」", d.has(ns, "帳本02", True))
-    d.check("一開始看不到最後一個帳本「帳本13」（超出畫面）", not d.has(ns, "帳本13", True))
+    d.check("一開始看不到最後一個帳本「帳本31」（超出畫面）", not d.has(ns, "帳本31", True))
     for _ in range(4):
         d.swipe(540, 1500, 540, 800)
-        if d.has(d.nodes(), "帳本13", True):
+        if d.has(d.nodes(), "帳本31", True):
             break
     ns = d.shot("往下滑之後")
-    d.check("往下滑之後看得到「帳本13」", d.has(ns, "帳本13", True))
-    c = [n for n in ns if n.text == "帳本13"]
+    d.check("往下滑之後看得到「帳本31」", d.has(ns, "帳本31", True))
+    c = [n for n in ns if n.text == "帳本31"]
     if c:
         d.tap(c[0])
         d.time.sleep(1.5)
-        ns = d.shot("切換到帳本13")
-        d.check("對話框關閉，標題列顯示「帳本13」", d.has(ns, "帳本13", True) and not d.has(ns, "切換帳本", True))
+        ns = d.shot("切換到帳本31")
+        d.check("對話框關閉，標題列顯示「帳本31」", d.has(ns, "帳本31", True) and not d.has(ns, "切換帳本", True))
 
 
 # ───────────────────────── 帳戶分頁 ─────────────────────────
@@ -234,7 +250,7 @@ def t_adjust_edge():
     d.check("信用卡有「欠款請輸入負數」的提示", d.has(ns, "信用卡欠款請輸入負數"))
     fill_dialog(["0"])
     ns = d.shot("輸入和目前一樣的 0")
-    d.check("數字相同：提示「不用調整」，更新鈕不能按", d.has(ns, "和記錄的一樣，不用調整") and not any(n.text == "更新" and n.enabled for n in ns))
+    d.check("數字相同：提示「不用調整」，更新鈕不能按", d.has(ns, "和記錄的一樣，不用調整") and disabled(ns, "更新"))
     fill_dialog(["-3000"])
     ns = d.shot("輸入 -3000")
     d.check("預覽：會補記 −$3,000，不算支出", d.has(ns, "會補記 −$3,000，不算支出"))
@@ -252,9 +268,7 @@ def t_adjust_undo():
     d.wait_text("實際的餘額", exact=False, timeout=10)
     fill_dialog(["52000"])
     d.tap_text("更新", exact=True)
-    d.time.sleep(1)
-    d.check("提示帶「復原」", d.has(d.nodes(), "復原", True))
-    d.tap_text("復原", exact=True)
+    d.tap_text("復原", exact=True, timeout=6)   # 提示只停 4 秒，不能先截圖再點
     d.time.sleep(1.5)
     ns = d.shot("按復原之後")
     d.check("餘額回到 $50,000", d.has(ns, "$50,000", True) and not d.has(ns, "$52,000", True))
@@ -292,13 +306,13 @@ def t_invest_buy():
     d.wait_text("買進", timeout=10)
     d.time.sleep(1)
     d.shot("買進對話框")
-    fill_dialog(["0050", "元大50", "100", "100", "20"])
+    fill_dialog(["0050", "ETF50", "100", "100", "20"])
     ns = d.shot("填好之後")
     d.check("預覽：金額 $10,000＋手續費 $20，會同時記一筆轉帳", d.has(ns, "金額 $10,000＋手續費 $20"))
     d.tap_text("記錄", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("買進之後")
-    d.check("持股列出「元大50 0050」", d.has(ns, "元大50 0050", True))
+    d.check("持股列出「ETF50 0050」", d.has(ns, "ETF50 0050", True))
     d.check("持股市值 $10,000、成本 $10,020", d.has(ns, "$10,000", True) and d.has(ns, "$10,020", True))
     d.check("數量 100 股", d.has(ns, "100 股"))
     d.check("未實現損益 −$20（因為手續費）", d.has(ns, "−$20"), [n.text for n in ns if "$" in n.text][:12])
@@ -335,7 +349,7 @@ def t_invest_sell():
     d.time.sleep(1)
     fill_dialog([None, None, "200", "120", None])
     ns = d.shot("賣出 200 股（超過持有）")
-    d.check("賣出超過持有的股數：提示並不能記錄", d.has(ns, "賣出的股數比持有的多") and not any(n.text == "記錄" and n.enabled for n in ns))
+    d.check("賣出超過持有的股數：提示並不能記錄", d.has(ns, "賣出的股數比持有的多") and disabled(ns, "記錄"))
     fill_dialog([None, None, "40", "120", "10"])
     ns = d.shot("賣出 40 股")
     d.check("預覽：金額 $4,800＋手續費 $10", d.has(ns, "金額 $4,800＋手續費 $10"))
@@ -360,7 +374,9 @@ def t_invest_sync():
     d.tap_text("更新", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("同步之後")
-    d.check("帳戶餘額變成 $12,000，出現「餘額調整」", d.has(ns, "$12,000", True) and d.has(ns, "餘額調整", True))
+    d.scroll_down(1)
+    ns = d.shot("往下滑看明細")
+    d.check("帳戶餘額變成 $12,000，明細出現「餘額調整」", d.has(ns, "$12,000", True) and d.has(ns, "餘額調整", True))
     exp, inc = home_values()
     d.check("本月收入仍是 $0（市值變動不算收入）", inc == "$0", (exp, inc))
 
