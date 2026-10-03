@@ -704,7 +704,8 @@ fun EditScreen(
                 onDismissRequest = { dialog = "" },
                 title = { Text(if (isTo) "轉入帳戶" else "選擇帳戶") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 帳戶多的時候要能往下滑，不然只能選到畫面上看得到的
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         accs.forEach { a ->
                             val on = if (isTo) toAccId == a.id else accId == a.id
                             AccountLine(a, bal[a.id] ?: 0L, on) {
