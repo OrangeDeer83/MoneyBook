@@ -95,7 +95,7 @@ jobs:
           nohup emulator -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-snapshot-save -noaudio -no-boot-anim > emulator.log 2>&1 &
           adb wait-for-device
           for i in $(seq 1 120); do
-            [ "$(adb shell getprop sys.boot_completed | tr -d '')" = "1" ] && break
+            [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ] && break
             sleep 2
           done
           echo "模擬器開機完成（等了約 $((i*2)) 秒）"
