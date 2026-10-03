@@ -586,3 +586,48 @@ def t_acc_collapse_persist():
     ns = d.shot("展開後再重開")
     d.check("展開之後再重開，仍然是展開的", d.has(ns, "測試銀行", True) and d.has(ns, "帳戶01", True))
 
+
+@case(D, "常用帳戶：標了星號的固定在最上面，其餘自動補")
+def t_favorite_first():
+    d.fresh(S.base(f.today(), fav_card=True).json())    # 測試信用卡從沒用過，但標了星號
+    f.open_add()
+    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.wait_text("選擇帳戶", timeout=10)
+    ns = d.shot("選擇帳戶")
+    fav = d.first(ns, "常用帳戶", True)
+    star = sorted([n for n in ns if n.text == "★ 測試信用卡"], key=lambda n: n.cy)
+    d.check("標了星號的測試信用卡（沒用過）也出現在常用帳戶，名稱前有 ★", bool(star))
+    cash_lines = [n for n in ns if n.text == "現金"]
+    if fav and star and cash_lines:
+        d.check("星號帳戶排在最前面：常用帳戶標題 → ★ 測試信用卡 → 其他自動補的帳戶（現金…）",
+                fav.cy < star[0].cy < min(n.cy for n in cash_lines), (fav.cy, star[0].cy, min(n.cy for n in cash_lines)))
+    d.check("自動補的常用帳戶還在（用過的現金、測試銀行）", len(cash_lines) >= 2 and len([n for n in ns if n.text == "測試銀行"]) >= 2)
+
+
+@case(D, "帳戶編輯可以設為常用帳戶")
+def t_favorite_switch():
+    d.fresh(f.base_seed())
+    open_account("測試銀行")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    ns = d.shot("編輯帳戶")
+    label = d.first(ns, "設為常用帳戶（記一筆選帳戶時固定放最上面）", True)
+    d.check("編輯帳戶有「設為常用帳戶」開關", label is not None)
+    if label:
+        sw = [n for n in ns if n.cls.endswith("Switch") and abs(n.cy - label.cy) < 80]
+        d.check("找得到那個開關", bool(sw))
+        if sw:
+            d.tap(sw[0])
+            d.time.sleep(0.8)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("儲存之後")
+    d.tap_back()
+    to_main()
+    f.tab("明細")
+    f.open_add()
+    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.wait_text("選擇帳戶", timeout=10)
+    ns = d.shot("選擇帳戶")
+    d.check("測試銀行標了星號：選擇帳戶時名稱前有 ★", d.has(ns, "★ 測試銀行", True))
+
