@@ -821,6 +821,7 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val cute = LocalCute.current
     var pendingRestore by remember { mutableStateOf<String?>(null) }
+    var pendingLegacy by remember { mutableStateOf<tw.moneybook.app.LegacyImport.Result?>(null) }
     val stamp = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
 
     fun write(uri: android.net.Uri, bytes: ByteArray, okMsg: String) {
@@ -870,6 +871,12 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             when {
                 text == null -> vm.toast("讀取檔案失敗")
                 else -> {
+                    // 認得是別的記帳 App 匯出的格式：先轉換、讓使用者預覽，確認才寫入
+                    val legacy = vm.previewLegacy(text)
+                    if (legacy != null) {
+                        pendingLegacy = legacy
+                        return@rememberLauncherForActivityResult
+                    }
                     val n = vm.importCsv(text)
                     vm.toast(
                         when {
@@ -906,7 +913,8 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             item {
                 DataCard(
                     "vec:import", "匯入 CSV",
-                    "把其他記帳 App 或 Excel 的資料搬進目前的帳本。需要有「日期」和「金額」欄位，也可以有「類型、分類、子分類、帳戶、備註、標籤」。找不到的分類和帳戶會自動建立。",
+                    "把其他記帳 App 或 Excel 的資料搬進來。有「日期」和「金額」欄位就能匯入，也可以有「類型、分類、子分類、帳戶、備註、標籤」；找不到的分類和帳戶會自動建立。" +
+                        "如果是舊記帳 App 匯出的完整格式（有「記帳時間、交易帳戶、一級分類」），會自動轉換：配對轉帳、更新餘額、報銷、外幣，匯入前先給你預覽。",
                     "選擇 CSV 檔",
                 ) { csvIn.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*")) }
             }
@@ -917,6 +925,15 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
                 )
             }
         }
+    }
+
+    pendingLegacy?.let { r ->
+        LegacyPreviewDialog(
+            r = r,
+            existing = vm.data.txns.size,
+            onConfirm = { vm.applyLegacy(r); pendingLegacy = null },
+            onDismiss = { pendingLegacy = null },
+        )
     }
 
     val text = pendingRestore
@@ -947,4 +964,50 @@ private fun DataCard(icon: String, title: String, desc: String, action: String, 
         Spacer(Modifier.height(10.dp))
         Button(onClick = onClick) { Text(action) }
     }
+}
+
+/** 匯入舊記帳 App 資料前的預覽：轉出來有多少筆、怎麼處理、各帳戶匯入後的餘額 */
+@Composable
+private fun LegacyPreviewDialog(r: tw.moneybook.app.LegacyImport.Result, existing: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val cute = LocalCute.current
+    val s = r.summary
+    val range = "${LocalDate.ofEpochDay(s.from)} ～ ${LocalDate.ofEpochDay(s.to)}"
+    val lines = ArrayList<String>()
+    lines.add("認得這是別的記帳 App 匯出的檔案：$range，共 ${s.rows} 筆。")
+    lines.add("一般收支 ${s.expense + s.income} 筆（支出 ${s.expense}、收入 ${s.income}）")
+    lines.add("轉帳 ${s.transfers} 筆" + if (s.stockTransfers > 0) "，其中 ${s.stockTransfers} 筆是股票基金買賣，轉成轉帳到證券帳戶，不算支出或收入" else "")
+    if (s.adjusts > 0) lines.add("餘額調整 ${s.adjusts} 筆：更新餘額、報銷入帳、收益／虧損、借出收回，只改帳戶餘額，不算收入或支出")
+    if (s.foreign > 0) lines.add("外幣 ${s.foreign} 筆：用檔案裡的匯率換成 NT$，原幣金額寫在備註")
+    if (s.unpaired > 0) lines.add("找不到另一半的轉帳／還款 ${s.unpaired} 筆，當成一般收支")
+    if (s.skipped > 0) lines.add("看不懂而略過 ${s.skipped} 筆")
+    val created = ArrayList<String>()
+    if (s.newAccounts.isNotEmpty()) created.add("${s.newAccounts.size} 個帳戶")
+    if (s.newBooks.isNotEmpty()) created.add("${s.newBooks.size} 個帳本（${s.newBooks.joinToString("、")}）")
+    if (s.newCategories > 0) created.add("${s.newCategories} 個分類")
+    if (created.isNotEmpty()) lines.add("會新建：" + created.joinToString("、"))
+    if (s.offsetAccounts.isNotEmpty()) {
+        lines.add("${s.offsetAccounts.joinToString("、")} 最後用一筆餘額調整沖回 0：舊資料的持股市值已經記在「台股／美股／幣安」，不然資產會重複計算。")
+    }
+    if (existing > 0) lines.add("目前已經有 $existing 筆記錄，匯入會附加上去，不會比對重複。")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("匯入預覽") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                if (s.newAccounts.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("新帳戶匯入後的餘額（舊檔沒有初始餘額，和實際不同的話，到帳戶頁用「更新餘額」修正）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    s.newAccounts.forEach { (name, bal) ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                            Text(formatMoney(bal), style = MaterialTheme.typography.bodySmall, color = if (bal < 0) cute.expense else cute.ink)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("匯入") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }

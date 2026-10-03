@@ -646,6 +646,21 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 檔案如果是別的記帳 App 匯出的格式，轉換出來給使用者預覽（還沒寫入）；不是這種格式回傳 null */
+    fun previewLegacy(text: String): LegacyImport.Result? =
+        try {
+            if (LegacyImport.detect(CsvIO.parse(text))) LegacyImport.convert(data, text) else null
+        } catch (_: Exception) {
+            null
+        }
+
+    /** 確認後寫入預覽過的轉換結果 */
+    fun applyLegacy(r: LegacyImport.Result) {
+        val n = r.data.txns.size - data.txns.size
+        commit(r.data)
+        toast("已匯入 $n 筆記錄")
+    }
+
     fun importCsv(text: String): Int {
         return try {
             val (d, n) = CsvIO.import(data, text)
