@@ -313,25 +313,43 @@ fun EmojiButton(emoji: String, onClick: () -> Unit) {
 // ───────────────────────── 帳戶 ─────────────────────────
 
 @Composable
-fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onBack: () -> Unit) {
+fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
     val bal = remember(d) { d.balances() }
     var adding by remember { mutableStateOf(false) }
+    // 編輯排序模式：右上角按鈕切換，開啟後每個帳戶右邊才出現拖曳把手
+    var editing by remember { mutableStateOf(false) }
     val sorted = d.accounts.sortedBy { it.order }
-    SubPage("帳戶管理", onBack) {
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item {
-                val total = d.visibleAccounts.sumOf { bal[it.id] ?: 0L }
-                CuteCard(Modifier.fillMaxWidth()) {
-                    Text("總資產", style = MaterialTheme.typography.labelLarge, color = cute.sub)
-                    Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
-                }
+    LazyColumn(
+        state = vm.accListState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("帳戶", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                CuteChip(if (editing) "完成" else "編輯排序", editing, { editing = !editing }, icon = if (editing) null else "vec:pencil")
             }
-            item {
+        }
+        item {
+            val total = d.visibleAccounts.sumOf { bal[it.id] ?: 0L }
+            CuteCard(Modifier.fillMaxWidth()) {
+                Text("總資產", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
+            }
+        }
+        item {
+            // 切換編輯模式時重新建立，才不會留著上一個模式的把手位置
+            androidx.compose.runtime.key(editing) {
                 ReorderColumn(sorted, { it.id }, { vm.reorderAccounts(it) }) { a, handle, _ ->
                     val b = bal[a.id] ?: 0L
-                    CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(a.id) }, padding = PaddingValues(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
+                    CuteCard(
+                        Modifier.fillMaxWidth(),
+                        onClick = if (editing) null else ({ onOpen(a.id) }),
+                        padding = PaddingValues(start = 14.dp, end = if (editing) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AccountIcon(a, 40.dp)
                             Spacer(Modifier.width(12.dp))
@@ -341,18 +359,19 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onBack: () -> Uni
                                 Text(a.type.label + extra, style = MaterialTheme.typography.bodySmall, color = cute.sub)
                             }
                             Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
-                            DragHandle(handle)
+                            if (editing) DragHandle(handle)
                         }
                     }
                 }
             }
-            item { OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增帳戶") } }
-            item {
-                Text(
-                    "點帳戶可以看它的明細，按住右邊的 ≡ 可以拖曳排序。餘額 = 初始金額 + 收入 − 支出 ± 轉帳。",
-                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
-                )
-            }
+        }
+        item { OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增帳戶") } }
+        item {
+            Text(
+                if (editing) "按住右邊的 ≡ 拖曳排序，排好按「完成」。"
+                else "點帳戶可以看它的明細。餘額 = 初始金額 + 收入 − 支出 ± 轉帳。",
+                style = MaterialTheme.typography.bodySmall, color = cute.sub,
+            )
         }
     }
     if (adding) {

@@ -211,9 +211,7 @@ fun HomeScreen(
     vm: MoneyViewModel,
     onEdit: (Long) -> Unit,
     onManageBooks: () -> Unit,
-    onManageAccounts: () -> Unit,
     onReimb: () -> Unit,
-    onAccount: (Long) -> Unit,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -225,8 +223,6 @@ fun HomeScreen(
     val mascot = d.prefs.mascot
     var showBooks by remember { mutableStateOf(false) }
     var showBudget by remember { mutableStateOf(false) }
-    val balances = remember(d) { d.balances() }
-
     LazyColumn(
         state = vm.homeListState,
         modifier = Modifier.fillMaxSize(),
@@ -375,36 +371,6 @@ fun HomeScreen(
                         )
                     }
                 }
-            }
-        }
-
-        val accs = d.visibleAccounts
-        if (accs.isNotEmpty()) {
-            item {
-              Column {
-                SectionTitle("我的帳戶") {
-                    Text(
-                        "管理",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.clip(CircleShape).clickable(onClick = onManageAccounts).padding(8.dp),
-                    )
-                }
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(accs, key = { it.id }) { a ->
-                        CuteCard(Modifier.width(140.dp), padding = PaddingValues(12.dp), onClick = { onAccount(a.id) }) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                AccountIcon(a, 26.dp)
-                                Spacer(Modifier.width(6.dp))
-                                Text(a.name, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            val b = balances[a.id] ?: 0L
-                            Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                        }
-                    }
-                }
-              }
             }
         }
 

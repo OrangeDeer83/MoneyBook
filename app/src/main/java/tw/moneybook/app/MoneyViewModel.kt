@@ -91,6 +91,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     // 日曆選到的日期：切到別的分頁再回來要還在
     var calSelected by mutableLongStateOf(LocalDate.now().toEpochDay())
     val meListState = androidx.compose.foundation.lazy.LazyListState()
+    val accListState = androidx.compose.foundation.lazy.LazyListState()
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())
     var rangeEnd by mutableLongStateOf(LocalDate.now().toEpochDay())

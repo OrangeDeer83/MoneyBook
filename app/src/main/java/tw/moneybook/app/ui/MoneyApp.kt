@@ -97,6 +97,7 @@ private data class TabItem(val label: String, val icon: ImageVector)
 
 private val Tabs = listOf(
     TabItem("明細", AppIcons.ListAlt),
+    TabItem("帳戶", AppIcons.Wallet),
     TabItem("統計", AppIcons.PieChart),
     TabItem("我的", AppIcons.Person),
 )
@@ -162,12 +163,12 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 onTab = { tab = it },
                 onAdd = { push(Route.Edit(null)) },
                 onEdit = { push(Route.Edit(it)) },
-                open = { push(Route.Page(it)) },
+                // 「我的 → 帳戶管理」直接切到帳戶分頁
+                open = { if (it == "accounts") { tab = 1 } else { push(Route.Page(it)) } },
             )
             is Route.Edit -> EditScreen(vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, onClose = { pop() })
             is Route.Page -> when (top.name) {
                 "books" -> BooksScreen(vm) { pop() }
-                "accounts" -> AccountsScreen(vm, onOpen = { push(Route.Page("account:$it")) }) { pop() }
                 "categories" -> CategoriesScreen(vm) { pop() }
                 "templates" -> TemplatesScreen(vm, onOpen = { push(Route.Edit(null, tplMode = true, tplId = it)) }) { pop() }
                 "appearance" -> AppearanceScreen(vm) { pop() }
@@ -211,11 +212,10 @@ private fun MainTabs(
                 0 -> if (vm.homeCalendar) CalendarScreen(vm, onEdit) else HomeScreen(
                     vm, onEdit,
                     onManageBooks = { open("books") },
-                    onManageAccounts = { open("accounts") },
                     onReimb = { open("reimb") },
-                    onAccount = { open("account:$it") },
                 )
-                1 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") })
+                1 -> AccountsScreen(vm, onOpen = { open("account:$it") })
+                2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") })
                 else -> MeScreen(vm, open)
             }
         }
