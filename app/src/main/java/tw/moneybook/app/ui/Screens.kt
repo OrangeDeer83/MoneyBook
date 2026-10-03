@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -393,7 +395,8 @@ fun HomeScreen(
             onDismissRequest = { showBooks = false },
             title = { Text("切換帳本") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 帳本多的時候要能往下滑
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     d.books.forEach { b ->
                         val on = b.id == book.id
                         Row(
