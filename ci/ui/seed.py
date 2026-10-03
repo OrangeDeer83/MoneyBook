@@ -6,6 +6,7 @@ import json
 EPOCH = datetime.date(1970, 1, 1)
 
 BOOK, CASH, BANK, CARD = 1, 2, 3, 4
+INVEST = 600   # 投資帳戶（invest=True 時才有）
 # 支出分類：頂層與子分類
 C_FOOD, C_BREAKFAST, C_LUNCH, C_DINNER, C_DRINK = 10, 11, 12, 13, 14
 C_TRAFFIC, C_METRO, C_HSR = 20, 21, 22
@@ -22,7 +23,7 @@ def eday(d):
 
 
 class Seed:
-    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0):
+    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0, extra_books=0, invest=False):
         self.today = today
         self.dark = dark
         self.mascot = mascot
@@ -34,6 +35,10 @@ class Seed:
         self._id = 1000
         self.many_categories = many_categories
         self.extra_accounts = extra_accounts
+        self.extra_books = extra_books
+        self.invest = invest
+        self.trades = []
+        self.prices = []
 
     def nid(self):
         self._id += 1
@@ -62,6 +67,16 @@ class Seed:
 
     def transfer(self, offset, amount, frm=CASH, to=BANK, **kw):
         return self.add(offset, "TRANSFER", amount, None, acc=frm, to=to, **kw)
+
+    def trade(self, offset, symbol, buy, qty, price, fee=0, name="", acc=INVEST, txn=None):
+        """投資帳戶的買賣記錄；txn 是連動的轉帳（self.transfer 回傳的那筆）"""
+        t = dict(id=self.nid(), accountId=acc, symbol=symbol, name=name, day=self.day(offset), buy=buy,
+                 qty=qty, price=price, fee=fee, txnId=(txn["id"] if txn else None))
+        self.trades.append(t)
+        return t
+
+    def price(self, symbol, offset, price):
+        self.prices.append(dict(symbol=symbol, day=self.day(offset), price=price))
 
     def template(self, name, amount, cat, acc=CASH, note=""):
         self.templates.append(dict(id=self.nid(), name=name, type="EXPENSE", amount=amount, categoryId=cat, accountId=acc, note=note, tags=[]))
@@ -96,11 +111,15 @@ class Seed:
         ]
         for i in range(self.extra_accounts):
             accounts.append(dict(id=500 + i, name=f"帳戶{i + 1:02d}", emoji="img:acc_bank", type="BANK", initial=0, order=10 + i, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
+        if self.invest:
+            accounts.append(dict(id=INVEST, name="測試證券", emoji="img:extra_gold", type="INVEST", initial=0, order=5, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
         mb = dict(self.month_budgets)
         root = dict(
             version=2, nextId=self._id + 100,
-            books=[dict(id=BOOK, name="我的帳本", emoji="img:ui_ledger", budget=self.budget, monthBudgets=mb)],
+            books=[dict(id=BOOK, name="我的帳本", emoji="img:ui_ledger", budget=self.budget, monthBudgets=mb)]
+            + [dict(id=700 + i, name=f"帳本{i + 2:02d}", emoji="img:ui_ledger", budget=0, monthBudgets={}) for i in range(self.extra_books)],
             accounts=accounts, categories=cats, txns=self.txns, templates=self.templates,
+            trades=self.trades, prices=self.prices,
             prefs=dict(bookId=BOOK, palette="milktea", mascot=self.mascot, mascotName="", mascotLast=self.mascot, dark=self.dark, celebrate=False),
         )
         return json.dumps(root, ensure_ascii=False)
