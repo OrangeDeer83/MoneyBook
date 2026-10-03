@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +67,12 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     var tradeSymbol by remember { mutableStateOf("") }
     var pricePos by remember { mutableStateOf<Position?>(null) }
 
+    // 已同意上網抓價、而且超過 3 天沒更新，打開這一頁時自動抓一次（每個月就會有幾次價格當代表）
+    LaunchedEffect(a.id) {
+        val today = LocalDate.now().toEpochDay()
+        if (d.prefs.priceFetch && pf.positions.isNotEmpty() && today - d.prefs.priceFetchDay >= 3L) vm.refreshPrices(silent = true)
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         CuteCard(Modifier.fillMaxWidth()) {
             Text("持股市值", style = MaterialTheme.typography.labelMedium, color = cute.sub)
@@ -97,7 +104,19 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CuteChip("買進", false, { tradeBuy = true; tradeSymbol = ""; dialog = "trade" }, icon = "vec:coin")
                 CuteChip("賣出", false, { tradeBuy = false; tradeSymbol = pf.positions.firstOrNull()?.symbol ?: ""; dialog = "trade" })
-                if (pf.positions.isNotEmpty()) CuteChip("同步市值到餘額", false, { dialog = "sync" })
+                if (pf.positions.isNotEmpty()) {
+                    CuteChip(
+                        if (vm.fetching) "抓價中…" else "抓最新價格", false,
+                        {
+                            when {
+                                vm.fetching -> {}
+                                d.prefs.priceFetch -> { vm.refreshPrices() }
+                                else -> { dialog = "fetchAsk" }
+                            }
+                        },
+                    )
+                    CuteChip("同步市值到餘額", false, { dialog = "sync" })
+                }
             }
         }
 
@@ -127,6 +146,14 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                     )
                 }
             }
+        }
+
+        if (pf.positions.isNotEmpty() && d.prefs.priceFetch) {
+            Text(
+                "價格來自 Yahoo Finance，只會送出代號。點這裡關閉網路抓價。",
+                style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                modifier = Modifier.clickable { vm.setPriceFetch(false); vm.toast("已關閉網路抓價") }.padding(horizontal = 4.dp, vertical = 4.dp),
+            )
         }
 
         if (trades.isNotEmpty()) {
@@ -170,6 +197,21 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                 onDismiss = { dialog = "" },
             )
         }
+        "fetchAsk" -> AlertDialog(
+            onDismissRequest = { dialog = "" },
+            title = { Text("上網抓最新價格？") },
+            text = {
+                Text(
+                    "記帳本平常完全不連網。開啟後，只有按「抓最新價格」，或打開這一頁而且超過 3 天沒更新時，" +
+                        "才會把持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。
+" +
+                        "每個月會留下幾次價格當作當月的代表。之後可以隨時在持股頁下方關閉。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.setPriceFetch(true); dialog = ""; vm.refreshPrices() }) { Text("開啟並抓價") } },
+            dismissButton = { TextButton(onClick = { dialog = "" }) { Text("不要") } },
+        )
         "sync" -> AlertDialog(
             onDismissRequest = { dialog = "" },
             title = { Text("同步市值到餘額") },

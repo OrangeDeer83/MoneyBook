@@ -172,6 +172,10 @@ data class Prefs(
     val mascotLast: String = "deer",
     val dark: Int = 0, // 0 跟隨系統, 1 淺色, 2 深色
     val celebrate: Boolean = true,
+    /** 是否允許上網抓股價（預設關閉，在持股頁按「抓最新價格」時才會問） */
+    val priceFetch: Boolean = false,
+    /** 上次抓價是哪一天（epoch day），用來決定要不要自動再抓 */
+    val priceFetchDay: Long = 0L,
 )
 
 data class AppData(

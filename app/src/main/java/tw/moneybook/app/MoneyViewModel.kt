@@ -296,6 +296,42 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         update { d -> d.copy(prices = d.prices.filterNot { it.symbol == symbol && it.day == day } + PriceSnap(symbol, day, price)) }
     }
 
+    var fetching by mutableStateOf(false)
+        private set
+
+    fun setPriceFetch(on: Boolean) {
+        update { d -> d.copy(prefs = d.prefs.copy(priceFetch = on)) }
+    }
+
+    /** 上網抓持股的最新價格（所有投資帳戶的持股一起抓）；silent 時全部成功就不顯示提示 */
+    fun refreshPrices(silent: Boolean = false) {
+        if (fetching) return
+        val symbols = data.portfolio().positions.map { it.symbol }.distinct()
+        if (symbols.isEmpty()) return
+        fetching = true
+        viewModelScope.launch {
+            val got = ArrayList<PriceSnap>()
+            var fail = 0
+            for (s in symbols) {
+                val q = try { PriceFetcher.fetch(s) } catch (_: Exception) { null }
+                if (q != null) got.add(PriceSnap(s, q.day, q.price)) else fail++
+            }
+            fetching = false
+            val today = LocalDate.now()
+            if (got.isNotEmpty()) {
+                update { d ->
+                    val kept = d.prices.filterNot { p -> got.any { it.symbol == p.symbol && it.day == p.day } }
+                    d.copy(prices = pruneMonthly(kept + got, today), prefs = d.prefs.copy(priceFetchDay = today.toEpochDay()))
+                }
+            }
+            when {
+                got.isEmpty() -> toast("抓不到價格，請確認網路；也可以點持股手動輸入現價")
+                fail > 0 -> toast("已更新 ${got.size} 檔，$fail 檔抓不到（可以點持股手動輸入）")
+                !silent -> toast("已更新 ${got.size} 檔現價")
+            }
+        }
+    }
+
     fun moveTxnDay(id: Long, day: Long) {
         val t = data.txns.firstOrNull { it.id == id } ?: return
         if (t.day == day) return

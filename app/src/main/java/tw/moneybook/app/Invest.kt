@@ -50,6 +50,15 @@ data class Portfolio(
     val gain: Long get() = value - cost
 }
 
+/** 價格快照只留「這個月全部」加「之前每個月最後一筆」：每個月抓幾次，過了月就只留一筆當代表 */
+fun pruneMonthly(list: List<PriceSnap>, today: java.time.LocalDate): List<PriceSnap> {
+    val cur = java.time.YearMonth.from(today)
+    val (now, old) = list.partition { java.time.YearMonth.from(java.time.LocalDate.ofEpochDay(it.day)) >= cur }
+    val kept = old.groupBy { it.symbol to java.time.YearMonth.from(java.time.LocalDate.ofEpochDay(it.day)) }
+        .map { (_, v) -> v.maxByOrNull { it.day }!! }
+    return (kept + now).sortedBy { it.day }
+}
+
 /** 單位數量小於這個值就當作已經賣光（避免小數誤差留下 0.0000001 股） */
 private const val EPS = 1e-9
 

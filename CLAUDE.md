@@ -1,6 +1,6 @@
 # 記帳本 MoneyBook — 給 Claude Code 的專案說明
 
-溫暖可愛風格的 Android 記帳 App。Kotlin + Jetpack Compose（Material 3），沒有網路權限，資料只存在手機裡。
+溫暖可愛風格的 Android 記帳 App。Kotlin + Jetpack Compose（Material 3），資料只存在手機裡。網路權限只用在抓持股價格（預設關閉，使用者在持股頁同意才連線，只送出股票代號，不送任何記帳資料）。
 使用者是繁體中文使用者：**App 內文字、程式註解、commit 訊息、更新說明都用繁體中文**。
 
 ## 專案結構

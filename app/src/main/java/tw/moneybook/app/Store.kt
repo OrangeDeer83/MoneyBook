@@ -102,6 +102,7 @@ object Codec {
             "prefs",
             JSONObject().put("bookId", p.bookId).put("palette", p.palette).put("mascot", p.mascot)
                 .put("mascotName", p.mascotName).put("mascotLast", p.mascotLast).put("dark", p.dark).put("celebrate", p.celebrate)
+                .put("priceFetch", p.priceFetch).put("priceFetchDay", p.priceFetchDay)
         )
         return root.toString()
     }
@@ -213,6 +214,8 @@ object Codec {
             mascotLast = po.optString("mascotLast", "deer"),
             dark = po.optInt("dark", 0),
             celebrate = po.optBoolean("celebrate", true),
+            priceFetch = po.optBoolean("priceFetch", false),
+            priceFetchDay = po.optLong("priceFetchDay", 0L),
         )
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
             txns.map { it.id } + templates.map { it.id } + trades.map { it.id }).maxOrNull() ?: 0L
