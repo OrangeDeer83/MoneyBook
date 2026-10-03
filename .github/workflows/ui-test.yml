@@ -86,23 +86,19 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
-      # 直接用機器上現成的 SDK 啟動快取好的模擬器（emulator-runner 每次會多花約 1 分鐘安裝 SDK 元件）
       - name: Run UI tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
         env:
           ONLY: ${{ inputs.only }}
-        run: |
-          export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
-          nohup emulator -port 5554 -avd test -no-window -gpu swiftshader_indirect -no-snapshot-save -noaudio -no-boot-anim > emulator.log 2>&1 &
-          adb wait-for-device
-          for i in $(seq 1 120); do
-            [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ] && break
-            sleep 2
-          done
-          echo "模擬器開機完成（等了約 $((i*2)) 秒）"
-          adb shell settings put global window_animation_scale 0.0
-          adb shell settings put global transition_animation_scale 0.0
-          adb shell settings put global animator_duration_scale 0.0
-          OUT=$PWD/out APK=$PWD/app/build/outputs/apk/debug/app-debug.apk bash ci/ui/run_shard.sh ${{ matrix.shard }}
+        with:
+          api-level: ${{ inputs.api || '35' }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot-save -noaudio -no-boot-anim
+          script: ONLY="$ONLY" OUT=$PWD/out APK=$PWD/app/build/outputs/apk/debug/app-debug.apk bash ci/ui/run_shard.sh ${{ matrix.shard }}
 
       - name: Upload screenshots
         if: always()
