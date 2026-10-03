@@ -62,6 +62,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.border
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -750,8 +751,12 @@ fun EditScreen(
 @Composable
 private fun AccountPick(label: String, value: String, onClick: () -> Unit) {
     val cute = LocalCute.current
+    val shape = RoundedCornerShape(20.dp)
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card).clickable(onClick = onClick)
+        Modifier.fillMaxWidth().clip(shape).background(cute.card)
+            // 深色模式下卡片和背景幾乎同色，加一圈邊框才看得出是可以點的
+            .then(if (cute.dark) Modifier.border(1.dp, cute.sub.copy(alpha = 0.5f), shape) else Modifier)
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
