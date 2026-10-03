@@ -86,6 +86,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     // 首頁、日曆、我的的捲動位置：進到子頁再回來時要停在原處
     val homeListState = androidx.compose.foundation.lazy.LazyListState()
     val calListState = androidx.compose.foundation.lazy.LazyListState()
+    // 日曆選到的日期：切到別的分頁再回來要還在
+    var calSelected by mutableLongStateOf(LocalDate.now().toEpochDay())
     val meListState = androidx.compose.foundation.lazy.LazyListState()
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())

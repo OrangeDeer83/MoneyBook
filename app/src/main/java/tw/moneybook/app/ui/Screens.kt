@@ -443,7 +443,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
     val list = d.bookTxns.inMonth(month)
     val byDay = list.groupBy { it.day }
     val today = LocalDate.now()
-    var selected by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
+    var selected by vm::calSelected
     LaunchedEffect(month) {
         val sel = LocalDate.ofEpochDay(selected)
         if (sel.year != month.year || sel.monthValue != month.monthValue) {
