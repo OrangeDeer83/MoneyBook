@@ -228,7 +228,7 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
                 }
             }
             val scope = periodFilter(book, mode, vm)
-            val amt: (Txn) -> Long = { t -> if (gross && t.type == TxType.EXPENSE) t.paid else t.statAmount }
+            val amt: (Txn) -> Long = { t -> if (t.adjust) 0L else if (gross && t.type == TxType.EXPENSE) t.paid else t.statAmount }
             val list = scope.filter { it.type == type && amt(it) > 0 }
             val transferFees = if (type == TxType.EXPENSE) scope.filter { it.type == TxType.TRANSFER }.sumOf { it.fee } else 0L
             val reimbGain = if (type == TxType.INCOME) scope.sumOf { it.reimbGain } else 0L

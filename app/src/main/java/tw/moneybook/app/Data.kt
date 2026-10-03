@@ -100,6 +100,8 @@ data class Txn(
     val reimbAmount: Long = 0L,
     /** 各報銷對象的明細；舊資料沒有這個欄位，由上面的舊欄位換算（見 items） */
     val reimbItems: List<ReimbItem> = emptyList(),
+    /** 更新餘額產生的「餘額調整」：只改帳戶餘額，不算收入或支出（type 只用來表示增加或減少） */
+    val adjust: Boolean = false,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -142,7 +144,7 @@ data class Txn(
 
     /** 算進支出統計的金額（報銷的不算，轉帳只算手續費） */
     val spent: Long
-        get() = when (type) {
+        get() = if (adjust) 0L else when (type) {
             TxType.EXPENSE -> if (reimb == 0) paid else (paid - reimbAmount).coerceAtLeast(0L)
             TxType.TRANSFER -> fee
             TxType.INCOME -> 0L
@@ -234,9 +236,9 @@ data class AppData(
 fun List<Txn>.inMonth(m: YearMonth): List<Txn> = filter { it.month == m }
 fun List<Txn>.inYear(y: Int): List<Txn> = filter { it.date.year == y }
 fun List<Txn>.expenseSum(): Long = sumOf { it.spent }
-fun List<Txn>.incomeSum(): Long = filter { it.type == TxType.INCOME }.sumOf { it.paid } + sumOf { it.reimbGain }
+fun List<Txn>.incomeSum(): Long = filter { it.type == TxType.INCOME && !it.adjust }.sumOf { it.paid } + sumOf { it.reimbGain }
 /** 統計用金額：支出扣掉報銷的部分，收入用實收 */
-val Txn.statAmount: Long get() = if (type == TxType.EXPENSE) spent else paid
+val Txn.statAmount: Long get() = if (adjust) 0L else if (type == TxType.EXPENSE) spent else paid
 
 /** 信用卡帳單週期 */
 data class CardCycle(

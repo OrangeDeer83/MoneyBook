@@ -24,6 +24,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -108,6 +112,7 @@ fun AccountDetailScreen(
         return
     }
     var editing by remember { mutableStateOf(false) }
+    var adjusting by remember { mutableStateOf(false) }
     var month by remember { mutableStateOf(vm.month) }
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     // 這個帳戶相關的記錄（所有帳本）
@@ -142,7 +147,10 @@ fun AccountDetailScreen(
                                 color = if (balance < 0) cute.expense else cute.ink,
                             )
                         }
-                        TextButton(onClick = { editing = true }) { Text("編輯") }
+                        Column(horizontalAlignment = Alignment.End) {
+                            TextButton(onClick = { editing = true }) { Text("編輯") }
+                            TextButton(onClick = { adjusting = true }) { Text("更新餘額") }
+                        }
                     }
                     if (a.type == AccountType.CARD && a.creditLimit > 0) {
                         Spacer(Modifier.height(10.dp))
@@ -202,6 +210,14 @@ fun AccountDetailScreen(
             }
         }
     }
+    if (adjusting) {
+        AdjustBalanceDialog(
+            current = balance,
+            isCard = a.type == AccountType.CARD,
+            onConfirm = { target -> vm.adjustBalance(a.id, target); adjusting = false },
+            onDismiss = { adjusting = false },
+        )
+    }
     if (editing) {
         AccountDialog(
             acc = a,
@@ -210,6 +226,45 @@ fun AccountDetailScreen(
             onDismiss = { editing = false },
         )
     }
+}
+
+/** 更新餘額：輸入帳戶現在實際的餘額，差額會記成一筆「餘額調整」 */
+@Composable
+private fun AdjustBalanceDialog(current: Long, isCard: Boolean, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
+    val cute = LocalCute.current
+    var text by remember { mutableStateOf("") }
+    // 只留數字，欠款（信用卡）可以在最前面加負號
+    val target = text.trim().let { s ->
+        val neg = s.startsWith("-")
+        s.filter { it.isDigit() }.toLongOrNull()?.let { if (neg) -it else it }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("更新餘額") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("目前記錄的餘額：${formatMoney(current)}", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
+                OutlinedTextField(
+                    text, { text = it.filter { c -> c.isDigit() || c == '-' }.take(12) },
+                    label = { Text("實際的餘額") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val diff = target?.let { it - current }
+                Text(
+                    when {
+                        diff == null -> if (isCard) "信用卡欠款請輸入負數，例如 -3000" else "輸入帳戶現在實際的金額"
+                        diff == 0L -> "和記錄的一樣，不用調整"
+                        diff > 0 -> "會補記 +${formatMoney(diff)}，不算收入"
+                        else -> "會補記 −${formatMoney(-diff)}，不算支出"
+                    },
+                    color = cute.sub, style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = { TextButton(enabled = target != null && target != current, onClick = { target?.let(onConfirm) }) { Text("更新") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable

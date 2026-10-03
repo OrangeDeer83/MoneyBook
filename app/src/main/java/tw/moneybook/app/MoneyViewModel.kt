@@ -143,6 +143,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 accountId = dr.accountId, toAccountId = dr.toAccountId, day = dr.day,
                 note = dr.note, tags = dr.tags,
                 fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
+                adjust = old.adjust && dr.type != TxType.TRANSFER,
             ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             return
@@ -201,9 +202,32 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val d = data
         val t = d.txns.firstOrNull { it.id == id } ?: return
         commit(d.copy(txns = d.txns.filter { it.id != id }))
-        _messages.tryEmit(UiMsg("已刪除「${t.categoryId?.let { d.catMap[it]?.name } ?: "轉帳"}」", "復原") {
+        _messages.tryEmit(UiMsg("已刪除「${if (t.adjust) "餘額調整" else t.categoryId?.let { d.catMap[it]?.name } ?: "轉帳"}」", "復原") {
             val now = data
             if (now.txns.none { it.id == t.id }) commit(now.copy(txns = sortTxns(now.txns + t)))
+        })
+    }
+
+    /** 更新餘額：把帳戶餘額改成實際的數字，差額記成一筆不算收支的「餘額調整」（漏記帳時補平用） */
+    fun adjustBalance(accountId: Long, target: Long, day: Long = LocalDate.now().toEpochDay()) {
+        val d = data
+        if (d.accMap[accountId] == null) return
+        val diff = target - (d.balances()[accountId] ?: 0L)
+        if (diff == 0L) {
+            toast("餘額一樣，不用調整")
+            return
+        }
+        val t = Txn(
+            id = d.nextId, bookId = d.currentBook.id,
+            type = if (diff > 0) TxType.INCOME else TxType.EXPENSE,
+            amount = if (diff > 0) diff else -diff,
+            categoryId = null, accountId = accountId, toAccountId = null,
+            day = day, note = "", tags = emptyList(), adjust = true,
+        )
+        commit(d.copy(txns = sortTxns(d.txns + t), nextId = d.nextId + 1))
+        _messages.tryEmit(UiMsg("已更新餘額，${if (diff > 0) "增加" else "減少"} ${formatMoney(t.amount)}", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.filter { it.id != t.id }))
         })
     }
 

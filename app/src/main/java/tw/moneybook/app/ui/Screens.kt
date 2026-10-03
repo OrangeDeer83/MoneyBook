@@ -81,7 +81,12 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, onClick: () -> Unit) {
     val emoji: String
     val color: Int
     val details = ArrayList<String>()
-    if (t.type == TxType.TRANSFER) {
+    if (t.adjust) {
+        title = androidx.compose.ui.text.AnnotatedString("餘額調整")
+        emoji = "img:ui_ledger"
+        color = 5
+        if (acc != null && d.accounts.size > 1) details.add(acc.name)
+    } else if (t.type == TxType.TRANSFER) {
         title = androidx.compose.ui.text.AnnotatedString("轉帳")
         emoji = "img:ui_transfer"
         color = 5

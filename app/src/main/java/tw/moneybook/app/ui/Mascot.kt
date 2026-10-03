@@ -62,7 +62,7 @@ fun moodOf(d: AppData, today: LocalDate = LocalDate.now(), now: LocalTime = Loca
     if (budget > 0 && isBudgetWorried(spent, budget, today)) return Mood.WORRIED
     val todayEpoch = today.toEpochDay()
     val todays = list.filter { it.day == todayEpoch }
-    if (todays.any { it.type == TxType.INCOME }) return Mood.CHEER
+    if (todays.any { it.type == TxType.INCOME && !it.adjust }) return Mood.CHEER
     if (now.hour >= 23 || now.hour < 5) return Mood.SLEEPY
     return if (todays.isNotEmpty()) Mood.HAPPY else Mood.NORMAL
 }

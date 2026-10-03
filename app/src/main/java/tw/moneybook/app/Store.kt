@@ -71,6 +71,7 @@ object Codec {
                         .put("reimbAccountId", nullable(t.reimbAccountId)).put("reimbDay", nullable(t.reimbDay))
                         .put("reimbAmount", t.reimbAmount)
                         .put("reimbItems", ReimbCodec.toJson(t.reimbItems))
+                        .put("adjust", t.adjust)
                 )
             }
         })
@@ -156,6 +157,7 @@ object Codec {
                 reimbDay = o.optLongOrNull("reimbDay"),
                 reimbAmount = o.optLong("reimbAmount", -1L),
                 reimbItems = ReimbCodec.fromJson(o.optJSONArray("reimbItems")),
+                adjust = o.optBoolean("adjust", false),
             )
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
@@ -334,10 +336,11 @@ object CsvIO {
     private fun untxt(s: String): String =
         if (s.length >= 2 && s[0] == '\'' && s[1] in "=+-@\t\r") s.substring(1) else s
 
-    private fun typeLabel(t: TxType) = when (t) {
-        TxType.EXPENSE -> "支出"
-        TxType.INCOME -> "收入"
-        TxType.TRANSFER -> "轉帳"
+    private fun typeLabel(t: Txn) = when {
+        t.adjust -> if (t.type == TxType.EXPENSE) "餘額調整（減少）" else "餘額調整（增加）"
+        t.type == TxType.EXPENSE -> "支出"
+        t.type == TxType.INCOME -> "收入"
+        else -> "轉帳"
     }
 
     fun export(d: AppData): ByteArray {
@@ -351,7 +354,7 @@ object CsvIO {
             val sub = if (c != null && c.parentId != null) c.name else ""
             val row = listOf(
                 t.date.toString(),
-                typeLabel(t.type),
+                typeLabel(t),
                 t.amount.toString(),
                 t.fee.toString(),
                 t.discount.toString(),
@@ -468,7 +471,10 @@ object CsvIO {
             val raw = get(cAmt).replace(",", "").replace("$", "").trim()
             val amtD = raw.toDoubleOrNull() ?: continue
             val typeText = get(cType)
+            // 匯出的「餘額調整（增加／減少）」要還原成不算收支的調整
+            val isAdjust = typeText.contains("餘額調整")
             val type = when {
+                isAdjust -> if (typeText.contains("減")) TxType.EXPENSE else TxType.INCOME
                 typeText.contains("轉") -> TxType.TRANSFER
                 typeText.contains("收") || typeText.equals("income", true) -> TxType.INCOME
                 typeText.isEmpty() && amtD > 0 && cType < 0 -> TxType.EXPENSE
@@ -478,7 +484,7 @@ object CsvIO {
             if (amount == 0L) continue
             val accId = findAcc(get(cAcc))
             val toId = if (type == TxType.TRANSFER) findAcc(get(cTo)) else null
-            val catId = if (type == TxType.TRANSFER) null else findCat(type, get(cCat), get(cSub))
+            val catId = if (type == TxType.TRANSFER || isAdjust) null else findCat(type, get(cCat), get(cSub))
             added.add(
                 Txn(
                     id = nextId++,
@@ -493,7 +499,8 @@ object CsvIO {
                     tags = parseTags(get(cTags)),
                     fee = get(cFee).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L,
                     discount = if (type == TxType.EXPENSE) get(cDisc).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L else 0L,
-                    reimb = if (type == TxType.EXPENSE) when (get(cReimb)) { "待報銷" -> 1; "已報銷" -> 2; else -> 0 } else 0,
+                    reimb = if (type == TxType.EXPENSE && !isAdjust) when (get(cReimb)) { "待報銷" -> 1; "已報銷" -> 2; else -> 0 } else 0,
+                    adjust = isAdjust,
                 ).let { t ->
                     if (t.reimb == 0) t
                     else t.copy(reimbAmount = get(cReimbAmt).replace(",", "").toDoubleOrNull()?.let { Math.round(it) }?.coerceIn(0L, t.paid) ?: t.paid)
