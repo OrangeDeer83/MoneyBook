@@ -90,7 +90,7 @@ object Codec {
                 put(
                     JSONObject().put("id", t.id).put("accountId", t.accountId).put("symbol", t.symbol)
                         .put("name", t.name).put("day", t.day).put("buy", t.buy).put("qty", t.qty)
-                        .put("price", t.price).put("fee", t.fee).put("txnId", nullable(t.txnId))
+                        .put("price", t.price).put("fee", t.fee).put("txnId", nullable(t.txnId)).put("market", t.market)
                 )
             }
         })
@@ -199,6 +199,7 @@ object Codec {
                 price = o.optDouble("price", 0.0),
                 fee = o.optLong("fee", 0L),
                 txnId = o.optLongOrNull("txnId"),
+                market = o.optString("market", ""),
             )
         }
         val prices = objects(root.optJSONArray("prices")) { o ->

@@ -17,12 +17,6 @@ object PriceFetcher {
     /** 換成 NT$ 的價格，和這個價格是哪一天的 */
     data class Quote(val price: Double, val day: Long)
 
-    private val taiwan = Regex("^[0-9]{4,6}[A-Z]?$")
-
-    /** 使用者輸入的代號可能要補後綴：0050 → 0050.TW（上市）或 0050.TWO（上櫃） */
-    private fun candidates(symbol: String): List<String> =
-        if (taiwan.matches(symbol)) listOf("$symbol.TW", "$symbol.TWO") else listOf(symbol)
-
     /** 回傳 meta 區塊（價格、幣別、時間都在裡面）；任何錯誤都回 null */
     private fun meta(symbol: String): JSONObject? {
         var c: HttpURLConnection? = null
@@ -43,8 +37,8 @@ object PriceFetcher {
     }
 
     /** 抓某個代號的最新價格，外幣用當下匯率換成 NT$；抓不到（或匯率抓不到）回傳 null */
-    suspend fun fetch(symbol: String): Quote? = withContext(Dispatchers.IO) {
-        for (s in candidates(symbol.trim().uppercase())) {
+    suspend fun fetch(symbol: String, market: String = ""): Quote? = withContext(Dispatchers.IO) {
+        for (s in Markets.candidates(symbol, market)) {
             val m = meta(s) ?: continue
             var price = m.optDouble("regularMarketPrice", Double.NaN)
             if (price.isNaN() || price <= 0.0) continue

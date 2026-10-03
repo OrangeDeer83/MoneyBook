@@ -17,6 +17,8 @@ data class Trade(
     val fee: Long = 0L,
     /** 買賣時一起記的資金移動（銀行 ⇄ 投資帳戶的轉帳）；沒有連動就是 null */
     val txnId: Long? = null,
+    /** 市場（見 Markets）；空白是舊資料，抓價時自動判斷 */
+    val market: String = "",
 )
 
 /** 某個代號在某一天的價格（抓到的或手動輸入的）。每個月抓幾次，當作那個月的代表 */
@@ -33,6 +35,7 @@ data class Position(
     val price: Double,
     /** 這個價格是哪一天的 */
     val priceDay: Long,
+    val market: String = "",
 ) {
     val value: Long get() = (qty * price).roundToLong()
     val gain: Long get() = value - cost
@@ -74,6 +77,7 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
         if (o == null || p.day >= o.day) latest[p.symbol] = p
     }
     class Acc(var name: String) {
+        var market = ""
         var qty = 0.0
         var cost = 0.0
         var lastPrice = 0.0
@@ -85,6 +89,7 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
         if (accountId != null && t.accountId != accountId) continue
         val a = m.getOrPut(t.accountId to t.symbol) { Acc(t.name) }
         if (t.name.isNotBlank()) a.name = t.name
+        if (t.market.isNotBlank()) a.market = t.market
         a.lastPrice = t.price
         a.lastDay = t.day
         if (t.buy) {
@@ -104,7 +109,7 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
         val useSnap = snap != null && snap.day >= a.lastDay
         Position(
             accountId = k.first, symbol = k.second, name = a.name,
-            qty = a.qty, cost = a.cost.roundToLong(),
+            qty = a.qty, cost = a.cost.roundToLong(), market = a.market,
             price = if (useSnap) snap!!.price else a.lastPrice,
             priceDay = if (useSnap) snap!!.day else a.lastDay,
         )
@@ -114,6 +119,51 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
 
 /** 買賣金額（不含手續費），四捨五入到元 */
 fun tradeAmount(qty: Double, price: Double): Long = (qty * price).roundToLong()
+
+/** 一檔的抓價結果（抓價完成後列給使用者看） */
+data class FetchResult(val symbol: String, val name: String, val market: String, val price: Double?) {
+    val ok: Boolean get() = price != null
+}
+
+/**
+ * 市場：決定抓價時代號要怎麼補後綴（Yahoo Finance 的格式）。
+ * 台股 0050 → 0050.TW（上櫃是 .TWO）、日股 7203 → 7203.T、韓股 005930 → 005930.KS（或 .KQ）、
+ * 港股 700 → 0700.HK、加密貨幣 BTC → BTC-USD、美股照原樣。空白（舊資料）：4～6 位數字當台股，其他照原樣。
+ */
+object Markets {
+    val all: List<Pair<String, String>> = listOf(
+        "TW" to "台股", "US" to "美股", "JP" to "日股", "KR" to "韓股", "HK" to "港股", "CRYPTO" to "加密貨幣",
+    )
+
+    fun label(code: String): String = all.firstOrNull { it.first == code }?.second ?: ""
+
+    /** 代號欄的範例 */
+    fun example(code: String): String = when (code) {
+        "TW" -> "例如 0050、2330"
+        "US" -> "例如 AAPL、VOO"
+        "JP" -> "例如 7203"
+        "KR" -> "例如 005930"
+        "HK" -> "例如 0700"
+        "CRYPTO" -> "例如 BTC、ETH"
+        else -> "例如 0050、AAPL"
+    }
+
+    private val taiwan = Regex("^[0-9]{4,6}[A-Z]?$")
+
+    /** 要依序嘗試的 Yahoo 代號；使用者自己已經帶了後綴（有「.」）就照用 */
+    fun candidates(symbol: String, market: String): List<String> {
+        val s = symbol.trim().uppercase()
+        if (s.isEmpty()) return emptyList()
+        return when (market) {
+            "US" -> listOf(s)
+            "JP" -> if ('.' in s) listOf(s) else listOf("$s.T")
+            "KR" -> if ('.' in s) listOf(s) else listOf("$s.KS", "$s.KQ")
+            "HK" -> if ('.' in s) listOf(s) else listOf(s.trimStart('0').padStart(4, '0') + ".HK")
+            "CRYPTO" -> if ('-' in s) listOf(s) else listOf("$s-USD")
+            else -> if ('.' !in s && taiwan.matches(s)) listOf("$s.TW", "$s.TWO") else listOf(s)   // 台股與舊資料
+        }
+    }
+}
 
 /** 數量：最多 4 位小數，去掉多餘的 0（100 → 100，0.5000 → 0.5） */
 fun qtyText(q: Double): String =

@@ -242,7 +242,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun saveTrade(
         accountId: Long, symbol: String, name: String, day: Long,
-        buy: Boolean, qty: Double, price: Double, fee: Long, cashAccountId: Long?,
+        buy: Boolean, qty: Double, price: Double, fee: Long, cashAccountId: Long?, market: String = "",
     ) {
         val d = data
         val sym = symbol.trim().uppercase()
@@ -263,7 +263,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 fee = if (buy) fee else 0L,
             )
         }
-        val trade = Trade(next++, accountId, sym, name.trim(), day, buy, qty, price, fee, linked?.id)
+        val trade = Trade(next++, accountId, sym, name.trim(), day, buy, qty, price, fee, linked?.id, market)
         commit(
             d.copy(
                 txns = if (linked != null) sortTxns(d.txns + linked) else d.txns,
@@ -302,6 +302,13 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     var fetching by mutableStateOf(false)
         private set
 
+    /** 最近一次抓價的結果；不是 null 就由畫面顯示「抓價結果」，使用者關閉後清掉 */
+    var fetchReport by mutableStateOf<List<FetchResult>?>(null)
+
+    /** 最近一次抓價沒抓到的代號（持股那一列會標示） */
+    var priceFailed by mutableStateOf(setOf<String>())
+        private set
+
     fun setPriceFetch(on: Boolean) {
         update { d -> d.copy(prefs = d.prefs.copy(priceFetch = on)) }
     }
@@ -309,16 +316,19 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 上網抓持股的最新價格（所有投資帳戶的持股一起抓）；silent 時全部成功就不顯示提示 */
     fun refreshPrices(silent: Boolean = false) {
         if (fetching) return
-        val symbols = data.portfolio().positions.map { it.symbol }.distinct()
-        if (symbols.isEmpty()) return
+        val positions = data.portfolio().positions.distinctBy { it.symbol }
+        if (positions.isEmpty()) return
         fetching = true
         viewModelScope.launch {
             val got = ArrayList<PriceSnap>()
-            var fail = 0
-            for (s in symbols) {
-                val q = try { PriceFetcher.fetch(s) } catch (_: Exception) { null }
-                if (q != null) got.add(PriceSnap(s, q.day, q.price)) else fail++
+            val results = ArrayList<FetchResult>()
+            for (p in positions) {
+                val q = try { PriceFetcher.fetch(p.symbol, p.market) } catch (_: Exception) { null }
+                if (q != null) got.add(PriceSnap(p.symbol, q.day, q.price))
+                results.add(FetchResult(p.symbol, p.name, p.market, q?.price))
             }
+            val fail = results.count { !it.ok }
+            priceFailed = results.filter { !it.ok }.map { it.symbol }.toSet()
             fetching = false
             val today = LocalDate.now()
             if (got.isNotEmpty()) {
@@ -327,11 +337,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     d.copy(prices = pruneMonthly(kept + got, today), prefs = d.prefs.copy(priceFetchDay = today.toEpochDay()))
                 }
             }
-            when {
-                got.isEmpty() -> toast("抓不到價格，請確認網路；也可以點持股手動輸入現價")
-                fail > 0 -> toast("已更新 ${got.size} 檔，$fail 檔抓不到（可以點持股手動輸入）")
-                !silent -> toast("已更新 ${got.size} 檔現價")
-            }
+            // 有沒抓到的一定要列出是哪幾檔；全部成功時，自動抓價就不打擾
+            if (fail > 0 || !silent) fetchReport = results
         }
     }
 

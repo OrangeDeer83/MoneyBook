@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
 import tw.moneybook.app.MoneyViewModel
+import tw.moneybook.app.Markets
 import tw.moneybook.app.Position
 import tw.moneybook.app.Trade
 import tw.moneybook.app.formatMoney
@@ -130,11 +131,26 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (p.name.isNotBlank()) "${p.name} ${p.symbol}" else p.symbol, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (p.name.isNotBlank()) "${p.name} ${p.symbol}" else p.symbol,
+                            style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (p.market.isNotBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                Markets.label(p.market), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
+                            )
+                        }
+                    }
                     Text(
                         "${qtyText(p.qty)} 股・均價 ${priceText(if (p.qty > 0) p.cost / p.qty else 0.0)}・現價 ${priceText(p.price)}（${dayLabel(p.priceDay)}）",
                         style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 2,
                     )
+                    if (p.symbol in vm.priceFailed) {
+                        Text("抓不到價格，目前用的是舊價格；請確認市場與代號，或點這一列手動輸入", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
@@ -183,6 +199,45 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             }
             if (trades.size > 30) Text("只顯示最近 30 筆", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp))
         }
+    }
+
+    vm.fetchReport?.let { rep ->
+        val failed = rep.filter { !it.ok }
+        val okList = rep.filter { it.ok }
+        AlertDialog(
+            onDismissRequest = { vm.fetchReport = null },
+            title = { Text("抓價結果") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (failed.isNotEmpty()) {
+                        Text("沒抓到（${failed.size} 檔）", style = MaterialTheme.typography.titleSmall, color = cute.expense)
+                        failed.forEach { r ->
+                            Text(
+                                (if (r.name.isNotBlank()) "${r.name} ${r.symbol}" else r.symbol) + if (r.market.isNotBlank()) "（${Markets.label(r.market)}）" else "",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Text(
+                            "請確認市場和代號對不對（例如韓股要選「韓股」、日股代號不用加 .T），或點持股那一列手動輸入現價。也可能是網路不通。",
+                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                        )
+                    }
+                    if (okList.isNotEmpty()) {
+                        Text("已更新（${okList.size} 檔）", style = MaterialTheme.typography.titleSmall)
+                        okList.forEach { r ->
+                            Row(Modifier.fillMaxWidth()) {
+                                Text(
+                                    if (r.name.isNotBlank()) "${r.name} ${r.symbol}" else r.symbol,
+                                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
+                                )
+                                Text(priceText(r.price ?: 0.0), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.fetchReport = null }) { Text("關閉") } },
+        )
     }
 
     when (dialog) {
@@ -266,6 +321,8 @@ private fun TradeDialog(
     val cute = LocalCute.current
     var buy by remember { mutableStateOf(initialBuy) }
     var symbol by remember { mutableStateOf(initialSymbol) }
+    // 賣出時沿用持股的市場；新買進預設台股
+    var market by remember { mutableStateOf(held.firstOrNull { it.symbol == initialSymbol }?.market?.ifBlank { null } ?: "TW") }
     var name by remember { mutableStateOf(held.firstOrNull { it.symbol == initialSymbol }?.name ?: "") }
     var qty by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
@@ -298,15 +355,22 @@ private fun TradeDialog(
                 if (!buy && held.isNotEmpty()) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         held.forEach { p ->
-                            CuteChip(p.symbol, sym == p.symbol, { symbol = p.symbol; name = p.name })
+                            CuteChip(p.symbol, sym == p.symbol, { symbol = p.symbol; name = p.name; if (p.market.isNotBlank()) market = p.market })
                         }
                     }
                 }
+                Text("市場（決定怎麼抓價，選錯會抓不到）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Markets.all.forEach { (code, label) -> CuteChip(label, market == code, { market = code }) }
+                }
                 OutlinedTextField(
                     symbol, { symbol = it.filter { c -> c.isLetterOrDigit() || c == '.' || c == '-' }.take(12) },
-                    label = { Text("代號（例如 0050、AAPL、BTC-USD）") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("代號（${Markets.example(market)}）") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(name, { name = it.take(16) }, label = { Text("名稱（選填）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    name, { name = it.take(16) }, label = { Text("名稱（選填，自己看得懂就好，例如 元大50）") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         qty, { qty = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
@@ -318,6 +382,9 @@ private fun TradeDialog(
                         label = { Text("單價") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
                     )
+                }
+                if (market != "TW") {
+                    Text("目前記錄的金額都是台幣：單價、手續費請先換算成台幣。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
                 OutlinedTextField(
                     fee, { fee = it.filter { c -> c.isDigit() }.take(9) },
@@ -345,7 +412,7 @@ private fun TradeDialog(
             TextButton(
                 enabled = ok,
                 onClick = {
-                    vm.saveTrade(a.id, sym, name, day, buy, q, pr, fe, cash)
+                    vm.saveTrade(a.id, sym, name, day, buy, q, pr, fe, cash, market)
                     // 順便把這次的成交價當成現價，持股市值才不會是空的
                     vm.setPrice(sym, pr, day)
                     onDismiss()
