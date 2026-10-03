@@ -44,6 +44,8 @@ data class Account(
     val creditLimit: Long = 0L,
     val statementDay: Int = 0,
     val dueDay: Int = 0,
+    /** 手動標了星號的常用帳戶：記一筆選帳戶時固定放在最上面 */
+    val favorite: Boolean = false,
 )
 
 data class Category(
@@ -208,16 +210,37 @@ data class AppData(
     val visibleAccounts: List<Account>
         get() = accounts.filter { !it.hidden }.sortedBy { it.order }
 
-    /** 最常用的帳戶（依記錄次數，轉帳兩邊都算；只列顯示中而且用過的），記一筆選帳戶時放在最上面 */
-    fun frequentAccounts(limit: Int = 3): List<Account> {
-        val count = HashMap<Long, Int>()
+    /**
+     * 記一筆選帳戶時放在最上面的「常用帳戶」，手動與自動並用：
+     * 1. 手動標了星號的帳戶（顯示中的）固定排最前面，照帳戶頁的順序；
+     * 2. 名額（limit）還沒滿，就用自動統計的補滿：最近 [days] 天、目前帳本的使用次數多的優先，
+     *    次數一樣看全部記錄的次數，再一樣照帳戶頁順序。
+     * 統計時：餘額調整不算（不是真的在用），轉帳兩邊都算，分期付款同一組只算一次；沒用過的帳戶不列。
+     * 星號帳戶超過 limit 時全部都列。
+     */
+    fun frequentAccounts(limit: Int = 3, today: LocalDate = LocalDate.now(), days: Int = 90): List<Account> {
+        val since = today.toEpochDay() - days
+        val bookId = currentBook.id
+        val recent = HashMap<Long, Int>()
+        val all = HashMap<Long, Int>()
+        val seenInstallments = HashSet<Pair<Long, Long>>()
         for (t in txns) {
-            t.accountId?.let { count[it] = (count[it] ?: 0) + 1 }
-            t.toAccountId?.let { count[it] = (count[it] ?: 0) + 1 }
+            if (t.adjust) continue
+            val g = t.instGroup
+            for (id in listOfNotNull(t.accountId, t.toAccountId)) {
+                if (g != null && !seenInstallments.add(g to id)) continue
+                all[id] = (all[id] ?: 0) + 1
+                if (t.bookId == bookId && t.day >= since) recent[id] = (recent[id] ?: 0) + 1
+            }
         }
-        return visibleAccounts.filter { (count[it.id] ?: 0) > 0 }
-            .sortedWith(compareByDescending<Account> { count[it.id] ?: 0 }.thenBy { it.order })
-            .take(limit)
+        val starred = visibleAccounts.filter { it.favorite }
+        val auto = visibleAccounts.filter { !it.favorite && (all[it.id] ?: 0) > 0 }
+            .sortedWith(
+                compareByDescending<Account> { recent[it.id] ?: 0 }
+                    .thenByDescending { all[it.id] ?: 0 }
+                    .thenBy { it.order }
+            )
+        return starred + auto.take((limit - starred.size).coerceAtLeast(0))
     }
 
     fun topCategories(kind: TxType): List<Category> =

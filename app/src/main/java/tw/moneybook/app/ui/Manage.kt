@@ -403,7 +403,7 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                                 AccountIcon(a, 40.dp)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
+                                    Text((if (a.favorite) "★ " else "") + a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
                                     if (a.type == AccountType.CARD && a.creditLimit > 0) {
                                         Text("可用 ${formatMoney((a.creditLimit + b).coerceAtLeast(0L))}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                                     }
@@ -451,6 +451,7 @@ fun AccountDialog(
     var badgeCol by remember { mutableStateOf(acc?.badgeColor ?: 0) }
     var initial by remember { mutableStateOf(acc?.initial?.takeIf { it != 0L }?.toString() ?: "") }
     var hidden by remember { mutableStateOf(acc?.hidden ?: false) }
+    var favorite by remember { mutableStateOf(acc?.favorite ?: false) }
     var limit by remember { mutableStateOf(acc?.creditLimit?.takeIf { it > 0 }?.toString() ?: "") }
     var stmt by remember { mutableStateOf(acc?.statementDay?.takeIf { it > 0 }?.toString() ?: "") }
     var due by remember { mutableStateOf(acc?.dueDay?.takeIf { it > 0 }?.toString() ?: "") }
@@ -465,6 +466,7 @@ fun AccountDialog(
         initial = initial.toLongOrNull() ?: 0L,
         order = acc?.order ?: 0,
         hidden = hidden,
+        favorite = favorite,
         badge = if (useBadge) badge.trim().take(2) else "",
         badgeColor = badgeCol,
         creditLimit = if (type == AccountType.CARD) limit.toLongOrNull() ?: 0L else 0L,
@@ -491,6 +493,10 @@ fun AccountDialog(
                         },
                         label = { Text("名稱") }, singleLine = true, modifier = Modifier.weight(1f),
                     )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("設為常用帳戶（記一筆選帳戶時固定放最上面）", modifier = Modifier.weight(1f))
+                    Switch(checked = favorite, onCheckedChange = { favorite = it })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CuteChip("表情符號", !useBadge, { useBadge = false })

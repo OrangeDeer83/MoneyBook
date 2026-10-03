@@ -46,6 +46,7 @@ object Codec {
                         .put("hidden", a.hidden)
                         .put("badge", a.badge).put("badgeColor", a.badgeColor)
                         .put("creditLimit", a.creditLimit).put("statementDay", a.statementDay).put("dueDay", a.dueDay)
+                        .put("favorite", a.favorite)
                 )
             }
         })
@@ -131,6 +132,7 @@ object Codec {
                 initial = o.optLong("initial", 0L),
                 order = o.optInt("order", 0),
                 hidden = o.optBoolean("hidden", false),
+                favorite = o.optBoolean("favorite", false),
                 badge = o.optString("badge", ""),
                 badgeColor = o.optInt("badgeColor", 0),
                 creditLimit = o.optLong("creditLimit", 0L),

@@ -713,8 +713,9 @@ fun EditScreen(
                         val head: @Composable (String) -> Unit = { t ->
                             Text(t, style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp))
                         }
-                        // 最常用的帳戶放最上面；帳戶太少（不到 3 個）就不用再分一區
-                        val freq = if (accs.size >= 3) d.frequentAccounts(3) else emptyList()
+                        // 常用帳戶放最上面：手動標星號的固定在前，其餘用最近的使用次數自動補；
+                        // 帳戶太少（不到 3 個）又沒有標星號，就不用再分一區
+                        val freq = if (accs.size >= 3 || accs.any { it.favorite }) d.frequentAccounts(3) else emptyList()
                         if (freq.isNotEmpty()) {
                             head("常用帳戶")
                             freq.forEach { a -> AccountLine(a, bal[a.id] ?: 0L, if (isTo) toAccId == a.id else accId == a.id) { pick(a) } }

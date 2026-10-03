@@ -387,7 +387,7 @@ fun AccountLine(a: Account, balance: Long, on: Boolean, onClick: () -> Unit) {
     ) {
         AccountIcon(a, 32.dp)
         Spacer(Modifier.width(10.dp))
-        Text(a.name, modifier = Modifier.weight(1f))
+        Text((if (a.favorite) "★ " else "") + a.name, modifier = Modifier.weight(1f))
         Text(formatMoney(balance), color = cute.sub, style = MaterialTheme.typography.labelLarge)
     }
 }
