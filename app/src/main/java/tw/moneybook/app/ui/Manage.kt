@@ -340,26 +340,45 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                 Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
             }
         }
-        item {
-            // 切換編輯模式時重新建立，才不會留著上一個模式的把手位置
-            androidx.compose.runtime.key(editing) {
-                ReorderColumn(sorted, { it.id }, { vm.reorderAccounts(it) }) { a, handle, _ ->
-                    val b = bal[a.id] ?: 0L
-                    CuteCard(
-                        Modifier.fillMaxWidth(),
-                        onClick = if (editing) null else ({ onOpen(a.id) }),
-                        padding = PaddingValues(start = 14.dp, end = if (editing) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AccountIcon(a, 40.dp)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
-                                val extra = if (a.type == AccountType.CARD && a.creditLimit > 0) "・可用 ${formatMoney((a.creditLimit + b).coerceAtLeast(0L))}" else ""
-                                Text(a.type.label + extra, style = MaterialTheme.typography.bodySmall, color = cute.sub)
+        // 依帳戶類型分組（現金、銀行、信用卡…），每組有小計；拖曳排序只在同一組裡進行
+        for (type in AccountType.values()) {
+            val group = sorted.filter { it.type == type }
+            if (group.isEmpty()) continue
+            item(key = "head-${type.name}") {
+                val sub = group.filter { !it.hidden }.sumOf { bal[it.id] ?: 0L }
+                SectionTitle(type.label) {
+                    Text(formatMoney(sub), style = MaterialTheme.typography.labelLarge, color = if (sub < 0) cute.expense else cute.sub)
+                }
+            }
+            item(key = "group-${type.name}") {
+                // 切換編輯模式時重新建立，才不會留著上一個模式的把手位置
+                androidx.compose.runtime.key(editing) {
+                    ReorderColumn(
+                        group, { it.id },
+                        { newGroupOrder ->
+                            // 把這一組的新順序放回全部帳戶的順序裡，其他組不動
+                            val queue = newGroupOrder.iterator()
+                            vm.reorderAccounts(sorted.map { acc -> if (acc.type == type) queue.next() else acc.id })
+                        },
+                    ) { a, handle, _ ->
+                        val b = bal[a.id] ?: 0L
+                        CuteCard(
+                            Modifier.fillMaxWidth(),
+                            onClick = if (editing) null else ({ onOpen(a.id) }),
+                            padding = PaddingValues(start = 14.dp, end = if (editing) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AccountIcon(a, 40.dp)
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
+                                    if (a.type == AccountType.CARD && a.creditLimit > 0) {
+                                        Text("可用 ${formatMoney((a.creditLimit + b).coerceAtLeast(0L))}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                                    }
+                                }
+                                Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
+                                if (editing) DragHandle(handle)
                             }
-                            Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
-                            if (editing) DragHandle(handle)
                         }
                     }
                 }
