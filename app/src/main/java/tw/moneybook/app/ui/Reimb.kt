@@ -296,7 +296,10 @@ fun ReimbEditPage(
                                     Text(formatMoney((actual - total).coerceAtLeast(0L)), style = MaterialTheme.typography.titleLarge)
                                 }
                             }
-                            if (total > cap) {
+                            if (cap <= 0L) {
+                                // 先填報銷、後填帳目金額：金額還沒輸入時不用提醒上限，儲存時才會依金額限制
+                                Text("還沒輸入帳目金額，報銷金額之後不會超過實付。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                            } else if (total > cap) {
                                 Text("合計超過上限 ${formatMoney(cap)}，超過的部分不會算。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
                             } else if (total > actual) {
                                 Text("比實付多 ${formatMoney(total - actual)}，多的部分收到後算成報銷回饋收入。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
