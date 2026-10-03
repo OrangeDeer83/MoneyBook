@@ -206,6 +206,18 @@ data class AppData(
     val visibleAccounts: List<Account>
         get() = accounts.filter { !it.hidden }.sortedBy { it.order }
 
+    /** 最常用的帳戶（依記錄次數，轉帳兩邊都算；只列顯示中而且用過的），記一筆選帳戶時放在最上面 */
+    fun frequentAccounts(limit: Int = 3): List<Account> {
+        val count = HashMap<Long, Int>()
+        for (t in txns) {
+            t.accountId?.let { count[it] = (count[it] ?: 0) + 1 }
+            t.toAccountId?.let { count[it] = (count[it] ?: 0) + 1 }
+        }
+        return visibleAccounts.filter { (count[it.id] ?: 0) > 0 }
+            .sortedWith(compareByDescending<Account> { count[it.id] ?: 0 }.thenBy { it.order })
+            .take(limit)
+    }
+
     fun topCategories(kind: TxType): List<Category> =
         categories.filter { it.kind == kind && it.parentId == null }.sortedBy { it.order }
 

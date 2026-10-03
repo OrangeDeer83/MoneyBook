@@ -706,11 +706,25 @@ fun EditScreen(
                 text = {
                     // 帳戶多的時候要能往下滑，不然只能選到畫面上看得到的
                     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        accs.forEach { a ->
-                            val on = if (isTo) toAccId == a.id else accId == a.id
-                            AccountLine(a, bal[a.id] ?: 0L, on) {
-                                if (isTo) toAccId = a.id else accId = a.id
-                                dialog = ""
+                        fun pick(a: tw.moneybook.app.Account) {
+                            if (isTo) toAccId = a.id else accId = a.id
+                            dialog = ""
+                        }
+                        val head: @Composable (String) -> Unit = { t ->
+                            Text(t, style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp))
+                        }
+                        // 最常用的帳戶放最上面；帳戶太少（不到 3 個）就不用再分一區
+                        val freq = if (accs.size >= 3) d.frequentAccounts(3) else emptyList()
+                        if (freq.isNotEmpty()) {
+                            head("常用帳戶")
+                            freq.forEach { a -> AccountLine(a, bal[a.id] ?: 0L, if (isTo) toAccId == a.id else accId == a.id) { pick(a) } }
+                        }
+                        // 其餘依帳戶類型分組（現金、銀行、信用卡…）
+                        tw.moneybook.app.AccountType.values().forEach { type ->
+                            val g = accs.filter { it.type == type }
+                            if (g.isNotEmpty()) {
+                                head(type.label)
+                                g.forEach { a -> AccountLine(a, bal[a.id] ?: 0L, if (isTo) toAccId == a.id else accId == a.id) { pick(a) } }
                             }
                         }
                     }
