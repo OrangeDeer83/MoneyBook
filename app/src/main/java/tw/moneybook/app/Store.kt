@@ -85,6 +85,18 @@ object Codec {
                 )
             }
         })
+        root.put("trades", JSONArray().apply {
+            d.trades.forEach { t ->
+                put(
+                    JSONObject().put("id", t.id).put("accountId", t.accountId).put("symbol", t.symbol)
+                        .put("name", t.name).put("day", t.day).put("buy", t.buy).put("qty", t.qty)
+                        .put("price", t.price).put("fee", t.fee).put("txnId", nullable(t.txnId))
+                )
+            }
+        })
+        root.put("prices", JSONArray().apply {
+            d.prices.forEach { p -> put(JSONObject().put("symbol", p.symbol).put("day", p.day).put("price", p.price)) }
+        })
         val p = d.prefs
         root.put(
             "prefs",
@@ -174,6 +186,23 @@ object Codec {
                 tags = strings(o.optJSONArray("tags")),
             )
         }
+        val trades = objects(root.optJSONArray("trades")) { o ->
+            Trade(
+                id = o.getLong("id"),
+                accountId = o.getLong("accountId"),
+                symbol = o.getString("symbol"),
+                name = o.optString("name", ""),
+                day = o.getLong("day"),
+                buy = o.optBoolean("buy", true),
+                qty = o.optDouble("qty", 0.0),
+                price = o.optDouble("price", 0.0),
+                fee = o.optLong("fee", 0L),
+                txnId = o.optLongOrNull("txnId"),
+            )
+        }
+        val prices = objects(root.optJSONArray("prices")) { o ->
+            PriceSnap(o.getString("symbol"), o.getLong("day"), o.optDouble("price", 0.0))
+        }
         require(books.isNotEmpty()) { "沒有帳本資料" }
         val po = root.optJSONObject("prefs") ?: JSONObject()
         val prefs = Prefs(
@@ -186,7 +215,7 @@ object Codec {
             celebrate = po.optBoolean("celebrate", true),
         )
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
-            txns.map { it.id } + templates.map { it.id }).maxOrNull() ?: 0L
+            txns.map { it.id } + templates.map { it.id } + trades.map { it.id }).maxOrNull() ?: 0L
         return AppData(
             books = books,
             accounts = accounts,
@@ -195,6 +224,8 @@ object Codec {
             templates = templates,
             prefs = prefs,
             nextId = maxOf(root.optLong("nextId", 1L), maxId + 1),
+            trades = trades,
+            prices = prices,
         )
     }
 

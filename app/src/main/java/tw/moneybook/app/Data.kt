@@ -12,6 +12,7 @@ enum class AccountType(val label: String, val emoji: String) {
     CARD("信用卡", "img:acc_card"),
     ECARD("電子票證", "img:acc_transit"),
     EPAY("電子支付", "img:acc_epay"),
+    INVEST("投資", "img:extra_gold"),
     OTHER("其他", "img:acc_purse"),
 }
 
@@ -181,6 +182,9 @@ data class AppData(
     val templates: List<Template>,
     val prefs: Prefs,
     val nextId: Long,
+    /** 投資帳戶的買賣記錄與價格（舊資料沒有這兩個欄位，就是空的） */
+    val trades: List<Trade> = emptyList(),
+    val prices: List<PriceSnap> = emptyList(),
 ) {
     val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }

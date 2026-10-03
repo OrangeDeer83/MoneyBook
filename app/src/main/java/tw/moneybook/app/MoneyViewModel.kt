@@ -383,7 +383,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 有記錄在用的帳戶不能刪，改成隱藏 */
     fun deleteAccount(id: Long) {
-        val used = data.txns.any { it.accountId == id || it.toAccountId == id }
+        val used = data.txns.any { it.accountId == id || it.toAccountId == id } || data.trades.any { it.accountId == id }
         if (used) {
             update { d -> d.copy(accounts = d.accounts.map { if (it.id == id) it.copy(hidden = true) else it }) }
             toast("這個帳戶還有記錄，已改為隱藏")
