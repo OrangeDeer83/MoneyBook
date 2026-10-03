@@ -63,6 +63,15 @@ class InvestTest {
     }
 
     @Test
+    fun snapshotOnTheSameDayAsTheTradeWins() {
+        // 今天記的持股，今天抓到的價格要生效（這是「抓了價格卻沒更新」那個 bug 的規則）
+        val d = data(listOf(buy(1, 100, 10.0, 1.0)), listOf(PriceSnap("0050", 100, 112.8)))
+        val pos = d.portfolio(1L).positions.single()
+        assertEquals(112.8, pos.price, 1e-9)
+        assertEquals(1_128L, pos.value)
+    }
+
+    @Test
     fun olderPriceSnapshotIsIgnored() {
         // 價格是買進之前抓的，買進價比較新
         val d = data(listOf(buy(1, 100, 100.0, 100.0)), listOf(PriceSnap("0050", 90, 80.0)))

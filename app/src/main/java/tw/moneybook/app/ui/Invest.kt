@@ -224,6 +224,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                     }
                     if (okList.isNotEmpty()) {
                         Text("已更新（${okList.size} 檔）", style = MaterialTheme.typography.titleSmall)
+                        Text("下面是各檔最後一筆成交價（休市時是上一個交易日的收盤價），已經套用到持股的現價。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                         okList.forEach { r ->
                             Row(Modifier.fillMaxWidth()) {
                                 Text(

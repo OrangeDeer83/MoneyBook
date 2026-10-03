@@ -322,9 +322,12 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val got = ArrayList<PriceSnap>()
             val results = ArrayList<FetchResult>()
+            // 價格的日期記「抓取當天」，不是市場的交易日：休市（例如週末）時抓到的是上一個交易日的最後成交價，
+            // 如果記成交易日，會比使用者今天記的持股還舊而被當成舊價格丟掉，看起來像沒更新
+            val fetchDay = LocalDate.now().toEpochDay()
             for (p in positions) {
                 val q = try { PriceFetcher.fetch(p.symbol, p.market) } catch (_: Exception) { null }
-                if (q != null) got.add(PriceSnap(p.symbol, q.day, q.price))
+                if (q != null) got.add(PriceSnap(p.symbol, fetchDay, q.price))
                 results.add(FetchResult(p.symbol, p.name, p.market, q?.price))
             }
             val fail = results.count { !it.ok }
