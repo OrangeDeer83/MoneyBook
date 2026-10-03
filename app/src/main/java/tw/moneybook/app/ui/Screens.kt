@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -185,6 +186,24 @@ fun DayHeader(day: Long, list: List<Txn>) {
     }
 }
 
+/** 明細與日曆共用的切換鈕：目前是明細就顯示日曆圖示，點一下切過去；反之亦然 */
+@Composable
+fun ViewToggle(vm: MoneyViewModel) {
+    val cute = LocalCute.current
+    val cal = vm.homeCalendar
+    Box(
+        Modifier.size(36.dp).clip(CircleShape).background(cute.card).clickable { vm.homeCalendar = !cal },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            if (cal) AppIcons.ListAlt else AppIcons.Calendar,
+            contentDescription = if (cal) "切換成明細列表" else "切換成日曆",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
 // ───────────────────────── 首頁（明細） ─────────────────────────
 
 @Composable
@@ -227,6 +246,8 @@ fun HomeScreen(
                     Text(" ▾", color = cute.sub)
                 }
                 Spacer(Modifier.weight(1f))
+                ViewToggle(vm)
+                Spacer(Modifier.width(8.dp))
                 MonthSwitcher(month, { vm.month = it })
             }
         }
@@ -480,6 +501,8 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
         item {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("日曆", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                ViewToggle(vm)
+                Spacer(Modifier.width(8.dp))
                 MonthSwitcher(month, { vm.month = it })
             }
         }

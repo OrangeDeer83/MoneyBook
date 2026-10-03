@@ -97,7 +97,6 @@ private data class TabItem(val label: String, val icon: ImageVector)
 
 private val Tabs = listOf(
     TabItem("明細", AppIcons.ListAlt),
-    TabItem("日曆", AppIcons.Calendar),
     TabItem("統計", AppIcons.PieChart),
     TabItem("我的", AppIcons.Person),
 )
@@ -209,15 +208,14 @@ private fun MainTabs(
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth().statusBarsPadding()) {
             when (tab) {
-                0 -> HomeScreen(
+                0 -> if (vm.homeCalendar) CalendarScreen(vm, onEdit) else HomeScreen(
                     vm, onEdit,
                     onManageBooks = { open("books") },
                     onManageAccounts = { open("accounts") },
                     onReimb = { open("reimb") },
                     onAccount = { open("account:$it") },
                 )
-                1 -> CalendarScreen(vm, onEdit)
-                2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") })
+                1 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") })
                 else -> MeScreen(vm, open)
             }
         }
