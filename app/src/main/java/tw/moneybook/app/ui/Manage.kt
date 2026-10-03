@@ -321,6 +321,10 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     // 編輯排序模式：右上角按鈕切換，開啟後每個帳戶右邊才出現拖曳把手
     var editing by remember { mutableStateOf(false) }
     val sorted = d.accounts.sortedBy { it.order }
+    // 隱藏的帳戶預設不顯示（總資產本來就不含），底下有開關可以打開
+    val showHidden = vm.accShowHidden
+    val shown = sorted.filter { showHidden || !it.hidden }
+    val hiddenCount = sorted.count { it.hidden }
     LazyColumn(
         state = vm.accListState,
         modifier = Modifier.fillMaxSize(),
@@ -342,14 +346,32 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
         }
         // 依帳戶類型分組（現金、銀行、信用卡…），每組有小計；拖曳排序只在同一組裡進行
         for (type in AccountType.values()) {
-            val group = sorted.filter { it.type == type }
+            val group = shown.filter { it.type == type }
             if (group.isEmpty()) continue
+            val collapsed = type in vm.accCollapsed && !editing   // 編輯排序時全部展開
             item(key = "head-${type.name}") {
                 val sub = group.filter { !it.hidden }.sumOf { bal[it.id] ?: 0L }
-                SectionTitle(type.label) {
+                // 點標題收折／展開這一組
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
+                        .clickable { vm.accCollapsed = if (type in vm.accCollapsed) vm.accCollapsed - type else vm.accCollapsed + type }
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Icon(
+                        if (collapsed) AppIcons.ChevronRight else AppIcons.ChevronDown,
+                        contentDescription = if (collapsed) "展開" else "收合", tint = cute.sub, modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(type.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    if (collapsed) {
+                        Text("${group.size} 個帳戶", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        Spacer(Modifier.width(10.dp))
+                    }
                     Text(formatMoney(sub), style = MaterialTheme.typography.labelLarge, color = if (sub < 0) cute.expense else cute.sub)
                 }
             }
+            if (collapsed) continue
             item(key = "group-${type.name}") {
                 // 切換編輯模式時重新建立，才不會留著上一個模式的把手位置
                 androidx.compose.runtime.key(editing) {
@@ -357,8 +379,10 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                         group, { it.id },
                         { newGroupOrder ->
                             // 把這一組的新順序放回全部帳戶的順序裡，其他組不動
+                            // （隱藏的帳戶不在這一組裡，保持原本的位置）
+                            val inGroup = newGroupOrder.toSet()
                             val queue = newGroupOrder.iterator()
-                            vm.reorderAccounts(sorted.map { acc -> if (acc.type == type) queue.next() else acc.id })
+                            vm.reorderAccounts(sorted.map { acc -> if (acc.id in inGroup) queue.next() else acc.id })
                         },
                     ) { a, handle, _ ->
                         val b = bal[a.id] ?: 0L
@@ -381,6 +405,13 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                             }
                         }
                     }
+                }
+            }
+        }
+        if (hiddenCount > 0) {
+            item {
+                TextButton(onClick = { vm.accShowHidden = !showHidden }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (showHidden) "收起已隱藏的帳戶" else "顯示已隱藏的帳戶（$hiddenCount）")
                 }
             }
         }
