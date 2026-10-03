@@ -492,7 +492,7 @@ fun AccountDialog(
                 OutlinedTextField(
                     initial,
                     { s -> initial = s.filterIndexed { i, c -> c.isDigit() || (i == 0 && c == '-') }.take(11) },
-                    label = { Text(if (type == AccountType.CARD) "初始金額（欠款請填負數）" else "初始金額") },
+                    label = { Text(if (type == AccountType.CARD || type == AccountType.LOAN) "初始金額（欠款請填負數）" else "初始金額") },
                     prefix = { Text("$") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier.fillMaxWidth(),

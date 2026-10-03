@@ -10,6 +10,7 @@ enum class AccountType(val label: String, val emoji: String) {
     CASH("現金", "img:acc_cash"),
     BANK("銀行", "img:acc_bank"),
     CARD("信用卡", "img:acc_card"),
+    LOAN("貸款", "img:acc_receipt"),
     ECARD("電子票證", "img:acc_transit"),
     EPAY("電子支付", "img:acc_epay"),
     INVEST("投資", "img:extra_gold"),

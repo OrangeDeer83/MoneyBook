@@ -216,7 +216,7 @@ fun AccountDetailScreen(
     if (adjusting) {
         AdjustBalanceDialog(
             current = balance,
-            isCard = a.type == AccountType.CARD,
+            isCard = a.type == AccountType.CARD || a.type == AccountType.LOAN,
             onConfirm = { target -> vm.adjustBalance(a.id, target); adjusting = false },
             onDismiss = { adjusting = false },
         )
@@ -256,7 +256,7 @@ private fun AdjustBalanceDialog(current: Long, isCard: Boolean, onConfirm: (Long
                 val diff = target?.let { it - current }
                 Text(
                     when {
-                        diff == null -> if (isCard) "信用卡欠款請輸入負數，例如 -3000" else "輸入帳戶現在實際的金額"
+                        diff == null -> if (isCard) "信用卡或貸款的欠款請輸入負數，例如 -3000" else "輸入帳戶現在實際的金額"
                         diff == 0L -> "和記錄的一樣，不用調整"
                         diff > 0 -> "會補記 +${formatMoney(diff)}，不算收入"
                         else -> "會補記 −${formatMoney(-diff)}，不算支出"

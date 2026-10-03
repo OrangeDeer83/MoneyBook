@@ -80,6 +80,7 @@ object LegacyImport {
     fun guessType(name: String): AccountType {
         val n = name.lowercase()
         return when {
+            "信貸" in n || "貸款" in n || "房貸" in n || "車貸" in n -> AccountType.LOAN
             n == "台股" || n == "美股" || n == "幣安" || n.endsWith("證券") -> AccountType.INVEST
             "悠遊卡" in n || "ipass" in n || "suica" in n || "icash" in n -> AccountType.ECARD
             "pay" in n -> AccountType.EPAY
