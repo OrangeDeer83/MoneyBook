@@ -356,13 +356,13 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
         for (type in AccountType.values()) {
             val group = shown.filter { it.type == type }
             if (group.isEmpty()) continue
-            val collapsed = type in vm.accCollapsed && !editing   // 編輯排序時全部展開
+            val collapsed = type.name in d.prefs.collapsedAccTypes && !editing   // 編輯排序時全部展開
             item(key = "head-${type.name}") {
                 val sub = group.filter { !it.hidden }.sumOf { bal[it.id] ?: 0L }
                 // 點標題收折／展開這一組
                 Row(
                     Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
-                        .clickable { vm.accCollapsed = if (type in vm.accCollapsed) vm.accCollapsed - type else vm.accCollapsed + type }
+                        .clickable { vm.toggleAccGroup(type) }
                         .padding(horizontal = 4.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

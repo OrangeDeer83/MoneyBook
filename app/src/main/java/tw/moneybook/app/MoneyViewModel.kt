@@ -92,9 +92,16 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     var calSelected by mutableLongStateOf(LocalDate.now().toEpochDay())
     val meListState = androidx.compose.foundation.lazy.LazyListState()
     val accListState = androidx.compose.foundation.lazy.LazyListState()
-    // 帳戶分頁：收折起來的類型、是否顯示已隱藏的帳戶
-    var accCollapsed by mutableStateOf(setOf<AccountType>())
+    // 帳戶分頁：是否顯示已隱藏的帳戶（每次開 App 都先隱藏）
     var accShowHidden by mutableStateOf(false)
+
+    /** 收折或展開帳戶分頁的某個類型；狀態存在設定裡，重開 App 後保留 */
+    fun toggleAccGroup(type: AccountType) {
+        update { d ->
+            val cur = d.prefs.collapsedAccTypes
+            d.copy(prefs = d.prefs.copy(collapsedAccTypes = if (type.name in cur) cur - type.name else cur + type.name))
+        }
+    }
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())
     var rangeEnd by mutableLongStateOf(LocalDate.now().toEpochDay())

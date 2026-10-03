@@ -177,6 +177,8 @@ data class Prefs(
     val priceFetch: Boolean = false,
     /** 上次抓價是哪一天（epoch day），用來決定要不要自動再抓 */
     val priceFetchDay: Long = 0L,
+    /** 帳戶分頁收折起來的類型（AccountType 的名稱），重開 App 後仍保留 */
+    val collapsedAccTypes: List<String> = emptyList(),
 )
 
 data class AppData(

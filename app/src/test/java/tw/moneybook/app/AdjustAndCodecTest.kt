@@ -77,6 +77,15 @@ class AdjustAndCodecTest {
     }
 
     @Test
+    fun collapsedAccountGroupsAreSavedAndOldBackupsDefaultToNone() {
+        val d = Defaults.create().let { it.copy(prefs = it.prefs.copy(collapsedAccTypes = listOf("BANK", "CARD"))) }
+        assertEquals(listOf("BANK", "CARD"), roundTrip(d).prefs.collapsedAccTypes)
+        val root = org.json.JSONObject(Codec.encode(d))
+        root.getJSONObject("prefs").remove("collapsedAccTypes")
+        assertTrue(Codec.decode(root.toString()).prefs.collapsedAccTypes.isEmpty())
+    }
+
+    @Test
     fun investAccountTypeSurvivesAndUnknownTypeFallsBack() {
         val d = Defaults.create()
         val inv = Account(9500, "證券", "img:extra_gold", AccountType.INVEST, 0L, 5)
