@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,6 +65,34 @@ sealed interface Route {
     data class Page(val name: String) : Route
 }
 
+/** 頁面堆疊要能撐過螢幕旋轉（Activity 重建）：每一頁存成一段文字 */
+private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
+    save = { list ->
+        ArrayList(list.map { r ->
+            when (r) {
+                is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}"
+                is Route.Page -> "P|${r.name}"
+            }
+        })
+    },
+    restore = { saved ->
+        saved.mapNotNull { s ->
+            val p = s.split("|", limit = 6)
+            when (p.firstOrNull()) {
+                "E" -> if (p.size == 6) Route.Edit(
+                    id = p[1].toLongOrNull(),
+                    presetTo = p[2].toLongOrNull(),
+                    presetAmount = p[3].toLongOrNull(),
+                    tplMode = p[4] == "true",
+                    tplId = p[5].toLongOrNull(),
+                ) else null
+                "P" -> if (p.size >= 2) Route.Page(s.substring(2)) else null
+                else -> null
+            }
+        }
+    },
+)
+
 private data class TabItem(val label: String, val icon: ImageVector)
 
 private val Tabs = listOf(
@@ -76,7 +105,7 @@ private val Tabs = listOf(
 @Composable
 fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () -> Unit = {}) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var stack by remember { mutableStateOf(listOf<Route>()) }
+    var stack by rememberSaveable(stateSaver = RouteStackSaver) { mutableStateOf(listOf<Route>()) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
