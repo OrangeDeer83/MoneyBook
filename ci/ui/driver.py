@@ -320,7 +320,7 @@ def launch():
 
 
 def wait_main(timeout=25):
-    wait(lambda n: n.text in ("明細", "日曆") or n.desc == "記一筆", timeout, "首頁")
+    wait(lambda n: n.text in ("明細", "帳戶") or n.desc == "記一筆", timeout, "首頁")
 
 
 def fresh(seed_json=None):

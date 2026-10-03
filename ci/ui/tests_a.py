@@ -361,7 +361,7 @@ def t_long_title():
 @case(A, "選取分頁時圖示與文字一起變色", visual=True)
 def t_tabs_visual():
     d.fresh(home_seed())
-    for name in ("明細", "日曆", "統計", "我的"):
+    for name in ("明細", "日曆", "帳戶", "統計", "我的"):
         f.tab(name)
         d.time.sleep(1.2)
         d.shot(f"選取：{name}")

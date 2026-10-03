@@ -29,7 +29,7 @@ def dark_seed(dark=2):
 
 
 def walk_tabs(dark):
-    for name in ("明細", "日曆", "統計", "我的"):
+    for name in ("明細", "日曆", "帳戶", "統計", "我的"):
         f.tab(name)
         d.time.sleep(1.8)
         d.shot(f"{'深色' if dark == 2 else '淺色'}：{name}", contrast=(dark == 2))

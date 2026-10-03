@@ -31,15 +31,38 @@ def save_edit():
     ns = d.nodes()
     c = [n for n in ns if n.text == "完成"]
     d.tap(max(c, key=lambda n: n.cy))
-    d.wait(lambda n: n.text in ("明細", "日曆", "統計", "我的") and n.cy > 2000, 15, "回到主畫面")
+    d.wait(lambda n: n.text in ("明細", "帳戶", "統計", "我的") and n.cy > 2000, 15, "回到主畫面")
 
 
-def tab(name):
+def _tap_tab(name):
     ns = d.nodes()
     c = [n for n in ns if n.text == name and n.cy > 2000]
     if not c:
         raise TimeoutError(f"找不到底部分頁 {name}")
     d.tap(c[0])
+
+
+def _view(mode):
+    """明細分頁標題列的切換鈕：目前不是想要的顯示方式就點一下"""
+    d.time.sleep(0.8)
+    ns = d.nodes()
+    want = "切換成日曆" if mode == "calendar" else "切換成明細列表"
+    sw = [n for n in ns if n.desc == want]
+    if sw:
+        d.tap(sw[0])
+        d.time.sleep(1)
+
+
+def tab(name):
+    """底部分頁。日曆已併進「明細」分頁：tab("日曆") = 明細分頁 + 切成日曆，tab("明細") = 明細分頁 + 切成列表"""
+    if name == "日曆":
+        _tap_tab("明細")
+        _view("calendar")
+    elif name == "明細":
+        _tap_tab("明細")
+        _view("list")
+    else:
+        _tap_tab(name)
 
 
 def me_page(label):
