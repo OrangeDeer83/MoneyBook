@@ -461,3 +461,28 @@ def t_invest_fetch_fail():
     ns = d.shot("關閉之後")
     d.check("持股那一列標示「抓不到價格」", d.has(ns, "抓不到價格"))
 
+
+@case(D, "抓最新價格會更新持股現價")
+def t_invest_fetch_real():
+    # 持股是今天記的、成交價故意設成 1 元；抓到的真實價格（0050 約一百多元）一定不是 1。
+    # 這個用例會真的連 Yahoo Finance，雲端沒有網路時會失敗（失敗訊息會寫是沒抓到）
+    s = empty_seed(invest=True)
+    s.trade(0, "0050", True, 10, 1, 0, "ETF", market="TW")
+    d.fresh(s.json())
+    open_account("測試證券")
+    ns = d.shot("抓價前")
+    d.check("抓價前現價是成交價 1.00", d.has(ns, "現價 1.00"))
+    d.tap_text("抓最新價格", exact=True)
+    d.wait_text("上網抓最新價格？", timeout=10)
+    d.tap_text("開啟並抓價", exact=True)
+    d.wait_text("抓價結果", timeout=60)
+    ns = d.shot("抓價結果")
+    d.check("結果顯示已更新 1 檔（沒有的話代表網路不通或抓不到）", d.has(ns, "已更新（1 檔）"), [n.text for n in ns if "檔" in n.text])
+    d.tap_text("關閉", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("抓價後")
+    import re
+    nums = [float(m.group(1).replace(",", "")) for n in ns for m in [re.search(r"現價 ([\d,\.]+)", n.text)] if m]
+    d.check("持股現價已經不是 1.00（抓到的價格有套用）", bool(nums) and nums[0] > 5, nums)
+    d.check("沒有出現「抓不到價格」", not d.has(ns, "抓不到價格"))
+
