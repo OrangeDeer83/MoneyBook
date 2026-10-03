@@ -372,10 +372,10 @@ def t_old_format():
     d.check("舊的單一報銷顯示正常", d.has(ns, "沒填對象", True))
 
 
-@case(C, "沒有網路權限")
-def t_no_internet():
+@case(C, "網路權限只用在抓價")
+def t_internet_for_prices():
     out = d.sh(f"dumpsys package {d.PKG}")
-    d.check("App 沒有宣告 INTERNET 權限", "android.permission.INTERNET" not in out)
+    d.check("App 有宣告 INTERNET 權限（只用來抓持股價格）", "android.permission.INTERNET" in out)
 
 
 @case(C, "輸入到一半被打斷後回來")
