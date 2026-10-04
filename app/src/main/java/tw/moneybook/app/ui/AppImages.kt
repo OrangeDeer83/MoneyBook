@@ -139,6 +139,7 @@ object AppImages {
         "img:cat_points" to R.drawable.img_cat_points,
         "img:cat_salon" to R.drawable.img_cat_salon,
         "img:cat_software" to R.drawable.img_cat_software,
+        "img:cat_admission" to R.drawable.img_cat_admission,
         "img:cat_souvenir" to R.drawable.img_cat_souvenir,
         "img:cat_suitcase" to R.drawable.img_cat_suitcase,
         "img:acc_chipcard" to R.drawable.img_acc_chipcard,
