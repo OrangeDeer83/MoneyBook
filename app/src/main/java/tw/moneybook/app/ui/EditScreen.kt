@@ -566,34 +566,32 @@ fun EditScreen(
         }
         "time" -> {
             val init = if (timeMin >= 0) timeMin else java.time.LocalTime.now().let { it.hour * 60 + it.minute }
-            // 預設是滾輪；也可以改用鍵盤打字。兩種方式的數字互相同步
+            // 預設是滾輪（可以一直循環）；點一下滾輪就直接變成鍵盤輸入
             var typing by remember { mutableStateOf(false) }
             var hh by remember { mutableIntStateOf(init / 60) }
             var mm by remember { mutableIntStateOf(init % 60) }
-            val st = androidx.compose.material3.rememberTimePickerState(init / 60, init % 60, is24Hour = true)
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = { Text("選擇時間") },
                 text = {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (!typing) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                WheelColumn(24, hh, { hh = it })
-                                Text(":", style = MaterialTheme.typography.headlineMedium)
-                                WheelColumn(60, mm, { mm = it })
+                        Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+                            if (!typing) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    WheelColumn(24, hh, { hh = it }, onTap = { typing = true })
+                                    Text(":", style = MaterialTheme.typography.headlineMedium)
+                                    WheelColumn(60, mm, { mm = it }, onTap = { typing = true })
+                                }
+                            } else {
+                                TimeTypeInput(hh, mm) { h, m -> hh = h; mm = m }
                             }
-                        } else {
-                            androidx.compose.material3.TimeInput(state = st)
                         }
-                        TextButton(onClick = {
-                            if (typing) { hh = st.hour; mm = st.minute } else { st.hour = hh; st.minute = mm }
-                            typing = !typing
-                        }) { Text(if (typing) "改用滾輪" else "改用鍵盤輸入") }
+                        if (!typing) Text("點一下數字可以直接輸入", style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub)
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        timeMin = if (typing) st.hour * 60 + st.minute else hh * 60 + mm
+                        timeMin = hh * 60 + mm
                         dialog = ""
                     }) { Text("確定") }
                 },
