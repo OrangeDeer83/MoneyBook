@@ -407,8 +407,8 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text((if (a.favorite) "★ " else "") + a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
-                                    if (a.type == AccountType.CARD && a.creditLimit > 0) {
-                                        Text("可用 ${formatMoney((a.creditLimit + b).coerceAtLeast(0L))}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                                    d.limitInfo(a, bal)?.let { info ->
+                                        Text("可用 ${formatMoney(info.available)}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                                     }
                                 }
                                 Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
@@ -431,6 +431,7 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     if (adding) {
         AccountDialog(
             acc = null,
+            cards = d.accounts.filter { it.type == AccountType.CARD },
             onSave = { na -> vm.saveAccount(null, na); adding = false },
             onDelete = null,
             onDismiss = { adding = false },
@@ -441,6 +442,8 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
 @Composable
 fun AccountDialog(
     acc: Account?,
+    /** 現有的信用卡（挑「共用額度」的主卡用） */
+    cards: List<Account> = emptyList(),
     onSave: (Account) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
@@ -461,6 +464,7 @@ fun AccountDialog(
     var limit by remember { mutableStateOf(acc?.creditLimit?.takeIf { it > 0 }?.toString() ?: "") }
     var stmt by remember { mutableStateOf(acc?.statementDay?.takeIf { it > 0 }?.toString() ?: "") }
     var due by remember { mutableStateOf(acc?.dueDay?.takeIf { it > 0 }?.toString() ?: "") }
+    var sharedOf by remember { mutableStateOf(acc?.sharedLimitOf ?: 0L) }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
 
@@ -480,6 +484,7 @@ fun AccountDialog(
         creditLimit = if (type == AccountType.CARD) limit.toLongOrNull() ?: 0L else 0L,
         statementDay = if (type == AccountType.CARD) (stmt.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
         dueDay = if (type == AccountType.CARD) (due.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
+        sharedLimitOf = if (type == AccountType.CARD) sharedOf else 0L,
     )
 
     AlertDialog(
@@ -574,12 +579,30 @@ fun AccountDialog(
                         Spacer(Modifier.width(6.dp))
                         Text("信用卡設定", style = MaterialTheme.typography.labelLarge)
                     }
-                    OutlinedTextField(
-                        limit, { limit = it.filter { c -> c.isDigit() }.take(9) },
-                        label = { Text("信用額度") }, prefix = { Text("$") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    // 共用額度：可以選另一張（沒有在共用別人的）信用卡當「主卡」，額度和已用金額一起算
+                    val others = cards.filter { it.id != acc?.id && it.type == AccountType.CARD && it.sharedLimitOf == 0L && !it.hidden }
+                    val isOwner = acc != null && cards.any { it.sharedLimitOf == acc.id }
+                    val owner = cards.firstOrNull { it.id == sharedOf }
+                    if (!isOwner && others.isNotEmpty()) {
+                        Text("和其他信用卡共用額度", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            CuteChip("不共用", sharedOf == 0L, { sharedOf = 0L })
+                            others.forEach { o -> CuteChip(o.name, sharedOf == o.id, { sharedOf = o.id }) }
+                        }
+                    }
+                    if (isOwner) {
+                        Text("有其他信用卡跟這張共用額度，額度請在這張設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    }
+                    if (sharedOf != 0L && owner != null && !isOwner) {
+                        Text("額度和已用金額跟「${owner.name}」一起算，額度請到那張卡設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    } else {
+                        OutlinedTextField(
+                            limit, { limit = it.filter { c -> c.isDigit() }.take(9) },
+                            label = { Text("信用額度") }, prefix = { Text("$") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             stmt, { stmt = it.filter { c -> c.isDigit() }.take(2) },

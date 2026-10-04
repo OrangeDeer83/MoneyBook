@@ -168,16 +168,23 @@ fun AccountDetailScreen(
                             TextButton(onClick = { adjusting = true }) { Text("更新餘額") }
                         }
                     }
-                    if (a.type == AccountType.CARD && a.creditLimit > 0) {
+                    val limitInfo = remember(d, a) { d.limitInfo(a) }
+                    if (limitInfo != null) {
                         Spacer(Modifier.height(10.dp))
-                        val used = (-balance).coerceAtLeast(0L)
-                        val frac = used.toFloat() / a.creditLimit.toFloat()
+                        val frac = limitInfo.used.toFloat() / limitInfo.limit.toFloat()
                         RatioBar(frac, budgetColor(frac))
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "已用 ${formatMoney(used)}・可用 ${formatMoney((a.creditLimit - used).coerceAtLeast(0L))}・額度 ${formatMoney(a.creditLimit)}",
+                            "已用 ${formatMoney(limitInfo.used)}・可用 ${formatMoney(limitInfo.available)}・額度 ${formatMoney(limitInfo.limit)}",
                             style = MaterialTheme.typography.bodySmall, color = cute.sub,
                         )
+                        // 共用額度時，額度和已用金額是這幾張卡一起算
+                        if (limitInfo.shared) {
+                            Text(
+                                "和 ${limitInfo.members.joinToString("、") { it.name }} 共用額度",
+                                style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                            )
+                        }
                     }
                 }
             }
@@ -245,6 +252,7 @@ fun AccountDetailScreen(
     if (editing) {
         AccountDialog(
             acc = a,
+            cards = d.accounts.filter { it.type == AccountType.CARD },
             onSave = { na -> vm.saveAccount(a.id, na); editing = false },
             onDelete = { vm.deleteAccount(a.id); editing = false; onBack() },
             onDismiss = { editing = false },
