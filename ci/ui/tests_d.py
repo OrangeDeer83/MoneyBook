@@ -880,6 +880,11 @@ def t_shared_limit():
     d.check("還沒設定共用時，第二張卡沒有額度資訊", not d.has(ns, "額度 $"))
     d.tap_text("編輯", exact=True)
     d.wait_text("編輯帳戶", timeout=10)
+    for _ in range(4):                 # 對話框內容比較長，往下滑到「共用額度」
+        if d.has(d.nodes(), "不共用", True):
+            break
+        d.swipe(540, 1400, 540, 800, 500)
+        d.time.sleep(0.6)
     ns = d.shot("編輯第二張卡")
     d.check("信用卡編輯有「共用額度」選項，可選「不共用」或其他信用卡", d.has(ns, "共用額度", False) and d.has(ns, "不共用", True) and d.has(ns, "測試信用卡", True),
             [n.text for n in ns if n.text][:40])
