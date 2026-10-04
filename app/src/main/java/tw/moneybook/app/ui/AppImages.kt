@@ -105,6 +105,7 @@ object AppLines {
 
     val all: Map<String, androidx.compose.ui.graphics.vector.ImageVector> = mapOf(
         "vec:calendar" to AppIcons.LCalendar,
+        "vec:clock" to AppIcons.LClock,
         "vec:ticket" to AppIcons.LTicket,
         "vec:check" to AppIcons.LCheck,
         "vec:repeat" to AppIcons.LRepeat,

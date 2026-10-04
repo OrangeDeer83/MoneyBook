@@ -72,7 +72,7 @@ object Codec {
                         .put("reimbAccountId", nullable(t.reimbAccountId)).put("reimbDay", nullable(t.reimbDay))
                         .put("reimbAmount", t.reimbAmount)
                         .put("reimbItems", ReimbCodec.toJson(t.reimbItems))
-                        .put("adjust", t.adjust)
+                        .put("adjust", t.adjust).put("time", t.time)
                 )
             }
         })
@@ -174,6 +174,7 @@ object Codec {
                 reimbAmount = o.optLong("reimbAmount", -1L),
                 reimbItems = ReimbCodec.fromJson(o.optJSONArray("reimbItems")),
                 adjust = o.optBoolean("adjust", false),
+                time = o.optInt("time", -1),
             )
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
@@ -359,7 +360,7 @@ object Calc {
 
 /** CSV 匯出與匯入 */
 object CsvIO {
-    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤")
+    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間")
 
     private fun esc(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
@@ -407,6 +408,7 @@ object CsvIO {
                 if (t.reimb != 0) t.reimbAmount.toString() else "",
                 txt(t.note),
                 txt(t.tags.joinToString(" ")),
+                formatTime(t.time),
             )
             sb.append(row.joinToString(",") { esc(it) }).append('\n')
         }
@@ -461,6 +463,7 @@ object CsvIO {
         val cTo = col("轉入帳戶")
         val cNote = col("備註", "Note", "note", "描述")
         val cTags = col("標籤", "Tags")
+        val cTime = col("時間", "Time")
         val cFee = col("手續費")
         val cDisc = col("優惠", "折扣")
         val cReimb = col("報銷")
@@ -536,6 +539,7 @@ object CsvIO {
                     day = date.toEpochDay(),
                     note = get(cNote),
                     tags = parseTags(get(cTags)),
+                    time = parseTime(get(cTime)),
                     fee = get(cFee).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L,
                     discount = if (type == TxType.EXPENSE) get(cDisc).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L else 0L,
                     reimb = if (type == TxType.EXPENSE && !isAdjust) when (get(cReimb)) { "待報銷" -> 1; "已報銷" -> 2; else -> 0 } else 0,

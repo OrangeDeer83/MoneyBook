@@ -64,6 +64,9 @@ object LegacyImport {
         val fee: Long,
     ) {
         val foreign: Boolean get() = cur != "NT$"
+
+        /** 「2026-09-28 19:15:19」的 19:15（分鐘數），沒有時間回傳 -1 */
+        val minute: Int get() = parseTime(time.drop(11))
     }
 
     /** 是不是這種格式 */
@@ -222,7 +225,7 @@ object LegacyImport {
                     Txn(
                         id = nextId++, bookId = bookId, type = TxType.TRANSFER, amount = amount, categoryId = null,
                         accountId = findAcc(out.acc), toAccountId = findAcc(into.acc),
-                        day = out.day, note = noteOf(if (out.note.isBlank() && into.note.isNotBlank()) into else out),
+                        day = out.day, time = out.minute, note = noteOf(if (out.note.isBlank() && into.note.isNotBlank()) into else out),
                         tags = out.tags, fee = fee,
                     )
                 )
@@ -240,7 +243,7 @@ object LegacyImport {
                         Txn(
                             id = nextId++, bookId = bookId, type = TxType.TRANSFER, amount = r.ntd, categoryId = null,
                             accountId = findAcc(r.acc), toAccountId = loan,
-                            day = r.day, note = noteOf(r, "還款"), tags = r.tags,
+                            day = r.day, time = r.minute, note = noteOf(r, "還款"), tags = r.tags,
                         )
                     )
                     nTransfer++; nLoan++
@@ -258,7 +261,7 @@ object LegacyImport {
                         Txn(
                             id = nextId++, bookId = bookId, type = TxType.TRANSFER, amount = r.ntd, categoryId = null,
                             accountId = if (r.income) broker else bank, toAccountId = if (r.income) bank else broker,
-                            day = r.day, note = noteOf(r, if (r.income) "賣出" else "買進"), tags = r.tags,
+                            day = r.day, time = r.minute, note = noteOf(r, if (r.income) "賣出" else "買進"), tags = r.tags,
                         )
                     )
                     nTransfer++; nStock++
@@ -274,7 +277,7 @@ object LegacyImport {
                         Txn(
                             id = nextId++, bookId = bookId, type = if (r.income) TxType.INCOME else TxType.EXPENSE, amount = r.ntd,
                             categoryId = null, accountId = findAcc(r.acc), toAccountId = null,
-                            day = r.day, note = noteOf(r, extra), tags = emptyList(), adjust = true,
+                            day = r.day, time = r.minute, note = noteOf(r, extra), tags = emptyList(), adjust = true,
                         )
                     )
                     nAdjust++
@@ -298,7 +301,7 @@ object LegacyImport {
             var t = Txn(
                 id = nextId++, bookId = bookId, type = kind, amount = amount,
                 categoryId = findCat(kind, r.top, r.sub), accountId = findAcc(r.acc), toAccountId = null,
-                day = r.day, note = noteOf(r), tags = r.tags, fee = fee, discount = discount,
+                day = r.day, time = r.minute, note = noteOf(r), tags = r.tags, fee = fee, discount = discount,
             )
             // 報銷欄：已經報銷完了（錢是另外一筆「報銷入帳」進來的），這筆只算自己負擔的部分
             val reimb = r.reimb.coerceAtMost(t.paid)

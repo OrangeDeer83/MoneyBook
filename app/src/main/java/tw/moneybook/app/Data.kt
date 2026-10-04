@@ -106,6 +106,8 @@ data class Txn(
     val reimbItems: List<ReimbItem> = emptyList(),
     /** 更新餘額產生的「餘額調整」：只改帳戶餘額，不算收入或支出（type 只用來表示增加或減少） */
     val adjust: Boolean = false,
+    /** 當天的幾點幾分（從 0 點算起的分鐘數 0～1439）；-1 是沒有時間（舊資料）。同一天的先後順序靠它 */
+    val time: Int = -1,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -334,7 +336,19 @@ fun AppData.transfersIn(accId: Long, from: LocalDate, to: LocalDate): Long {
 fun List<Txn>.pendingReimb(): List<Txn> = filter { it.type == TxType.EXPENSE && it.reimb == 1 }
 
 fun sortTxns(list: List<Txn>): List<Txn> =
-    list.sortedWith(compareByDescending<Txn> { it.day }.thenByDescending { it.id })
+    list.sortedWith(compareByDescending<Txn> { it.day }.thenByDescending { it.time }.thenByDescending { it.id })
+
+/** 時間文字：570 → "09:30"；沒有時間（-1）回傳空字串 */
+fun formatTime(min: Int): String = if (min < 0) "" else "%02d:%02d".format(min / 60, min % 60)
+
+/** 讀「9:30」「09:30」「19:15:19」這類文字，回傳從 0 點算起的分鐘數；讀不懂回傳 -1 */
+fun parseTime(s: String): Int {
+    val p = s.trim().split(':')
+    if (p.size < 2) return -1
+    val h = p[0].trim().toIntOrNull() ?: return -1
+    val m = p[1].trim().toIntOrNull() ?: return -1
+    return if (h in 0..23 && m in 0..59) h * 60 + m else -1
+}
 
 private val moneyFmt: NumberFormat = NumberFormat.getIntegerInstance()
 

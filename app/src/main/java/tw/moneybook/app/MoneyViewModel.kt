@@ -40,6 +40,8 @@ data class TxnDraft(
     val discount: Long = 0L,
     /** 報銷明細（每個對象一項），空的代表不報銷 */
     val reimbItems: List<ReimbItem> = emptyList(),
+    /** 當天的幾點幾分（分鐘數），-1 是沒有時間 */
+    val time: Int = -1,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -157,6 +159,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 note = dr.note, tags = dr.tags,
                 fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
                 adjust = old.adjust && dr.type != TxType.TRANSFER,
+                time = dr.time,
             ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             return
@@ -170,7 +173,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 Txn(
                     id = next++, bookId = bookId, type = dr.type, amount = dr.amount,
                     categoryId = dr.categoryId, accountId = dr.accountId, toAccountId = dr.toAccountId,
-                    day = dr.day, note = dr.note, tags = dr.tags,
+                    day = dr.day, note = dr.note, tags = dr.tags, time = dr.time,
                     fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
                 ).let {
                     it.withItems(
@@ -191,7 +194,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                         amount = base + if (i == 0) rest else 0L,
                         categoryId = dr.categoryId, accountId = dr.accountId, toAccountId = null,
                         day = start.plusMonths(i.toLong()).toEpochDay(),
-                        note = dr.note, tags = dr.tags,
+                        note = dr.note, tags = dr.tags, time = dr.time,
                         instGroup = group, instIndex = i + 1, instTotal = n,
                         fee = if (i == 0) dr.fee else 0L,
                         discount = if (i == 0) dr.discount else 0L,

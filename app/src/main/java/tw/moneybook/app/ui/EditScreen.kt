@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package tw.moneybook.app.ui
 
 import androidx.compose.material3.LocalContentColor
@@ -131,6 +133,16 @@ fun EditScreen(
     }
     var toAccId by rememberSaveable { mutableStateOf(orig?.toAccountId ?: presetTo ?: accs.getOrNull(1)?.id) }
     var day by rememberSaveable { mutableLongStateOf(orig?.day ?: LocalDate.now().toEpochDay()) }
+    // 時間：新增預設現在；編輯舊記錄沒有時間就是「未設定」（-1）
+    var timeMin by rememberSaveable {
+        mutableIntStateOf(
+            when {
+                orig != null -> orig.time
+                tplMode -> -1
+                else -> java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+            }
+        )
+    }
     var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: "") }
     var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags)?.joinToString("\n") ?: "") }
     var inst by rememberSaveable { mutableIntStateOf(1) }
@@ -188,7 +200,7 @@ fun EditScreen(
         categoryId = if (type == TxType.TRANSFER) null else catId,
         accountId = accId,
         toAccountId = if (type == TxType.TRANSFER) toAccId else null,
-        day = day, note = note.trim(), tags = tags,
+        day = day, note = note.trim(), tags = tags, time = if (tplMode) -1 else timeMin,
         installments = if (orig == null && type == TxType.EXPENSE) inst else 1,
         fee = fee,
         discount = effDiscount,
@@ -409,6 +421,7 @@ fun EditScreen(
         ) {
             if (tplMode) CuteChip("名稱：" + tplName.ifBlank { "未命名" }, tplName.isNotBlank(), { dialog = "tplname" }, icon = "vec:pencil")
             if (!tplMode) CuteChip(dayLabel(day), false, { dialog = "date" }, icon = "vec:calendar")
+            if (!tplMode) CuteChip(if (timeMin >= 0) tw.moneybook.app.formatTime(timeMin) else "未設定時間", false, { dialog = "time" }, icon = "vec:clock")
             if (type != TxType.TRANSFER && accs.isNotEmpty()) {
                 val a = accId?.let { d.accMap[it] }
                 CuteChip(a?.let { accLabel(it) } ?: "帳戶", false, { dialog = "from" }, icon = "vec:wallet")
@@ -547,6 +560,17 @@ fun EditScreen(
                     OutlinedTextField(text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 },
                 confirmButton = { TextButton(onClick = { tplName = text.trim(); dialog = "" }) { Text("好") } },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "time" -> {
+            val init = if (timeMin >= 0) timeMin else java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+            val st = androidx.compose.material3.rememberTimePickerState(init / 60, init % 60, is24Hour = true)
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("選擇時間") },
+                text = { androidx.compose.material3.TimeInput(state = st) },
+                confirmButton = { TextButton(onClick = { timeMin = st.hour * 60 + st.minute; dialog = "" }) { Text("確定") } },
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
             )
         }
