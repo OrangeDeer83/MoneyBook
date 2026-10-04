@@ -645,6 +645,9 @@ def t_txn_time():
         d.tap(chip)
         d.wait_text("選擇時間", timeout=10)
         d.shot("選擇時間對話框")
+        # 預設是滾輪；要打字先按「改用鍵盤輸入」
+        d.tap_text("改用鍵盤輸入", exact=True)
+        d.time.sleep(1)
         # 時間輸入：小時輸入滿 2 位數會自動跳到分鐘。輸入太快會吃掉字，所以分兩段、中間等一下，
         # 並檢查畫面上真的是 09 和 30，不對就重來
         for _ in range(3):
@@ -713,4 +716,82 @@ def t_running_balance():
     bal = d.first(ns, "餘額 $50,400", True)
     d.check("餘額就在金額的正下方（一大一小，列不會變高）", bool(amt and bal) and bal.cy > amt.cy and abs(bal.x2 - amt.x2) < 60 and bal.cy - amt.cy < 80,
             (amt and (amt.cx, amt.cy), bal and (bal.cx, bal.cy)))
+
+
+@case(D, "選時間：預設滾輪，可以滑動，也能改用鍵盤輸入")
+def t_time_wheel():
+    import re
+    d.fresh(empty_seed().json())
+    f.open_add()
+    ns = d.nodes()
+    chip = next(n for n in ns if re.fullmatch(r"\d\d:\d\d", n.text))
+    h0 = int(chip.text[:2])
+    d.tap(chip)
+    d.wait_text("選擇時間", timeout=10)
+    ns = d.shot("選擇時間（滾輪）")
+    d.check("對話框有「改用鍵盤輸入」，預設是滾輪（沒有輸入框）", d.has(ns, "改用鍵盤輸入", True) and not d.edits())
+    # 小時那一列的各個數字（左半邊、兩位數），中間那個是目前選的
+    hours = sorted([n for n in ns if re.fullmatch(r"\d\d", n.text) and n.cx < 540 and 900 < n.cy < 1700], key=lambda n: n.cy)
+    d.check("看得到小時的滾輪（多個數字上下排列）", len(hours) >= 3, [n.text for n in hours])
+    if len(hours) >= 3:
+        mid = hours[len(hours) // 2]
+        step = hours[1].cy - hours[0].cy
+        # 手指由下往上滑 2 格 → 小時 +2；已經太晚（12 點以後）就反方向（-2）。慢慢滑，滑完會自動對齊
+        up = h0 < 12
+        if up:
+            d.swipe(mid.cx, mid.cy + step, mid.cx, mid.cy - step, 1200)
+        else:
+            d.swipe(mid.cx, mid.cy - step, mid.cx, mid.cy + step, 1200)
+        d.time.sleep(1.2)
+        d.shot("滑動之後")
+    d.tap_text("確定", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("確定之後")
+    chip2 = next((n for n in ns if re.fullmatch(r"\d\d:\d\d", n.text)), None)
+    h1 = int(chip2.text[:2]) if chip2 else -1
+    d.check("滑動滾輪後小時改變了（約 ±2）", chip2 is not None and 1 <= abs(h1 - h0) <= 3, (h0, h1))
+    # 切到鍵盤輸入，打字設成 09:30
+    d.tap(chip2)
+    d.wait_text("選擇時間", timeout=10)
+    d.tap_text("改用鍵盤輸入", exact=True)
+    d.time.sleep(1)
+    d.check("切到鍵盤輸入後有輸入框，並能切回滾輪", bool(d.edits()) and d.has(d.nodes(), "改用滾輪", True))
+    for _ in range(3):
+        d.tap(d.edits()[0])
+        d.select_all_delete()
+        d.type_text("09")
+        d.time.sleep(1.2)
+        d.type_text("30")
+        d.time.sleep(1.0)
+        if d.has(d.nodes(), "09", True) and d.has(d.nodes(), "30", True):
+            break
+    d.tap_text("確定", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("鍵盤輸入之後")
+    d.check("用鍵盤輸入 09:30 後時間按鈕是 09:30", d.has(ns, "09:30", True))
+
+
+@case(D, "日曆選了日期，記一筆預設是那一天")
+def t_add_uses_calendar_day():
+    import datetime
+    d.fresh(f.base_seed())
+    f.tab("日曆")
+    d.time.sleep(1.5)
+    yday = f.today() - datetime.timedelta(days=1)
+    ns = d.nodes()
+    cells = [n for n in ns if n.text == str(yday.day) and 400 < n.cy < 1300]
+    d.check("日曆裡找得到昨天的日期格", bool(cells))
+    if cells:
+        d.tap(cells[0])
+        d.time.sleep(1.2)
+    f.open_add()
+    ns = d.shot("日曆選了昨天後按記一筆")
+    want = f"昨天・{yday.month}/{yday.day}"
+    d.check(f"記一筆的日期預設是日曆選的那天（{want}）", d.has(ns, want, True), [n.text for n in ns if "・" in n.text][:4])
+    d.tap(d.first(d.nodes(), "關閉"))
+    d.time.sleep(1)
+    f.tab("明細")                      # 切回列表（不是日曆）
+    f.open_add()
+    ns = d.shot("列表模式按記一筆")
+    d.check("在明細列表按記一筆，日期仍是今天", d.has(ns, "今天・", False), [n.text for n in ns if "・" in n.text][:4])
 
