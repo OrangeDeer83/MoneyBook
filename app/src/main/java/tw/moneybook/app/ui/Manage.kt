@@ -482,6 +482,11 @@ fun AccountDialog(
     }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
+    // 這張卡自己沒額度、也沒有帶別的卡，卻選了有額度的卡一起共用：那張有額度的卡就是主卡（額度用它的）
+    val joinOwner: Account? =
+        if (acc != null && type == AccountType.CARD && sharedOf == 0L && members.isNotEmpty() &&
+            (limit.toLongOrNull() ?: 0L) <= 0L && cards.none { it.sharedLimitOf == acc.id }
+        ) cards.firstOrNull { it.id in members && it.creditLimit > 0L } else null
 
     fun build(): Account = Account(
         id = acc?.id ?: 0L,
@@ -499,13 +504,13 @@ fun AccountDialog(
         creditLimit = if (type == AccountType.CARD) limit.toLongOrNull() ?: 0L else 0L,
         statementDay = if (type == AccountType.CARD) (stmt.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
         dueDay = if (type == AccountType.CARD) (due.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
-        sharedLimitOf = if (type == AccountType.CARD) sharedOf else 0L,
+        sharedLimitOf = if (type == AccountType.CARD) (joinOwner?.id ?: sharedOf) else 0L,
     )
 
     /** 按儲存時，其他卡的共用額度要怎麼改 */
     fun shareUpdates(): Map<Long, Long> {
         if (acc == null || type != AccountType.CARD) return emptyMap()
-        val ownerId = if (sharedOf != 0L) sharedOf else acc.id
+        val ownerId = joinOwner?.id ?: (if (sharedOf != 0L) sharedOf else acc.id)
         val out = HashMap<Long, Long>()
         cards.forEach { c -> if (c.id != acc.id && c.id != ownerId && c.sharedLimitOf == ownerId && c.id !in members) out[c.id] = 0L }
         members.forEach { id -> if (id != ownerId && cards.firstOrNull { it.id == id }?.sharedLimitOf != ownerId) out[id] = ownerId }
@@ -642,7 +647,9 @@ fun AccountDialog(
                                 }
                             }
                         }
-                        if (sharedOf == 0L && members.isNotEmpty()) {
+                        if (joinOwner != null) {
+                            Text("額度和已用金額跟「${joinOwner.name}」一起算，額度請到那張卡設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                        } else if (sharedOf == 0L && members.isNotEmpty()) {
                             Text("有 ${members.size} 張卡跟這張共用額度，額度請在這張設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                         }
                     }
