@@ -40,6 +40,9 @@ data class Account(
     /** 文字徽章（例如「國泰」），空白代表用表情符號 */
     val badge: String = "",
     val badgeColor: Int = 0,
+    /** 徽章雙色漸層的起點／終點（ARGB），0 代表沒有漸層、沿用 badgeColor 的單色 */
+    val badgeFrom: Long = 0L,
+    val badgeTo: Long = 0L,
     /** 信用卡：額度、結帳日、繳款日（0 代表未設定） */
     val creditLimit: Long = 0L,
     val statementDay: Int = 0,
