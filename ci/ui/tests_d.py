@@ -633,6 +633,39 @@ def t_favorite_switch():
 
 
 # ───────────────────────── 記錄時間 ─────────────────────────
+def wheel_hours(ns):
+    """時間滾輪：小時那一列（左半邊）的數字，由上到下"""
+    import re
+    return sorted([n for n in ns if re.fullmatch(r"\d\d", n.text) and n.cx < 540 and 900 < n.cy < 1700], key=lambda n: n.cy)
+
+
+def wheel_minutes(ns):
+    import re
+    return sorted([n for n in ns if re.fullmatch(r"\d\d", n.text) and n.cx >= 540 and 900 < n.cy < 1700], key=lambda n: n.cy)
+
+
+def tap_wheel_to_type():
+    """點一下滾輪上的小時（正中間那個）→ 直接變成鍵盤輸入，不用按任何切換按鈕"""
+    hs = wheel_hours(d.nodes())
+    d.tap(hs[len(hs) // 2])
+    d.time.sleep(1)
+
+
+def type_time(hh, mm):
+    """鍵盤輸入的時間：小時輸入滿 2 位數會自動跳到分鐘。輸入太快會吃掉字，所以分兩段、中間等一下，畫面不對就重來"""
+    for _ in range(3):
+        if d.edits():
+            d.tap(d.edits()[0])
+        d.select_all_delete()
+        d.type_text(hh)
+        d.time.sleep(1.2)
+        d.type_text(mm)
+        d.time.sleep(1.0)
+        ns = d.nodes()
+        if d.has(ns, hh, True) and d.has(ns, mm, True):
+            break
+
+
 @case(D, "記一筆可以設定時間並在編輯時看得到")
 def t_txn_time():
     import re
@@ -645,21 +678,9 @@ def t_txn_time():
         d.tap(chip)
         d.wait_text("選擇時間", timeout=10)
         d.shot("選擇時間對話框")
-        # 預設是滾輪；要打字先按「改用鍵盤輸入」
-        d.tap_text("改用鍵盤輸入", exact=True)
-        d.time.sleep(1)
-        # 時間輸入：小時輸入滿 2 位數會自動跳到分鐘。輸入太快會吃掉字，所以分兩段、中間等一下，
-        # 並檢查畫面上真的是 09 和 30，不對就重來
-        for _ in range(3):
-            d.tap(d.edits()[0] if d.edits() else d.first(d.nodes(), "09"))
-            d.select_all_delete()
-            d.type_text("09")
-            d.time.sleep(1.2)
-            d.type_text("30")
-            d.time.sleep(1.0)
-            ns = d.nodes()
-            if d.has(ns, "09", True) and d.has(ns, "30", True):
-                break
+        # 預設是滾輪；點一下滾輪就直接變鍵盤輸入
+        tap_wheel_to_type()
+        type_time("09", "30")
         d.shot("輸入 09:30")
         d.tap_text("確定", exact=True)
         d.time.sleep(1)
@@ -718,7 +739,7 @@ def t_running_balance():
             (amt and (amt.cx, amt.cy), bal and (bal.cx, bal.cy)))
 
 
-@case(D, "選時間：預設滾輪，可以滑動，也能改用鍵盤輸入")
+@case(D, "選時間：預設滾輪，可以滑動，點一下滾輪就變鍵盤輸入")
 def t_time_wheel():
     import re
     d.fresh(empty_seed().json())
@@ -729,9 +750,9 @@ def t_time_wheel():
     d.tap(chip)
     d.wait_text("選擇時間", timeout=10)
     ns = d.shot("選擇時間（滾輪）")
-    d.check("對話框有「改用鍵盤輸入」，預設是滾輪（沒有輸入框）", d.has(ns, "改用鍵盤輸入", True) and not d.edits())
+    d.check("預設是滾輪（沒有輸入框），而且沒有「改用鍵盤輸入」按鈕", not d.edits() and not d.has(ns, "改用鍵盤輸入"))
     # 小時那一列的各個數字（左半邊、兩位數），中間那個是目前選的
-    hours = sorted([n for n in ns if re.fullmatch(r"\d\d", n.text) and n.cx < 540 and 900 < n.cy < 1700], key=lambda n: n.cy)
+    hours = wheel_hours(ns)
     d.check("看得到小時的滾輪（多個數字上下排列）", len(hours) >= 3, [n.text for n in hours])
     if len(hours) >= 3:
         mid = hours[len(hours) // 2]
@@ -750,25 +771,41 @@ def t_time_wheel():
     chip2 = next((n for n in ns if re.fullmatch(r"\d\d:\d\d", n.text)), None)
     h1 = int(chip2.text[:2]) if chip2 else -1
     d.check("滑動滾輪後小時改變了（約 ±2）", chip2 is not None and 1 <= abs(h1 - h0) <= 3, (h0, h1))
-    # 切到鍵盤輸入，打字設成 09:30
+    # 點一下滾輪 → 直接變鍵盤輸入，打字設成 09:30
     d.tap(chip2)
     d.wait_text("選擇時間", timeout=10)
-    d.tap_text("改用鍵盤輸入", exact=True)
-    d.time.sleep(1)
-    d.check("切到鍵盤輸入後有輸入框，並能切回滾輪", bool(d.edits()) and d.has(d.nodes(), "改用滾輪", True))
-    for _ in range(3):
-        d.tap(d.edits()[0])
-        d.select_all_delete()
-        d.type_text("09")
-        d.time.sleep(1.2)
-        d.type_text("30")
-        d.time.sleep(1.0)
-        if d.has(d.nodes(), "09", True) and d.has(d.nodes(), "30", True):
-            break
+    tap_wheel_to_type()
+    ns = d.shot("點滾輪之後")
+    d.check("點一下滾輪就變成鍵盤輸入（出現輸入框）", bool(d.edits()))
+    d.check("沒有任何切換按鈕（改用滾輪／改用鍵盤輸入）", not d.has(ns, "改用滾輪") and not d.has(ns, "改用鍵盤輸入"))
+    type_time("09", "30")
     d.tap_text("確定", exact=True)
     d.time.sleep(1)
     ns = d.shot("鍵盤輸入之後")
     d.check("用鍵盤輸入 09:30 後時間按鈕是 09:30", d.has(ns, "09:30", True))
+
+
+@case(D, "選時間滾輪可以循環：23 之後接 00、59 之後接 00")
+def t_time_wheel_loop():
+    import re
+    d.fresh(empty_seed().json())
+    f.open_add()
+    chip = next(n for n in d.nodes() if re.fullmatch(r"\d\d:\d\d", n.text))
+    d.tap(chip)
+    d.wait_text("選擇時間", timeout=10)
+    tap_wheel_to_type()
+    type_time("23", "59")
+    d.tap_text("確定", exact=True)
+    d.time.sleep(1)
+    d.check("先把時間設成 23:59", d.has(d.nodes(), "23:59", True))
+    d.tap(next(n for n in d.nodes() if n.text == "23:59"))
+    d.wait_text("選擇時間", timeout=10)
+    d.time.sleep(1)
+    ns = d.shot("23:59 的滾輪")
+    hs = [n.text for n in wheel_hours(ns)]
+    ms = [n.text for n in wheel_minutes(ns)]
+    d.check("小時滾輪：23 的下面接 00、01（循環）", hs == ["21", "22", "23", "00", "01"], hs)
+    d.check("分鐘滾輪：59 的下面接 00、01（循環）", ms == ["57", "58", "59", "00", "01"], ms)
 
 
 @case(D, "日曆選了日期，記一筆預設是那一天")
@@ -806,7 +843,7 @@ def t_badge_presets():
     d.tap_text("文字徽章", exact=True)
     d.time.sleep(0.8)
     ns = d.shot("切到文字徽章")
-    d.check("有「銀行」與「行動支付」兩排預設可以選", d.has(ns, "銀行", True) and d.has(ns, "行動支付", True), [n.text for n in ns][:30])
+    d.check("有「常見銀行」與「常見行動支付」兩排預設可以選", d.has(ns, "常見銀行", True) and d.has(ns, "常見行動支付", True), [n.text for n in ns][:30])
     d.check("銀行那排有台新，行動支付那排有街口支付", d.has(ns, "台新", True) and d.has(ns, "街口支付", True))
     d.tap_text("台新", exact=True)
     d.time.sleep(0.8)
@@ -828,4 +865,43 @@ def t_badge_presets():
     d.time.sleep(1.2)
     ns = d.shot("改成街口之後")
     d.check("帳戶頁的圖示變成「街口」，不再是「台新」", d.has(ns, "街口", True) and not d.has(ns, "台新", True))
+
+
+# ───────────────────────── 信用卡共用額度 ─────────────────────────
+@case(D, "信用卡共用額度：兩張卡共用一份額度，已用金額加總")
+def t_shared_limit():
+    # 測試信用卡額度 100,000，花了 30,000；第二張卡沒有自己的額度，花了 20,000
+    s = empty_seed(card2=True)
+    s.expense(-1, 30000, S.C_SHOP, acc=S.CARD, note="a")
+    s.expense(-1, 20000, S.C_SHOP, acc=S.CARD2, note="b")
+    d.fresh(s.json())
+    open_account("第二張卡")
+    ns = d.shot("第二張卡（還沒共用）")
+    d.check("還沒設定共用時，第二張卡沒有額度資訊", not d.has(ns, "額度 $"))
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    ns = d.shot("編輯第二張卡")
+    d.check("信用卡編輯有「共用額度」選項，可選「不共用」或其他信用卡", d.has(ns, "共用額度", False) and d.has(ns, "不共用", True) and d.has(ns, "測試信用卡", True),
+            [n.text for n in ns if n.text][:40])
+    d.tap_text("測試信用卡", exact=True)
+    d.time.sleep(0.8)
+    d.shot("選了測試信用卡")
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("儲存之後")
+    d.check("第二張卡顯示共用的額度：已用 $50,000（兩張加總）・可用 $50,000・額度 $100,000",
+            d.has(ns, "已用 $50,000・可用 $50,000・額度 $100,000", True), [n.text for n in ns if "已用" in n.text])
+    d.check("有說明和哪些卡共用額度", d.has(ns, "共用額度", False) and d.has(ns, "測試信用卡", False))
+    # 主卡（測試信用卡）也看得到同樣的共用資訊
+    d.tap_back()
+    to_main()
+    open_account("測試信用卡")
+    ns = d.shot("測試信用卡")
+    d.check("主卡也顯示加總後的已用 $50,000、可用 $50,000", d.has(ns, "已用 $50,000・可用 $50,000・額度 $100,000", True), [n.text for n in ns if "已用" in n.text])
+    # 帳戶分頁：第二張卡顯示共用後的可用額度
+    d.tap_back()
+    to_main()
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("帳戶分頁兩張卡都顯示「可用 $50,000」", len([n for n in ns if n.text == "可用 $50,000"]) == 2, [n.text for n in ns if n.text.startswith("可用")])
 
