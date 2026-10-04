@@ -146,6 +146,7 @@ object AppImages {
         "img:acc_foreign" to R.drawable.img_acc_foreign,
         "img:acc_loan" to R.drawable.img_acc_loan,
         "img:acc_mobile_transit" to R.drawable.img_acc_mobile_transit,
+        "img:acc_loan_icon" to R.drawable.img_acc_loan_icon,
         "img:acc_pocket" to R.drawable.img_acc_pocket,
         "img:acc_prepaid" to R.drawable.img_acc_prepaid,
         "img:acc_stock_tw" to R.drawable.img_acc_stock_tw,
