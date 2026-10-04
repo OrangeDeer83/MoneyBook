@@ -76,7 +76,7 @@ import kotlin.math.roundToInt
 // ───────────────────────── 共用：一筆記錄 ─────────────────────────
 
 @Composable
-fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, onClick: () -> Unit) {
+fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, onClick: () -> Unit) {
     val cute = LocalCute.current
     val cat = t.categoryId?.let { d.catMap[it] }
     val acc = t.accountId?.let { d.accMap[it] }
@@ -172,7 +172,16 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, onClick: () -> Unit) {
             else -> "" to cute.sub
         }
         val shown = if (t.type == TxType.TRANSFER && signedFor != null && t.accountId == signedFor) t.amount + t.fee else t.paid
-        Text(sign + formatMoney(shown), color = c, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        // 金額下面小字：這一筆做完之後這個帳戶的餘額（只有帳戶明細會帶 balance），和左邊的標題／備註一大一小
+        Column(horizontalAlignment = Alignment.End) {
+            Text(sign + formatMoney(shown), color = c, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (balance != null) {
+                Text(
+                    "餘額 ${formatMoney(balance)}", style = MaterialTheme.typography.labelSmall,
+                    color = if (balance < 0) cute.expense else cute.sub, maxLines = 1,
+                )
+            }
+        }
     }
 }
 

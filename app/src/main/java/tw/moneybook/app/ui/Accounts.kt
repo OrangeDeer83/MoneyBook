@@ -95,6 +95,9 @@ private fun daysLeft(to: LocalDate): String {
     }
 }
 
+/** 帳戶明細裡一筆報銷收款（idx 是這筆記錄的第幾筆收款） */
+private data class ReimbIn(val t: Txn, val who: String, val pay: ReimbPay, val idx: Int)
+
 /** 單一帳戶的明細 */
 @Composable
 fun AccountDetailScreen(
@@ -119,16 +122,21 @@ fun AccountDetailScreen(
     val all = d.txns.filter { it.accountId == a.id || it.toAccountId == a.id || it.items.any { i -> i.pays.any { pay -> pay.accountId == a.id } } }
     val monthList = all.inMonth(month)
     // 這個帳戶這個月收到的報銷款（每一筆收款各算一筆）
-    val reimbIn = d.txns.flatMap { t -> t.items.flatMap { i -> i.pays.map { pay -> Triple(t, i.who, pay) } } }
-        .filter { it.third.accountId == a.id }
-        .filter { val rd = LocalDate.ofEpochDay(it.third.day); rd.year == month.year && rd.monthValue == month.monthValue }
+    val reimbIn = d.txns.flatMap { t ->
+        // idx：這一筆記錄所有報銷收款的編號，要和 runningBalances 的 key 對得上
+        t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbIn(t, who, pay, idx) }
+    }
+        .filter { it.pay.accountId == a.id }
+        .filter { val rd = LocalDate.ofEpochDay(it.pay.day); rd.year == month.year && rd.monthValue == month.monthValue }
+    // 每一筆做完之後的餘額
+    val running = remember(d, a.id) { d.runningBalances(a.id) }
 
     fun flow(t: Txn): Long = when (t.type) {
         TxType.EXPENSE -> if (t.accountId == a.id) -t.paid else 0L
         TxType.INCOME -> if (t.accountId == a.id) t.paid else 0L
         TxType.TRANSFER -> (if (t.toAccountId == a.id) t.amount else 0L) - (if (t.accountId == a.id) t.amount + t.fee else 0L)
     }
-    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.third.amount }
+    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.pay.amount }
     val inflow = flows.filter { it > 0 }.sum()
     val outflow = -flows.filter { it < 0 }.sum()
 
@@ -184,7 +192,7 @@ fun AccountDetailScreen(
             if (monthList.isEmpty() && reimbIn.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "這個月這個帳戶沒有記錄") }
             }
-            reimbIn.forEachIndexed { n, (t, who, pay) ->
+            reimbIn.forEachIndexed { n, (t, who, pay, idx) ->
                 item(key = "r${t.id}_$n") {
                     val c = t.categoryId?.let { d.catMap[it] }
                     Row(
@@ -201,14 +209,19 @@ fun AccountDetailScreen(
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
                             )
                         }
-                        Text("+" + formatMoney(pay.amount), color = cute.income, fontWeight = FontWeight.SemiBold)
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("+" + formatMoney(pay.amount), color = cute.income, fontWeight = FontWeight.SemiBold)
+                            running["p${t.id}_$idx"]?.let { b ->
+                                Text("餘額 ${formatMoney(b)}", style = MaterialTheme.typography.labelSmall, color = if (b < 0) cute.expense else cute.sub, maxLines = 1)
+                            }
+                        }
                     }
                 }
             }
             monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.groupBy { it.day }.forEach { (day, list) ->
                 item(key = "d$day") { DayHeader(day, list) }
                 items(list, key = { it.id }) { t ->
-                    SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id) { onEdit(t.id) } }
+                    SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"]) { onEdit(t.id) } }
                 }
             }
         }

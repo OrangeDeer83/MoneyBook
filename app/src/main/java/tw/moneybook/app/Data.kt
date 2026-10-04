@@ -276,6 +276,40 @@ data class AppData(
         txns.flatMap { t -> t.items.map { it.who.trim() } }.filter { it.isNotEmpty() }
             .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
 
+    /**
+     * 某個帳戶每一筆記錄「做完之後」的餘額（帳戶明細每一筆下面顯示）。
+     * key：記錄是 "t<記錄 id>"；報銷收到的款是 "p<記錄 id>_<第幾筆收款>"（該筆記錄所有報銷對象的收款依序編號，從 0 開始）。
+     * 先後順序：日期 → 時間（沒有時間的排最前面，報銷收款沒有時間，排在當天最後）→ 輸入順序。
+     * 最後一筆的餘額會等於 [balances] 算出的目前餘額。
+     */
+    fun runningBalances(accountId: Long): Map<String, Long> {
+        val a = accMap[accountId] ?: return emptyMap()
+        class Ev(val key: String, val day: Long, val time: Int, val order: Long, val delta: Long)
+        val ev = ArrayList<Ev>()
+        for (t in txns) {
+            if (t.accountId == accountId || t.toAccountId == accountId) {
+                val delta = when (t.type) {
+                    TxType.EXPENSE -> if (t.accountId == accountId) -t.paid else 0L
+                    TxType.INCOME -> if (t.accountId == accountId) t.paid else 0L
+                    TxType.TRANSFER ->
+                        (if (t.toAccountId == accountId) t.amount else 0L) - (if (t.accountId == accountId) t.amount + t.fee else 0L)
+                }
+                ev.add(Ev("t${t.id}", t.day, t.time, t.id * 1000, delta))
+            }
+            t.items.flatMap { it.pays }.forEachIndexed { i, p ->
+                if (p.accountId == accountId) ev.add(Ev("p${t.id}_$i", p.day, 1440, t.id * 1000 + 1 + i, p.amount))
+            }
+        }
+        ev.sortWith(compareBy({ it.day }, { it.time }, { it.order }))
+        var bal = a.initial
+        val out = HashMap<String, Long>()
+        for (e in ev) {
+            bal += e.delta
+            out[e.key] = bal
+        }
+        return out
+    }
+
     fun allTags(): List<String> =
         txns.flatMap { it.tags }.groupingBy { it }.eachCount().entries
             .sortedByDescending { it.value }.map { it.key }
