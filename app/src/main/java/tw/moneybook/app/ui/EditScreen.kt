@@ -566,12 +566,37 @@ fun EditScreen(
         }
         "time" -> {
             val init = if (timeMin >= 0) timeMin else java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+            // 預設是滾輪；也可以改用鍵盤打字。兩種方式的數字互相同步
+            var typing by remember { mutableStateOf(false) }
+            var hh by remember { mutableIntStateOf(init / 60) }
+            var mm by remember { mutableIntStateOf(init % 60) }
             val st = androidx.compose.material3.rememberTimePickerState(init / 60, init % 60, is24Hour = true)
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = { Text("選擇時間") },
-                text = { androidx.compose.material3.TimeInput(state = st) },
-                confirmButton = { TextButton(onClick = { timeMin = st.hour * 60 + st.minute; dialog = "" }) { Text("確定") } },
+                text = {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (!typing) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                WheelColumn(24, hh, { hh = it })
+                                Text(":", style = MaterialTheme.typography.headlineMedium)
+                                WheelColumn(60, mm, { mm = it })
+                            }
+                        } else {
+                            androidx.compose.material3.TimeInput(state = st)
+                        }
+                        TextButton(onClick = {
+                            if (typing) { hh = st.hour; mm = st.minute } else { st.hour = hh; st.minute = mm }
+                            typing = !typing
+                        }) { Text(if (typing) "改用滾輪" else "改用鍵盤輸入") }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        timeMin = if (typing) st.hour * 60 + st.minute else hh * 60 + mm
+                        dialog = ""
+                    }) { Text("確定") }
+                },
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
             )
         }
