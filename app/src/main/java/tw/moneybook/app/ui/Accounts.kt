@@ -257,6 +257,7 @@ fun AccountDetailScreen(
             acc = a,
             cards = d.accounts.filter { it.type == AccountType.CARD },
             onSave = { na -> vm.saveAccount(a.id, na); editing = false },
+            onShares = { vm.setSharedLimits(it) },
             onDelete = { vm.deleteAccount(a.id); editing = false; onBack() },
             onDismiss = { editing = false },
         )

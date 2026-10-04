@@ -441,12 +441,15 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AccountDialog(
     acc: Account?,
-    /** 現有的信用卡（挑「共用額度」的主卡用） */
+    /** 現有的信用卡（挑「共用額度」的卡用） */
     cards: List<Account> = emptyList(),
     onSave: (Account) -> Unit,
+    /** 共用額度連帶要改的其他卡：帳戶 id → 主卡 id（0 = 不共用） */
+    onShares: (Map<Long, Long>) -> Unit = {},
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
@@ -467,6 +470,16 @@ fun AccountDialog(
     var stmt by remember { mutableStateOf(acc?.statementDay?.takeIf { it > 0 }?.toString() ?: "") }
     var due by remember { mutableStateOf(acc?.dueDay?.takeIf { it > 0 }?.toString() ?: "") }
     var sharedOf by remember { mutableStateOf(acc?.sharedLimitOf ?: 0L) }
+    // 和這張卡同一組共用額度的其他卡（可以多選）：這張是主卡時就是掛在它底下的卡；這張是副卡時是同組的其他副卡
+    var members by remember {
+        mutableStateOf(
+            if (acc == null) emptySet<Long>()
+            else {
+                val ownerId = if (acc.sharedLimitOf != 0L) acc.sharedLimitOf else acc.id
+                cards.filter { it.id != acc.id && it.id != ownerId && it.sharedLimitOf == ownerId }.map { it.id }.toSet()
+            },
+        )
+    }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
 
@@ -488,6 +501,16 @@ fun AccountDialog(
         dueDay = if (type == AccountType.CARD) (due.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
         sharedLimitOf = if (type == AccountType.CARD) sharedOf else 0L,
     )
+
+    /** 按儲存時，其他卡的共用額度要怎麼改 */
+    fun shareUpdates(): Map<Long, Long> {
+        if (acc == null || type != AccountType.CARD) return emptyMap()
+        val ownerId = if (sharedOf != 0L) sharedOf else acc.id
+        val out = HashMap<Long, Long>()
+        cards.forEach { c -> if (c.id != acc.id && c.id != ownerId && c.sharedLimitOf == ownerId && c.id !in members) out[c.id] = 0L }
+        members.forEach { id -> if (id != ownerId && cards.firstOrNull { it.id == id }?.sharedLimitOf != ownerId) out[id] = ownerId }
+        return out
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -581,21 +604,49 @@ fun AccountDialog(
                         Spacer(Modifier.width(6.dp))
                         Text("信用卡設定", style = MaterialTheme.typography.labelLarge)
                     }
-                    // 共用額度：可以選另一張（沒有在共用別人的）信用卡當「主卡」，額度和已用金額一起算
-                    val others = cards.filter { it.id != acc?.id && it.type == AccountType.CARD && it.sharedLimitOf == 0L && !it.hidden }
-                    val isOwner = acc != null && cards.any { it.sharedLimitOf == acc.id }
+                    // 共用額度：幾張卡共用同一個額度（額度取主卡的，已用金額一起算）。
+                    // 新增的卡先挑一張主卡；已經存在的卡可以多選，一次選好所有一起共用的卡
+                    val others = cards.filter { it.id != acc?.id && it.type == AccountType.CARD && !it.hidden }
                     val owner = cards.firstOrNull { it.id == sharedOf }
-                    if (!isOwner && others.isNotEmpty()) {
-                        Text("和其他信用卡共用額度", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CuteChip("不共用", sharedOf == 0L, { sharedOf = 0L })
-                            others.forEach { o -> CuteChip(o.name, sharedOf == o.id, { sharedOf = o.id }) }
+                    if (acc == null) {
+                        val singles = others.filter { it.sharedLimitOf == 0L }
+                        if (singles.isNotEmpty()) {
+                            Text("和其他信用卡共用額度", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                CuteChip("不共用", sharedOf == 0L, { sharedOf = 0L })
+                                singles.forEach { o -> CuteChip(o.name, sharedOf == o.id, { sharedOf = o.id }) }
+                            }
+                        }
+                    } else {
+                        val groupOwnerId = if (sharedOf != 0L) sharedOf else acc.id
+                        // 已經在別組裡的卡、或自己帶著一組的卡，不能直接併進來
+                        val candidates = others.filter { c ->
+                            c.id != groupOwnerId &&
+                                (c.sharedLimitOf == groupOwnerId || (c.sharedLimitOf == 0L && cards.none { x -> x.sharedLimitOf == c.id }))
+                        }
+                        if (owner != null && sharedOf != 0L) {
+                            Text("這張卡和「${owner.name}」共用額度", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            CuteChip("離開共用", false, { sharedOf = 0L; members = emptySet() })
+                        }
+                        if (candidates.isNotEmpty()) {
+                            Text(
+                                if (sharedOf != 0L) "也一起共用這組額度的卡（可以多選）" else "和這張卡共用額度的信用卡（可以多選）",
+                                style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                            )
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                candidates.forEach { c ->
+                                    CuteChip(c.name, c.id in members, { members = if (c.id in members) members - c.id else members + c.id })
+                                }
+                            }
+                        }
+                        if (sharedOf == 0L && members.isNotEmpty()) {
+                            Text("有 ${members.size} 張卡跟這張共用額度，額度請在這張設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                         }
                     }
-                    if (isOwner) {
-                        Text("有其他信用卡跟這張共用額度，額度請在這張設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                    }
-                    if (sharedOf != 0L && owner != null && !isOwner) {
+                    if (sharedOf != 0L && owner != null) {
                         Text("額度和已用金額跟「${owner.name}」一起算，額度請到那張卡設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                     } else {
                         OutlinedTextField(
@@ -632,7 +683,7 @@ fun AccountDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) onSave(build()) }) { Text("儲存") }
+            TextButton(onClick = { if (name.isNotBlank()) { onSave(build()); onShares(shareUpdates()) } }) { Text("儲存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )

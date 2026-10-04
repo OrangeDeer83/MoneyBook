@@ -9,6 +9,7 @@ BOOK, CASH, BANK, CARD = 1, 2, 3, 4
 INVEST = 600   # 投資帳戶（invest=True 時才有）
 LOAN = 601     # 貸款帳戶「信貸」，初始 -200,000（loan=True 時才有）
 CARD2 = 602    # 第二張信用卡「第二張卡」，沒有自己的額度（card2=True 時才有）
+CARD3 = 603    # 第三張信用卡「第三張卡」，沒有自己的額度（card3=True 時才有）
 # 支出分類：頂層與子分類
 C_FOOD, C_BREAKFAST, C_LUNCH, C_DINNER, C_DRINK = 10, 11, 12, 13, 14
 C_TRAFFIC, C_METRO, C_HSR = 20, 21, 22
@@ -25,7 +26,7 @@ def eday(d):
 
 
 class Seed:
-    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0, extra_books=0, invest=False, hidden_account=False, loan=False, fav_card=False, card2=False):
+    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0, extra_books=0, invest=False, hidden_account=False, loan=False, fav_card=False, card2=False, card3=False):
         self.today = today
         self.dark = dark
         self.mascot = mascot
@@ -43,6 +44,7 @@ class Seed:
         self.loan = loan
         self.fav_card = fav_card
         self.card2 = card2
+        self.card3 = card3
         self.trades = []
         self.prices = []
 
@@ -125,6 +127,8 @@ class Seed:
             accounts.append(dict(id=610, name="隱藏帳戶", emoji="img:acc_bank", type="BANK", initial=123, order=7, hidden=True, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
         if self.card2:
             accounts.append(dict(id=CARD2, name="第二張卡", emoji="img:acc_card", type="CARD", initial=0, order=8, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
+        if self.card3:
+            accounts.append(dict(id=CARD3, name="第三張卡", emoji="img:acc_card", type="CARD", initial=0, order=9, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
         if self.fav_card:
             accounts[2]["favorite"] = True   # 測試信用卡：從沒用過，但標了星號
         mb = dict(self.month_budgets)

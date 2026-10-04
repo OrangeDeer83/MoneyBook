@@ -513,6 +513,12 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         update { d -> d.copy(accounts = d.accounts.map { if (it.id == id) it.copy(favorite = on) else it }) }
     }
 
+    /** 一次改多張信用卡的共用額度主卡：帳戶 id → 主卡 id（0 = 不共用） */
+    fun setSharedLimits(updates: Map<Long, Long>) {
+        if (updates.isEmpty()) return
+        update { d -> d.copy(accounts = d.accounts.map { a -> updates[a.id]?.let { a.copy(sharedLimitOf = it) } ?: a }) }
+    }
+
     /** 有記錄在用的帳戶不能刪，改成隱藏 */
     fun deleteAccount(id: Long) {
         val used = data.txns.any { it.accountId == id || it.toAccountId == id } || data.trades.any { it.accountId == id }

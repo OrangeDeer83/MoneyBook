@@ -966,3 +966,61 @@ def t_shared_limit():
     ns = d.shot("帳戶分頁")
     d.check("帳戶分頁兩張卡都顯示「可用 $50,000」", len([n for n in ns if n.text == "可用 $50,000"]) == 2, [n.text for n in ns if n.text.startswith("可用")])
 
+
+
+def scroll_to(text, tries=6):
+    """帳戶編輯對話框比較長，往下滑到某段文字出現"""
+    for _ in range(tries):
+        if d.has(d.nodes(), text, False):
+            return True
+        d.swipe(540, 1400, 540, 800, 500)
+        d.time.sleep(0.6)
+    return d.has(d.nodes(), text, False)
+
+
+@case(D, "信用卡共用額度可以多選：一次選好所有一起共用的卡")
+def t_shared_limit_multi():
+    # 主卡（測試信用卡）額度 100,000，花 30,000；第二張卡花 20,000、第三張卡花 10,000，這兩張沒有自己的額度
+    s = empty_seed(card2=True, card3=True)
+    s.expense(-1, 30000, S.C_SHOP, acc=S.CARD, note="a")
+    s.expense(-1, 20000, S.C_SHOP, acc=S.CARD2, note="b")
+    s.expense(-1, 10000, S.C_SHOP, acc=S.CARD3, note="c")
+    d.fresh(s.json())
+    open_account("測試信用卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    found = scroll_to("可以多選")
+    ns = d.shot("主卡的編輯畫面")
+    d.check("主卡的編輯畫面有「和這張卡共用額度的信用卡（可以多選）」", found)
+    d.check("清單同時列出第二張卡和第三張卡", d.has(ns, "第二張卡", True) and d.has(ns, "第三張卡", True), [n.text for n in ns if n.text][:40])
+    d.tap_text("第二張卡", exact=True)
+    d.tap_text("第三張卡", exact=True)
+    d.shot("兩張都選了")
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("儲存之後")
+    d.check("主卡顯示三張卡加總：已用 $60,000・可用 $40,000・額度 $100,000",
+            d.has(ns, "已用 $60,000・可用 $40,000・額度 $100,000", True), [n.text for n in ns if "已用" in n.text])
+    d.tap_back()
+    to_main()
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("帳戶分頁三張卡都顯示「可用 $40,000」", len([n for n in ns if n.text == "可用 $40,000"]) == 3, [n.text for n in ns if n.text.startswith("可用")])
+    # 再編輯一次，取消第三張卡
+    open_account("測試信用卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    scroll_to("可以多選")
+    ns = d.shot("再次編輯主卡")
+    d.check("已選的卡會是選取狀態，仍然列出第二張卡和第三張卡", d.has(ns, "第二張卡", True) and d.has(ns, "第三張卡", True))
+    d.tap_text("第三張卡", exact=True)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("取消第三張卡之後")
+    d.check("只剩第二張卡共用：已用 $50,000・可用 $50,000・額度 $100,000",
+            d.has(ns, "已用 $50,000・可用 $50,000・額度 $100,000", True), [n.text for n in ns if "已用" in n.text])
+    d.tap_back()
+    to_main()
+    open_account("第三張卡")
+    ns = d.shot("第三張卡")
+    d.check("第三張卡不再共用：沒有額度資訊（它自己沒設額度）", not d.has(ns, "額度 $"), [n.text for n in ns if "額度" in n.text])
