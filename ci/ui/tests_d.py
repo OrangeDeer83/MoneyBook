@@ -645,11 +645,16 @@ def t_txn_time():
         d.tap(chip)
         d.wait_text("選擇時間", timeout=10)
         d.shot("選擇時間對話框")
-        # 時間輸入只有「正在輸入的那一格」是輸入框：先輸入 2 位數的小時，焦點會自動跳到分鐘，再輸入分鐘
-        d.tap(d.edits()[0])
+        # 時間輸入只有「正在輸入的那一格」是輸入框：先輸入小時，再點分鐘那一格（它才會變成輸入框）輸入分鐘
+        hour = d.edits()[0]
+        d.tap(hour)
         d.select_all_delete()
         d.type_text("09")
         d.time.sleep(0.6)
+        minute = next(n for n in d.nodes() if n.x1 > hour.x2 and re.fullmatch(r"\d\d?", n.text) and abs(n.cy - hour.cy) < 120)
+        d.tap(minute)
+        d.time.sleep(0.5)
+        d.tap(d.edits()[0])
         d.select_all_delete()
         d.type_text("30")
         d.time.sleep(0.6)
