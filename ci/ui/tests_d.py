@@ -645,7 +645,15 @@ def t_txn_time():
         d.tap(chip)
         d.wait_text("選擇時間", timeout=10)
         d.shot("選擇時間對話框")
-        fill_dialog(["9", "30"])
+        # 時間輸入只有「正在輸入的那一格」是輸入框：先輸入 2 位數的小時，焦點會自動跳到分鐘，再輸入分鐘
+        d.tap(d.edits()[0])
+        d.select_all_delete()
+        d.type_text("09")
+        d.time.sleep(0.6)
+        d.select_all_delete()
+        d.type_text("30")
+        d.time.sleep(0.6)
+        d.shot("輸入 09:30")
         d.tap_text("確定", exact=True)
         d.time.sleep(1)
     ns = d.shot("設定後")
@@ -653,7 +661,9 @@ def t_txn_time():
     f.keypad("100")
     f.save_edit()
     d.time.sleep(1)
-    row = d.wait(lambda n: n.text == "-$100", 10, "剛記的這一筆")
+    d.wait(lambda n: n.text == "-$100", 10, "剛記的這一筆")
+    # 畫面上有兩個 -$100：上面「結餘」卡片，和下面的明細列；要點明細列（比較下面那個）
+    row = max([n for n in d.nodes() if n.text == "-$100"], key=lambda n: n.cy)
     d.tap(row)
     d.wait_text("正在編輯", exact=False, timeout=15)
     ns = d.shot("編輯這一筆")
@@ -668,7 +678,8 @@ def t_txn_time_unset():
     s = empty_seed()
     s.expense(0, 85, S.C_FOOD, note="old")      # 沒有 time 欄位，就是舊資料
     d.fresh(s.json())
-    row = d.wait(lambda n: n.text == "-$85", 10, "舊記錄")
+    d.wait(lambda n: n.text == "-$85", 10, "舊記錄")
+    row = max([n for n in d.nodes() if n.text == "-$85"], key=lambda n: n.cy)   # 明細列，不是上面的結餘卡片
     d.tap(row)
     d.wait_text("正在編輯", exact=False, timeout=15)
     ns = d.shot("編輯舊記錄")
