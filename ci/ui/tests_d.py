@@ -795,3 +795,37 @@ def t_add_uses_calendar_day():
     ns = d.shot("列表模式按記一筆")
     d.check("在明細列表按記一筆，日期仍是今天", d.has(ns, "今天・", False), [n.text for n in ns if "・" in n.text][:4])
 
+
+# ───────────────────────── 帳戶徽章：銀行／行動支付預設 ─────────────────────────
+@case(D, "帳戶徽章可以直接選銀行或行動支付")
+def t_badge_presets():
+    d.fresh(f.base_seed())
+    open_account("測試銀行")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    d.tap_text("文字徽章", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("切到文字徽章")
+    d.check("有「銀行」與「行動支付」兩排預設可以選", d.has(ns, "銀行", True) and d.has(ns, "行動支付", True), [n.text for n in ns][:30])
+    d.check("銀行那排有台新，行動支付那排有街口支付", d.has(ns, "台新", True) and d.has(ns, "街口支付", True))
+    d.tap_text("台新", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("選了台新")
+    texts = [e.text for e in d.edits()]
+    d.check("選了台新：徽章文字變成「台新」，帳戶名稱不變", "台新" in texts and "測試銀行" in texts, texts)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("儲存之後")
+    d.check("帳戶頁的圖示是「台新」徽章，名稱仍是測試銀行", d.has(ns, "台新", True) and d.has(ns, "測試銀行", True))
+    # 再改成行動支付
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    d.tap_text("街口支付", exact=True)
+    d.time.sleep(0.8)
+    texts = [e.text for e in d.edits()]
+    d.check("改選街口支付：徽章文字變成「街口」", "街口" in texts, texts)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("改成街口之後")
+    d.check("帳戶頁的圖示變成「街口」，不再是「台新」", d.has(ns, "街口", True) and not d.has(ns, "台新", True))
+
