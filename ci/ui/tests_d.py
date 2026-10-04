@@ -631,3 +631,46 @@ def t_favorite_switch():
     ns = d.shot("選擇帳戶")
     d.check("測試銀行標了星號：選擇帳戶時名稱前有 ★", d.has(ns, "★ 測試銀行", True))
 
+
+# ───────────────────────── 記錄時間 ─────────────────────────
+@case(D, "記一筆可以設定時間並在編輯時看得到")
+def t_txn_time():
+    import re
+    d.fresh(empty_seed().json())
+    f.open_add()
+    ns = d.shot("記一筆")
+    chip = next((n for n in ns if re.fullmatch(r"\d\d:\d\d", n.text)), None)
+    d.check("日期旁邊有時間按鈕，預設是現在的時間（HH:mm）", chip is not None, [n.text for n in ns if ":" in n.text][:5])
+    if chip:
+        d.tap(chip)
+        d.wait_text("選擇時間", timeout=10)
+        d.shot("選擇時間對話框")
+        fill_dialog(["9", "30"])
+        d.tap_text("確定", exact=True)
+        d.time.sleep(1)
+    ns = d.shot("設定後")
+    d.check("時間按鈕變成 09:30", d.has(ns, "09:30", True))
+    f.keypad("100")
+    f.save_edit()
+    d.time.sleep(1)
+    row = d.wait(lambda n: n.text == "-$100", 10, "剛記的這一筆")
+    d.tap(row)
+    d.wait_text("正在編輯", exact=False, timeout=15)
+    ns = d.shot("編輯這一筆")
+    d.check("編輯時時間按鈕顯示 09:30（有存下來）", d.has(ns, "09:30", True))
+    d.tap(d.first(d.nodes(), "關閉"))
+    d.time.sleep(1.2)
+    d.check("返回列表後，明細列沒有出現 09:30", not d.has(d.nodes(), "09:30"))
+
+
+@case(D, "舊記錄沒有時間：編輯時顯示未設定")
+def t_txn_time_unset():
+    s = empty_seed()
+    s.expense(0, 85, S.C_FOOD, note="old")      # 沒有 time 欄位，就是舊資料
+    d.fresh(s.json())
+    row = d.wait(lambda n: n.text == "-$85", 10, "舊記錄")
+    d.tap(row)
+    d.wait_text("正在編輯", exact=False, timeout=15)
+    ns = d.shot("編輯舊記錄")
+    d.check("時間按鈕顯示「未設定時間」", d.has(ns, "未設定時間", True))
+

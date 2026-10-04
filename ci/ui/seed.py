@@ -52,13 +52,13 @@ class Seed:
         return eday(self.today + datetime.timedelta(days=offset))
 
     def add(self, offset, type_, amount, cat=None, acc=CASH, to=None, note="", tags=(), fee=0, disc=0,
-            reimb=0, reimb_amount=-1, items=None):
+            reimb=0, reimb_amount=-1, items=None, time=-1):
         t = dict(
             id=self.nid(), bookId=BOOK, type=type_, amount=amount, categoryId=cat, accountId=acc, toAccountId=to,
             day=self.day(offset), note=note, tags=list(tags), instGroup=None, instIndex=0, instTotal=0,
             fee=fee, discount=disc, reimb=reimb, reimbAccountId=None, reimbDay=None,
             reimbAmount=0 if reimb == 0 else (amount if reimb_amount < 0 else reimb_amount),
-            reimbItems=items or [],
+            reimbItems=items or [], time=time,
         )
         self.txns.append(t)
         return t
