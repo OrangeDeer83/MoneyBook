@@ -1130,4 +1130,4 @@ def t_acc_bottom_space():
     fab = d.first(ns, "記一筆", True)
     d.check("找得到最底下的說明和記一筆按鈕", hint is not None and fab is not None)
     if hint and fab:
-        d.check("說明文字在記一筆按鈕上方，不會被擋住", hint.y2 <= fab.y1 + 4, (hint.y2, fab.y1))
+        d.check("說明文字在記一筆按鈕上方，而且至少留 50 像素的空隙（小螢幕、說明折成兩行時才不會被擋住）", hint.y2 + 50 <= fab.y1, (hint.y2, fab.y1))

@@ -332,7 +332,8 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     LazyColumn(
         state = vm.accListState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        // 底部多留一點空間：記一筆的 + 按鈕會凸出來蓋到清單最底下
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
@@ -482,8 +483,19 @@ fun AccountDialog(
     }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
+    // 按「離開共用」這類操作要馬上反映在可以選的卡上，所以各卡的關係用「畫面上現在的狀態」算，不是存檔裡的
+    val vCards = cards.map { if (it.id == acc?.id) it.copy(sharedLimitOf = sharedOf) else it }
+    fun groupMembers(o: Account) = vCards.filter { it.sharedLimitOf == o.id && it.id != o.id }
+    /** 有組員的主卡，代表一整個共用組 */
+    fun isGroupOwner(o: Account) = o.sharedLimitOf == 0L && groupMembers(o).isNotEmpty()
+    fun groupLabel(o: Account) = (listOf(o) + groupMembers(o)).joinToString("＋") { it.name } + "（共用）"
+    // 單獨一張卡選了一整個共用組：加入那一組，額度用那一組主卡的
+    val selGroup: Account? =
+        if (acc != null && type == AccountType.CARD && sharedOf == 0L && cards.none { it.sharedLimitOf == acc.id })
+            vCards.firstOrNull { it.id in members && it.id != acc.id && isGroupOwner(it) }
+        else null
     // 這張卡自己沒額度、也沒有帶別的卡，卻選了有額度的卡一起共用：那張有額度的卡就是主卡（額度用它的）
-    val joinOwner: Account? =
+    val joinOwner: Account? = selGroup ?:
         if (acc != null && type == AccountType.CARD && sharedOf == 0L && members.isNotEmpty() &&
             (limit.toLongOrNull() ?: 0L) <= 0L && cards.none { it.sharedLimitOf == acc.id }
         ) cards.firstOrNull { it.id in members && it.creditLimit > 0L } else null
@@ -512,7 +524,9 @@ fun AccountDialog(
         if (acc == null || type != AccountType.CARD) return emptyMap()
         val ownerId = joinOwner?.id ?: (if (sharedOf != 0L) sharedOf else acc.id)
         val out = HashMap<Long, Long>()
-        cards.forEach { c -> if (c.id != acc.id && c.id != ownerId && c.sharedLimitOf == ownerId && c.id !in members) out[c.id] = 0L }
+        if (selGroup == null) {
+            cards.forEach { c -> if (c.id != acc.id && c.id != ownerId && c.sharedLimitOf == ownerId && c.id !in members) out[c.id] = 0L }
+        }
         members.forEach { id -> if (id != ownerId && cards.firstOrNull { it.id == id }?.sharedLimitOf != ownerId) out[id] = ownerId }
         return out
     }
@@ -610,24 +624,29 @@ fun AccountDialog(
                         Text("信用卡設定", style = MaterialTheme.typography.labelLarge)
                     }
                     // 共用額度：幾張卡共用同一個額度（額度取主卡的，已用金額一起算）。
-                    // 新增的卡先挑一張主卡；已經存在的卡可以多選，一次選好所有一起共用的卡
-                    val others = cards.filter { it.id != acc?.id && it.type == AccountType.CARD && !it.hidden }
-                    val owner = cards.firstOrNull { it.id == sharedOf }
+                    // 新增的卡先挑一張卡或一整個共用組；已經存在的卡可以多選，一次選好所有一起共用的卡
+                    val others = vCards.filter { it.id != acc?.id && it.type == AccountType.CARD && !it.hidden }
+                    val owner = vCards.firstOrNull { it.id == sharedOf }
                     if (acc == null) {
-                        val singles = others.filter { it.sharedLimitOf == 0L }
-                        if (singles.isNotEmpty()) {
+                        val choices = others.filter { it.sharedLimitOf == 0L }      // 單張卡，或有組員的主卡（代表整個共用組）
+                        if (choices.isNotEmpty()) {
                             Text("和其他信用卡共用額度", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
                                 CuteChip("不共用", sharedOf == 0L, { sharedOf = 0L })
-                                singles.forEach { o -> CuteChip(o.name, sharedOf == o.id, { sharedOf = o.id }) }
+                                choices.forEach { o -> CuteChip(if (isGroupOwner(o)) groupLabel(o) else o.name, sharedOf == o.id, { sharedOf = o.id }) }
                             }
                         }
                     } else {
-                        val groupOwnerId = if (sharedOf != 0L) sharedOf else acc.id
-                        // 已經在別組裡的卡、或自己帶著一組的卡，不能直接併進來
-                        val candidates = others.filter { c ->
-                            c.id != groupOwnerId &&
-                                (c.sharedLimitOf == groupOwnerId || (c.sharedLimitOf == 0L && cards.none { x -> x.sharedLimitOf == c.id }))
+                        val myOwnerId = if (sharedOf != 0L) sharedOf else if (cards.any { it.sharedLimitOf == acc.id }) acc.id else 0L
+                        val candidates = if (myOwnerId != 0L) {
+                            // 已經在一組裡：可以加入沒有在共用的卡，或取消同組的卡
+                            others.filter { c -> c.id != myOwnerId && (c.sharedLimitOf == myOwnerId || (c.sharedLimitOf == 0L && groupMembers(c).isEmpty())) }
+                        } else {
+                            // 單獨一張：可以選沒有在共用的卡，或整個共用組
+                            others.filter { c -> c.sharedLimitOf == 0L }
                         }
                         if (owner != null && sharedOf != 0L) {
                             Text("這張卡和「${owner.name}」共用額度", style = MaterialTheme.typography.labelMedium, color = cute.sub)
@@ -643,11 +662,21 @@ fun AccountDialog(
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 candidates.forEach { c ->
-                                    CuteChip(c.name, c.id in members, { members = if (c.id in members) members - c.id else members + c.id })
+                                    val group = myOwnerId == 0L && isGroupOwner(c)
+                                    CuteChip(if (group) groupLabel(c) else c.name, c.id in members, {
+                                        members = when {
+                                            c.id in members -> members - c.id
+                                            // 同時只能加入一個共用組：選了這一組，就取消另一組
+                                            group -> members.filter { x -> vCards.firstOrNull { it.id == x }?.let { y -> !isGroupOwner(y) } ?: true }.toSet() + c.id
+                                            else -> members + c.id
+                                        }
+                                    })
                                 }
                             }
                         }
-                        if (joinOwner != null) {
+                        if (selGroup != null) {
+                            Text("加入「${groupLabel(selGroup)}」，額度和已用金額一起算，額度請到「${selGroup.name}」設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                        } else if (joinOwner != null) {
                             Text("額度和已用金額跟「${joinOwner.name}」一起算，額度請到那張卡設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                         } else if (sharedOf == 0L && members.isNotEmpty()) {
                             Text("有 ${members.size} 張卡跟這張共用額度，額度請在這張設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
