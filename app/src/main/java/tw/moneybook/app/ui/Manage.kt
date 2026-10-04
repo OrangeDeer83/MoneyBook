@@ -64,6 +64,7 @@ import tw.moneybook.app.Category
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.TxType
 import tw.moneybook.app.formatMoney
+import tw.moneybook.app.limitInfo
 import tw.moneybook.app.pendingReimb
 import tw.moneybook.app.ReimbItem
 import tw.moneybook.app.ReimbReceipt

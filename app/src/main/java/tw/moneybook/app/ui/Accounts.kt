@@ -56,6 +56,7 @@ import tw.moneybook.app.cardCycle
 import tw.moneybook.app.cardSpending
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.inMonth
+import tw.moneybook.app.limitInfo
 import tw.moneybook.app.transfersIn
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
