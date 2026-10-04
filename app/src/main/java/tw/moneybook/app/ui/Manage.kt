@@ -407,11 +407,12 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                                 AccountIcon(a, 40.dp)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text((if (a.favorite) "★ " else "") + a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
+                                    Text(a.name + if (a.hidden) "（已隱藏）" else "", style = MaterialTheme.typography.titleMedium, color = if (a.hidden) cute.sub else cute.ink)
                                     d.limitInfo(a, bal)?.let { info ->
                                         Text("可用 ${formatMoney(info.available)}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                                     }
                                 }
+                                FavoriteStar(a.favorite) { vm.setFavorite(a.id, !a.favorite) }
                                 Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
                                 if (editing) DragHandle(handle)
                             }

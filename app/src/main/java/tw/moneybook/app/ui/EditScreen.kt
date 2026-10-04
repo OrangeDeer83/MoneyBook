@@ -766,14 +766,14 @@ fun EditScreen(
                         val freq = if (accs.size >= 3 || accs.any { it.favorite }) d.frequentAccounts(3) else emptyList()
                         if (freq.isNotEmpty()) {
                             head("常用帳戶")
-                            freq.forEach { a -> AccountLine(a, bal[a.id] ?: 0L, if (isTo) toAccId == a.id else accId == a.id) { pick(a) } }
+                            freq.forEach { a -> AccountLine(a, bal[a.id] ?: 0L, if (isTo) toAccId == a.id else accId == a.id, onFavorite = { vm.setFavorite(it.id, !it.favorite) }) { pick(a) } }
                         }
                         // 其餘依帳戶類型分組（現金、銀行、信用卡…）
                         tw.moneybook.app.AccountType.values().forEach { type ->
                             val g = accs.filter { it.type == type }
                             if (g.isNotEmpty()) {
                                 head(type.label)
-                                g.forEach { a -> AccountLine(a, bal[a.id] ?: 0L, if (isTo) toAccId == a.id else accId == a.id) { pick(a) } }
+                                g.forEach { a -> AccountLine(a, bal[a.id] ?: 0L, if (isTo) toAccId == a.id else accId == a.id, onFavorite = { vm.setFavorite(it.id, !it.favorite) }) { pick(a) } }
                             }
                         }
                     }

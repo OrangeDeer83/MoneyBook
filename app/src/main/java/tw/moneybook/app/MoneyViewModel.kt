@@ -508,6 +508,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 標星號／取消星號（常用帳戶） */
+    fun setFavorite(id: Long, on: Boolean) {
+        update { d -> d.copy(accounts = d.accounts.map { if (it.id == id) it.copy(favorite = on) else it }) }
+    }
+
     /** 有記錄在用的帳戶不能刪，改成隱藏 */
     fun deleteAccount(id: Long) {
         val used = data.txns.any { it.accountId == id || it.toAccountId == id } || data.trades.any { it.accountId == id }

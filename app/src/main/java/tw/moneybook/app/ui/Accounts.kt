@@ -37,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -406,7 +408,7 @@ fun budgetColor(frac: Float): Color {
 
 /** 帳戶選擇列（圖示 + 名字 + 餘額），給對話框使用 */
 @Composable
-fun AccountLine(a: Account, balance: Long, on: Boolean, onClick: () -> Unit) {
+fun AccountLine(a: Account, balance: Long, on: Boolean, onFavorite: ((Account) -> Unit)? = null, onClick: () -> Unit) {
     val cute = LocalCute.current
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
@@ -417,8 +419,30 @@ fun AccountLine(a: Account, balance: Long, on: Boolean, onClick: () -> Unit) {
     ) {
         AccountIcon(a, 32.dp)
         Spacer(Modifier.width(10.dp))
-        Text((if (a.favorite) "★ " else "") + a.name, modifier = Modifier.weight(1f))
+        Text((if (a.favorite && onFavorite == null) "★ " else "") + a.name, modifier = Modifier.weight(1f))
         Text(formatMoney(balance), color = cute.sub, style = MaterialTheme.typography.labelLarge)
+        if (onFavorite != null) FavoriteStar(a.favorite) { onFavorite(a) }
+    }
+}
+
+/** 常用帳戶的星號：實心＝已設為常用，空心＝還不是，點一下就切換 */
+@Composable
+fun FavoriteStar(on: Boolean, onClick: () -> Unit) {
+    val cute = LocalCute.current
+    androidx.compose.material3.IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(36.dp).semantics { contentDescription = if (on) "取消常用帳戶" else "設為常用帳戶" },
+    ) {
+        if (on) {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Filled.Star, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp),
+            )
+        } else {
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides cute.sub.copy(alpha = 0.75f)) {
+                IconGlyph("vec:star", 22.sp)
+            }
+        }
     }
 }
 

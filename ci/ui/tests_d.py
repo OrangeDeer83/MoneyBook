@@ -595,11 +595,11 @@ def t_favorite_first():
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("選擇帳戶")
     fav = d.first(ns, "常用帳戶", True)
-    star = sorted([n for n in ns if n.text == "★ 測試信用卡"], key=lambda n: n.cy)
-    d.check("標了星號的測試信用卡（沒用過）也出現在常用帳戶，名稱前有 ★", bool(star))
+    star = sorted([n for n in ns if n.desc == "取消常用帳戶"], key=lambda n: n.cy)      # 實心星號 = 已設為常用
+    d.check("標了星號的測試信用卡（沒用過）也出現在常用帳戶，右邊是實心星號", bool(star))
     cash_lines = [n for n in ns if n.text == "現金"]
     if fav and star and cash_lines:
-        d.check("星號帳戶排在最前面：常用帳戶標題 → ★ 測試信用卡 → 其他自動補的帳戶（現金…）",
+        d.check("星號帳戶排在最前面：常用帳戶標題 → 實心星號的測試信用卡 → 其他自動補的帳戶（現金…）",
                 fav.cy < star[0].cy < min(n.cy for n in cash_lines), (fav.cy, star[0].cy, min(n.cy for n in cash_lines)))
     d.check("自動補的常用帳戶還在（用過的現金、測試銀行）", len(cash_lines) >= 2 and len([n for n in ns if n.text == "測試銀行"]) >= 2)
 
@@ -629,7 +629,69 @@ def t_favorite_switch():
     d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("選擇帳戶")
-    d.check("測試銀行標了星號：選擇帳戶時名稱前有 ★", d.has(ns, "★ 測試銀行", True))
+    d.check("測試銀行標了星號：選擇帳戶時出現實心星號", d.has(ns, "取消常用帳戶", True))
+
+
+def star_near(ns, y, desc=None):
+    """某個高度附近的星號按鈕（desc 可指定「設為常用帳戶」或「取消常用帳戶」）"""
+    c = [n for n in ns if n.desc in ("設為常用帳戶", "取消常用帳戶") and abs(n.cy - y) < 90 and (desc is None or n.desc == desc)]
+    return min(c, key=lambda n: abs(n.cy - y)) if c else None
+
+
+@case(D, "帳戶分頁：點星號直接設為常用帳戶")
+def t_star_in_account_tab():
+    d.fresh(f.base_seed())
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    bank = d.first(ns, "測試銀行", True)
+    d.check("找得到測試銀行", bank is not None)
+    stars = [n for n in ns if n.desc in ("設為常用帳戶", "取消常用帳戶")]
+    d.check("每個帳戶列都有星號按鈕", len(stars) >= 3, len(stars))
+    st = star_near(ns, bank.cy) if bank else None
+    d.check("測試銀行的星號一開始是空心（設為常用帳戶）", st is not None and st.desc == "設為常用帳戶", st.desc if st else None)
+    if st:
+        d.tap(st)
+        d.time.sleep(1)
+        ns = d.shot("點星號之後")
+        bank = d.first(ns, "測試銀行", True)
+        st = star_near(ns, bank.cy) if bank else None
+        d.check("點了之後變成實心（取消常用帳戶）", st is not None and st.desc == "取消常用帳戶", st.desc if st else None)
+    f.tab("明細")
+    f.open_add()
+    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.wait_text("選擇帳戶", timeout=10)
+    ns = d.shot("記一筆選帳戶")
+    fav = d.first(ns, "常用帳戶", True)
+    solid = sorted([n for n in ns if n.desc == "取消常用帳戶"], key=lambda n: n.cy)
+    d.check("記一筆選帳戶：常用帳戶區有實心星號的測試銀行", bool(fav) and bool(solid) and solid[0].cy > fav.cy)
+
+
+@case(D, "記一筆選帳戶：在清單裡直接點星號設為常用")
+def t_star_in_picker():
+    d.fresh(f.base_seed())
+    f.open_add()
+    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.wait_text("選擇帳戶", timeout=10)
+    ns = d.shot("選擇帳戶")
+    before = len([n for n in ns if n.desc == "取消常用帳戶"])
+    cards = sorted([n for n in ns if n.text == "測試信用卡"], key=lambda n: n.cy)
+    d.check("找得到測試信用卡那一列", bool(cards))
+    st = star_near(ns, cards[-1].cy, "設為常用帳戶") if cards else None
+    d.check("測試信用卡的星號是空心", st is not None)
+    if st:
+        d.tap(st)
+        d.time.sleep(1)
+        ns = d.shot("點星號之後")
+        after = len([n for n in ns if n.desc == "取消常用帳戶"])
+        d.check("點了之後多出實心星號（常用帳戶區和類型分組各一個）", after >= before + 2, (before, after))
+        d.check("點星號不會選走帳戶、對話框還在", d.has(ns, "選擇帳戶", True))
+    d.tap_text("關閉", exact=True)
+    d.time.sleep(0.8)
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    row = d.first(ns, "測試信用卡", True)
+    st = star_near(ns, row.cy) if row else None
+    d.check("帳戶分頁的測試信用卡也是實心星號", st is not None and st.desc == "取消常用帳戶", st.desc if st else None)
 
 
 # ───────────────────────── 記錄時間 ─────────────────────────
