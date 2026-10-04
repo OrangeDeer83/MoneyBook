@@ -47,6 +47,8 @@ data class Account(
     val creditLimit: Long = 0L,
     val statementDay: Int = 0,
     val dueDay: Int = 0,
+    /** 信用卡共用額度：這張卡的額度要跟哪一張「主卡」共用（主卡的帳戶 id），0 = 不共用、用自己的額度 */
+    val sharedLimitOf: Long = 0L,
     /** 手動標了星號的常用帳戶：記一筆選帳戶時固定放在最上面 */
     val favorite: Boolean = false,
 )
@@ -331,6 +333,30 @@ data class CardCycle(
     val nextStatement: LocalDate, // 下次結帳日
     val lastDue: LocalDate?,      // 上期帳單的繳款日
 )
+
+/** 信用卡額度資訊：共用額度時，額度取「主卡」的，已用金額是共用的所有卡加總 */
+data class LimitInfo(val limit: Long, val used: Long, val owner: Account, val members: List<Account>) {
+    val available: Long get() = (limit - used).coerceAtLeast(0L)
+    val shared: Boolean get() = members.size > 1
+}
+
+/** 這張卡的額度主卡：沒共用、主卡不存在／不是信用卡／主卡自己也在共用別人（避免互相指向）時，就是自己 */
+fun AppData.limitOwner(a: Account): Account {
+    if (a.type != AccountType.CARD || a.sharedLimitOf == 0L) return a
+    val o = accMap[a.sharedLimitOf] ?: return a
+    return if (o.id != a.id && o.type == AccountType.CARD && o.sharedLimitOf == 0L) o else a
+}
+
+/** 信用卡的額度資訊；沒有設定額度回傳 null。多張卡呼叫時把 balances() 傳進來，避免重複計算 */
+fun AppData.limitInfo(a: Account, bal: Map<Long, Long> = balances()): LimitInfo? {
+    if (a.type != AccountType.CARD) return null
+    val owner = limitOwner(a)
+    if (owner.creditLimit <= 0L) return null
+    val members = accounts.filter { it.type == AccountType.CARD && limitOwner(it).id == owner.id }
+    // 某張卡多繳（餘額為正）不能抵銷其他卡的已用
+    val used = members.sumOf { (-(bal[it.id] ?: 0L)).coerceAtLeast(0L) }
+    return LimitInfo(owner.creditLimit, used, owner, members)
+}
 
 private fun dayIn(m: YearMonth, d: Int): LocalDate = m.atDay(d.coerceIn(1, m.lengthOfMonth()))
 
