@@ -521,9 +521,9 @@ fun AccountDialog(
                 if (useBadge) {
                     // 銀行、行動支付的預設：點一下就帶入簡稱和雙色漸層（名稱不會被改）
                     fun usePreset(p: BadgePreset) { badge = p.badge; gradFrom = p.from; gradTo = p.to }
-                    Text("銀行", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    Text("常見銀行", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     PresetRow(BadgePresets.banks) { usePreset(it) }
-                    Text("行動支付", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    Text("常見行動支付", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     PresetRow(BadgePresets.pays) { usePreset(it) }
                     OutlinedTextField(
                         badge, { badge = it.take(4) },
