@@ -652,18 +652,12 @@ def tap_wheel_to_type():
 
 
 def type_time(hh, mm):
-    """鍵盤輸入的時間：小時輸入滿 2 位數會自動跳到分鐘。輸入太快會吃掉字，所以分兩段、中間等一下，畫面不對就重來"""
-    for _ in range(3):
-        if d.edits():
-            d.tap(d.edits()[0])
-        d.select_all_delete()
-        d.type_text(hh)
-        d.time.sleep(1.2)
-        d.type_text(mm)
-        d.time.sleep(1.0)
-        ns = d.nodes()
-        if d.has(ns, hh, True) and d.has(ns, mm, True):
-            break
+    """鍵盤輸入的時間：一出現小時就已經選取，直接打；小時輸入滿 2 位數會自動跳到分鐘（也是選取狀態）。
+    輸入太快會吃掉字，所以分兩段、中間等一下。畫面上同時只有一格是輸入框，不能用重試（重試會打到分鐘那格）"""
+    d.type_text(hh)
+    d.time.sleep(1.2)
+    d.type_text(mm)
+    d.time.sleep(1.0)
 
 
 @case(D, "記一筆可以設定時間並在編輯時看得到")
