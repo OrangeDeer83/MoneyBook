@@ -105,6 +105,7 @@ fun EditScreen(
     presetAmount: Long? = null,
     tplMode: Boolean = false,
     tplId: Long? = null,
+    presetDay: Long? = null,
     onClose: () -> Unit,
 ) {
     val d = vm.data
@@ -132,7 +133,7 @@ fun EditScreen(
         )
     }
     var toAccId by rememberSaveable { mutableStateOf(orig?.toAccountId ?: presetTo ?: accs.getOrNull(1)?.id) }
-    var day by rememberSaveable { mutableLongStateOf(orig?.day ?: LocalDate.now().toEpochDay()) }
+    var day by rememberSaveable { mutableLongStateOf(orig?.day ?: presetDay ?: LocalDate.now().toEpochDay()) }
     // 時間：新增預設現在；編輯舊記錄沒有時間就是「未設定」（-1）
     var timeMin by rememberSaveable {
         mutableIntStateOf(

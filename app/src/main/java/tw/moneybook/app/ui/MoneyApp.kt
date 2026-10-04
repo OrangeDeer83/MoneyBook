@@ -61,6 +61,8 @@ sealed interface Route {
         val presetAmount: Long? = null,
         val tplMode: Boolean = false,
         val tplId: Long? = null,
+        /** 預設日期（日曆選了日期時，記一筆就預設那一天） */
+        val presetDay: Long? = null,
     ) : Route
     data class Page(val name: String) : Route
 }
@@ -70,21 +72,22 @@ private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
     save = { list ->
         ArrayList(list.map { r ->
             when (r) {
-                is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}"
+                is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}"
                 is Route.Page -> "P|${r.name}"
             }
         })
     },
     restore = { saved ->
         saved.mapNotNull { s ->
-            val p = s.split("|", limit = 6)
+            val p = s.split("|", limit = 7)
             when (p.firstOrNull()) {
-                "E" -> if (p.size == 6) Route.Edit(
+                "E" -> if (p.size >= 6) Route.Edit(
                     id = p[1].toLongOrNull(),
                     presetTo = p[2].toLongOrNull(),
                     presetAmount = p[3].toLongOrNull(),
                     tplMode = p[4] == "true",
                     tplId = p[5].toLongOrNull(),
+                    presetDay = p.getOrNull(6)?.toLongOrNull(),
                 ) else null
                 "P" -> if (p.size >= 2) Route.Page(s.substring(2)) else null
                 else -> null
@@ -161,12 +164,13 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 vm = vm,
                 tab = tab,
                 onTab = { tab = it },
-                onAdd = { push(Route.Edit(null)) },
+                // 在日曆上選了日期再按記一筆，就預設那一天
+                onAdd = { push(Route.Edit(null, presetDay = if (tab == 0 && vm.homeCalendar) vm.calSelected else null)) },
                 onEdit = { push(Route.Edit(it)) },
                 // 「我的 → 帳戶管理」直接切到帳戶分頁
                 open = { if (it == "accounts") { tab = 1 } else { push(Route.Page(it)) } },
             )
-            is Route.Edit -> EditScreen(vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, onClose = { pop() })
+            is Route.Edit -> EditScreen(vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, onClose = { pop() })
             is Route.Page -> when (top.name) {
                 "books" -> BooksScreen(vm) { pop() }
                 "categories" -> CategoriesScreen(vm) { pop() }
