@@ -26,7 +26,7 @@ def eday(d):
 
 
 class Seed:
-    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0, extra_books=0, invest=False, hidden_account=False, loan=False, fav_card=False, card2=False, card3=False):
+    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0, extra_books=0, invest=False, hidden_account=False, loan=False, fav_card=False, card2=False, card3=False, card2_shared=False):
         self.today = today
         self.dark = dark
         self.mascot = mascot
@@ -45,6 +45,7 @@ class Seed:
         self.fav_card = fav_card
         self.card2 = card2
         self.card3 = card3
+        self.card2_shared = card2_shared
         self.trades = []
         self.prices = []
 
@@ -127,6 +128,8 @@ class Seed:
             accounts.append(dict(id=610, name="隱藏帳戶", emoji="img:acc_bank", type="BANK", initial=123, order=7, hidden=True, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
         if self.card2:
             accounts.append(dict(id=CARD2, name="第二張卡", emoji="img:acc_card", type="CARD", initial=0, order=8, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
+        if self.card2 and self.card2_shared:
+            accounts[-1]["sharedLimitOf"] = CARD      # 第二張卡一開始就和測試信用卡共用額度
         if self.card3:
             accounts.append(dict(id=CARD3, name="第三張卡", emoji="img:acc_card", type="CARD", initial=0, order=9, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
         if self.fav_card:

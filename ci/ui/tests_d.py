@@ -1024,3 +1024,110 @@ def t_shared_limit_multi():
     open_account("第三張卡")
     ns = d.shot("第三張卡")
     d.check("第三張卡不再共用：沒有額度資訊（它自己沒設額度）", not d.has(ns, "額度 $"), [n.text for n in ns if "額度" in n.text])
+
+
+def ab_seed(**kw):
+    """測試信用卡（額度 100,000、花 30,000）和第二張卡（花 20,000）已經共用額度"""
+    s = empty_seed(card2=True, card2_shared=True, **kw)
+    s.expense(-1, 30000, S.C_SHOP, acc=S.CARD, note="a")
+    s.expense(-1, 20000, S.C_SHOP, acc=S.CARD2, note="b")
+    return s
+
+
+def chip_in_row(ns, label, anchor):
+    """和 anchor 同一排的 label（例如對話框裡的帳戶類型按鈕）"""
+    a = d.first(ns, anchor, True)
+    c = [n for n in ns if n.text == label and a is not None and abs(n.cy - a.cy) < 25]
+    return c[0] if c else None
+
+
+@case(D, "新增信用卡時可以選已經共用的組")
+def t_new_card_join_group():
+    d.fresh(ab_seed().json())
+    acc_tab()
+    d.tap_text("新增帳戶", exact=False)
+    d.wait_text("新增帳戶", timeout=10)
+    d.fill(d.edits()[0], "NewC")
+    d.hide_ime()
+    ns = d.nodes()
+    t = chip_in_row(ns, "信用卡", "電子票證")
+    d.check("找得到帳戶類型的「信用卡」", t is not None)
+    if t:
+        d.tap(t)
+        d.time.sleep(0.8)
+    scroll_to("和其他信用卡共用額度")
+    ns = d.shot("新增信用卡的共用額度選項")
+    grp = [n for n in ns if "測試信用卡" in n.text and "第二張卡" in n.text]
+    d.check("可以直接選「測試信用卡＋第二張卡」這個共用組", bool(grp), [n.text for n in ns if n.text][:40])
+    if grp:
+        d.tap(grp[0])
+        d.time.sleep(0.8)
+        d.tap_text("儲存", exact=True)
+        d.time.sleep(1.2)
+        open_account("NewC")
+        ns = d.shot("新卡的明細")
+        d.check("新卡加入後顯示整組共用：已用 $50,000・可用 $50,000・額度 $100,000",
+                d.has(ns, "已用 $50,000・可用 $50,000・額度 $100,000", True), [n.text for n in ns if "已用" in n.text])
+
+
+@case(D, "離開共用之後可以馬上重新選回原本的卡")
+def t_leave_then_reselect():
+    d.fresh(ab_seed().json())
+    # (1) 副卡按「離開共用」，還沒儲存就應該能再選回原本的主卡
+    open_account("第二張卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    found = scroll_to("離開共用")
+    d.check("副卡的編輯畫面有「離開共用」", found)
+    d.tap_text("離開共用", exact=True)
+    d.time.sleep(0.8)
+    scroll_to("可以多選")
+    ns = d.shot("按離開共用之後（還沒儲存）")
+    d.check("按了離開共用之後，原本的主卡「測試信用卡」馬上可以再選", d.has(ns, "測試信用卡", True), [n.text for n in ns if n.text][:40])
+    d.tap_text("測試信用卡", exact=True)
+    d.time.sleep(0.8)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("重新選回測試信用卡並儲存")
+    d.check("仍然是兩張共用：已用 $50,000・可用 $50,000・額度 $100,000",
+            d.has(ns, "已用 $50,000・可用 $50,000・額度 $100,000", True), [n.text for n in ns if "已用" in n.text])
+    # (2) 主卡取消第二張卡、儲存後立刻再編輯，第二張卡要可以再選
+    d.tap_back()
+    to_main()
+    open_account("測試信用卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    scroll_to("可以多選")
+    d.tap_text("第二張卡", exact=True)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    scroll_to("可以多選")
+    ns = d.shot("取消共用、儲存後再編輯主卡")
+    d.check("取消之後馬上再編輯，第二張卡仍然在清單裡可以選", d.has(ns, "第二張卡", True))
+    d.tap_text("第二張卡", exact=True)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("再選回第二張卡")
+    d.check("再次共用：已用 $50,000・可用 $50,000・額度 $100,000",
+            d.has(ns, "已用 $50,000・可用 $50,000・額度 $100,000", True), [n.text for n in ns if "已用" in n.text])
+
+
+@case(D, "帳戶分頁最底下的說明不會被記一筆按鈕擋住")
+def t_acc_bottom_space():
+    d.fresh(S.base(f.today(), extra_accounts=12).json())
+    acc_tab()
+    for _ in range(8):
+        if d.has(d.nodes(), "點帳戶可以看它的明細", False):
+            break
+        d.swipe(540, 1700, 540, 700, 500)
+        d.time.sleep(0.6)
+    d.swipe(540, 1700, 540, 700, 500)       # 再多滑一次，確保已經到最底
+    d.time.sleep(0.8)
+    ns = d.shot("帳戶分頁捲到最底")
+    hint = d.first(ns, "點帳戶可以看它的明細", False)
+    fab = d.first(ns, "記一筆", True)
+    d.check("找得到最底下的說明和記一筆按鈕", hint is not None and fab is not None)
+    if hint and fab:
+        d.check("說明文字在記一筆按鈕上方，不會被擋住", hint.y2 <= fab.y1 + 4, (hint.y2, fab.y1))
