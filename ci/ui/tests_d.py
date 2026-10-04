@@ -682,3 +682,28 @@ def t_txn_time_unset():
     ns = d.shot("編輯舊記錄")
     d.check("時間按鈕顯示「未設定時間」", d.has(ns, "未設定時間", True))
 
+
+@case(D, "帳戶明細每一筆都顯示做完之後的餘額")
+def t_running_balance():
+    # 測試銀行初始 $50,000。昨天（沒有時間）支出 300；今天 10:00 支出 100、11:40 收入 1,000、15:00 支出 200
+    s = empty_seed()
+    s.expense(-1, 300, S.C_FOOD, acc=S.BANK, note="y")
+    s.expense(0, 100, S.C_FOOD, acc=S.BANK, note="a", time=600)
+    s.income(0, 1000, S.C_SALARY, acc=S.BANK, note="b", time=700)
+    s.expense(0, 200, S.C_FOOD, acc=S.BANK, note="c", time=900)
+    d.fresh(s.json())
+    open_account("測試銀行")
+    ns = d.shot("測試銀行的明細")
+    want = ["餘額 $50,400", "餘額 $50,600", "餘額 $49,600", "餘額 $49,700"]   # 由上到下（新到舊）
+    nodes = [d.first(ns, w, True) for w in want]
+    d.check("每一筆下面都有「餘額」：15:00 之後 $50,400、11:40 之後 $50,600、10:00 之後 $49,600、昨天之後 $49,700",
+            all(nodes), [n.text for n in ns if n.text.startswith("餘額")])
+    if all(nodes):
+        ys = [n.cy for n in nodes]
+        d.check("同一天依時間排：15:00 在最上面，再來 11:40、10:00，最後是昨天", ys == sorted(ys), ys)
+    d.check("最新一筆的餘額等於帳戶目前的餘額（標題 $50,400）", d.has(ns, "$50,400", True))
+    amt = d.first(ns, "-$200", True)
+    bal = d.first(ns, "餘額 $50,400", True)
+    d.check("餘額就在金額的正下方（一大一小，列不會變高）", bool(amt and bal) and bal.cy > amt.cy and abs(bal.x2 - amt.x2) < 60 and bal.cy - amt.cy < 80,
+            (amt and (amt.cx, amt.cy), bal and (bal.cx, bal.cy)))
+
