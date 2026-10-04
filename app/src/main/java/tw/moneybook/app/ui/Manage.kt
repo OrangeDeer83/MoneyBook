@@ -332,8 +332,8 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     LazyColumn(
         state = vm.accListState,
         modifier = Modifier.fillMaxSize(),
-        // 底部多留一點空間：記一筆的 + 按鈕會凸出來蓋到清單最底下
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 100.dp),
+        // 底部多留一點空間：記一筆的 + 按鈕會凸出來蓋到清單最底下（約 20dp），再留一點縫隙
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 48.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
@@ -413,8 +413,8 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                                         Text("可用 ${formatMoney(info.available)}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                                     }
                                 }
-                                FavoriteStar(a.favorite) { vm.setFavorite(a.id, !a.favorite) }
                                 Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
+                                FavoriteStar(a.favorite) { vm.setFavorite(a.id, !a.favorite) }
                                 if (editing) DragHandle(handle)
                             }
                         }

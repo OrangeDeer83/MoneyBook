@@ -649,6 +649,8 @@ def t_star_in_account_tab():
     d.check("每個帳戶列都有星號按鈕", len(stars) >= 3, len(stars))
     st = star_near(ns, bank.cy) if bank else None
     d.check("測試銀行的星號一開始是空心（設為常用帳戶）", st is not None and st.desc == "設為常用帳戶", st.desc if st else None)
+    bal = [n for n in ns if bank and (n.text.startswith("$") or n.text.startswith("-$")) and abs(n.cy - bank.cy) < 70 and n.cx > bank.cx]
+    d.check("星號在餘額的右邊（餘額在前、星號在後）", bool(bal) and st is not None and st.cx > bal[0].cx, (st.cx if st else None, bal[0].cx if bal else None))
     if st:
         d.tap(st)
         d.time.sleep(1)
@@ -1130,4 +1132,6 @@ def t_acc_bottom_space():
     fab = d.first(ns, "記一筆", True)
     d.check("找得到最底下的說明和記一筆按鈕", hint is not None and fab is not None)
     if hint and fab:
-        d.check("說明文字在記一筆按鈕上方，而且至少留 50 像素的空隙（小螢幕、說明折成兩行時才不會被擋住）", hint.y2 + 50 <= fab.y1, (hint.y2, fab.y1))
+        gap = fab.y1 - hint.y2
+        d.check("說明文字在記一筆按鈕上方，至少留 50 像素的空隙（小螢幕、說明折成兩行時才不會被擋住）", gap >= 50, gap)
+        d.check("空隙也不能太大（最多 160 像素），不然底下一大塊空白", gap <= 160, gap)
