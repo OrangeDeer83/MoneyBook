@@ -50,12 +50,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
+import tw.moneybook.app.BadgePreset
+import tw.moneybook.app.BadgePresets
 import tw.moneybook.app.Book
 import tw.moneybook.app.Category
 import tw.moneybook.app.MoneyViewModel
@@ -449,6 +452,9 @@ fun AccountDialog(
     var useBadge by remember { mutableStateOf((acc?.badge ?: "").isNotBlank()) }
     var badge by remember { mutableStateOf(acc?.badge ?: "") }
     var badgeCol by remember { mutableStateOf(acc?.badgeColor ?: 0) }
+    // 雙色漸層的起點／終點（0 = 沒有漸層，用 badgeCol 的單色）
+    var gradFrom by remember { mutableStateOf(acc?.badgeFrom ?: 0L) }
+    var gradTo by remember { mutableStateOf(acc?.badgeTo ?: 0L) }
     var initial by remember { mutableStateOf(acc?.initial?.takeIf { it != 0L }?.toString() ?: "") }
     var hidden by remember { mutableStateOf(acc?.hidden ?: false) }
     var favorite by remember { mutableStateOf(acc?.favorite ?: false) }
@@ -467,8 +473,10 @@ fun AccountDialog(
         order = acc?.order ?: 0,
         hidden = hidden,
         favorite = favorite,
-        badge = if (useBadge) badge.trim().take(2) else "",
+        badge = if (useBadge) badge.trim().take(4) else "",
         badgeColor = badgeCol,
+        badgeFrom = if (useBadge) gradFrom else 0L,
+        badgeTo = if (useBadge) gradTo else 0L,
         creditLimit = if (type == AccountType.CARD) limit.toLongOrNull() ?: 0L else 0L,
         statementDay = if (type == AccountType.CARD) (stmt.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
         dueDay = if (type == AccountType.CARD) (due.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
@@ -506,14 +514,39 @@ fun AccountDialog(
                     })
                 }
                 if (useBadge) {
+                    // 銀行、行動支付的預設：點一下就帶入簡稱和雙色漸層（名稱不會被改）
+                    fun usePreset(p: BadgePreset) { badge = p.badge; gradFrom = p.from; gradTo = p.to }
+                    Text("銀行", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    PresetRow(BadgePresets.banks) { usePreset(it) }
+                    Text("行動支付", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    PresetRow(BadgePresets.pays) { usePreset(it) }
                     OutlinedTextField(
-                        badge, { badge = it.take(2) },
-                        label = { Text("徽章文字（最多 2 個字）") }, singleLine = true,
+                        badge, { badge = it.take(4) },
+                        label = { Text("徽章文字（最多 4 個字）") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    ColorDots(BadgeColors, badgeCol) { badgeCol = it }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("雙色漸層", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = gradFrom != 0L,
+                            onCheckedChange = { on ->
+                                if (on) {
+                                    val (f, t) = BadgePresets.autoGradient(badgeColor(badgeCol).toArgb().toLong() and 0xFFFFFFFFL)
+                                    gradFrom = f; gradTo = t
+                                } else { gradFrom = 0L; gradTo = 0L }
+                            },
+                        )
+                    }
+                    Text("自選顏色：", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    ColorDots(BadgeColors, if (gradFrom == 0L) badgeCol else -1) { i ->
+                        badgeCol = i
+                        if (gradFrom != 0L) {
+                            val (f, t) = BadgePresets.autoGradient(badgeColor(i).toArgb().toLong() and 0xFFFFFFFFL)
+                            gradFrom = f; gradTo = t
+                        }
+                    }
                     Text(
-                        "例如「國泰」「永豐」「悠遊」，再選一個顏色。",
+                        "可以點上面的銀行或行動支付，也可以自己打字（例如「悠遊」）再選顏色；開「雙色漸層」會用你選的顏色自動配漸層。",
                         style = MaterialTheme.typography.labelSmall, color = cute.sub,
                     )
                 } else {

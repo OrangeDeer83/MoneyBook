@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -61,18 +64,22 @@ import java.time.temporal.ChronoUnit
 @Composable
 fun AccountIcon(a: Account, size: Dp = 40.dp) {
     if (a.badge.isNotBlank()) {
-        val bg = badgeColor(a.badgeColor)
-        val fg = if (bg.luminance() > 0.55f) Color(0xFF2B2B2B) else Color.White
-        val text = a.badge.trim().take(2)
+        // 有雙色漸層就用漸層（左上到右下），沒有就用單色
+        val grad = a.badgeFrom != 0L && a.badgeTo != 0L
+        val c1 = if (grad) Color(a.badgeFrom.toInt()) else badgeColor(a.badgeColor)
+        val c2 = if (grad) Color(a.badgeTo.toInt()) else c1
+        val fg = if (androidx.compose.ui.graphics.lerp(c1, c2, 0.5f).luminance() > 0.55f) Color(0xFF2B2B2B) else Color.White
+        val text = a.badge.trim().take(4)
         Box(
-            Modifier.size(size).clip(RoundedCornerShape(size * 0.32f)).background(bg),
+            Modifier.size(size).clip(RoundedCornerShape(size * 0.32f))
+                .background(if (grad) Brush.linearGradient(listOf(c1, c2)) else SolidColor(c1)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text,
                 color = fg,
                 fontWeight = FontWeight.Bold,
-                fontSize = (size.value * if (text.length >= 2) 0.34f else 0.46f).sp,
+                fontSize = (size.value * when (text.length) { 1 -> 0.46f; 2 -> 0.34f; 3 -> 0.27f; else -> 0.24f }).sp,
                 maxLines = 1,
             )
         }
@@ -407,6 +414,27 @@ fun AccountLine(a: Account, balance: Long, on: Boolean, onClick: () -> Unit) {
 }
 
 /** 顏色圓點列 */
+/** 一排銀行／行動支付預設徽章（可左右滑），點一個就回報 */
+@Composable
+fun PresetRow(presets: List<tw.moneybook.app.BadgePreset>, onPick: (tw.moneybook.app.BadgePreset) -> Unit) {
+    val cute = LocalCute.current
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        presets.forEach { p ->
+            Column(
+                Modifier.width(60.dp).clip(RoundedCornerShape(12.dp)).clickable { onPick(p) }.padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                AccountIcon(Account(0L, p.name, "", AccountType.BANK, 0L, 0, badge = p.badge, badgeFrom = p.from, badgeTo = p.to), 40.dp)
+                Text(p.name, style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+            }
+        }
+    }
+}
+
 @Composable
 fun ColorDots(colors: List<Color>, selected: Int, onPick: (Int) -> Unit) {
     androidx.compose.foundation.layout.FlowRow(
