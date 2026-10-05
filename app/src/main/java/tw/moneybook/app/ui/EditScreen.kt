@@ -126,7 +126,8 @@ fun EditScreen(
     val cute = LocalCute.current
     val context = LocalContext.current
     val orig = remember(editId) { editId?.let { id -> d.txns.firstOrNull { it.id == id } } }
-    val accs = d.visibleAccounts
+    // 常用記帳的金額是台幣整數，不能選外幣帳戶
+    val accs = d.visibleAccounts.filter { !tplMode || !it.isForeign }
     val tpl = remember(tplId) { tplId?.let { id -> d.templates.firstOrNull { it.id == id } } }
     var tplName by rememberSaveable { mutableStateOf(tpl?.name ?: "") }
     var showTpl by remember { mutableStateOf(false) }

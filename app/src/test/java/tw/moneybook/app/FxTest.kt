@@ -185,6 +185,32 @@ class FxTest {
     }
 
     @Test
+    fun csvCarriesTheForeignAmountAndCurrency() {
+        val d = data(
+            txn(1, TxType.TRANSFER, 31_500, 1, 2, fx = 100_000, d = day - 3),
+            txn(2, TxType.EXPENSE, 394, 2, fx = 1_250, d = day - 1),
+            txn(3, TxType.EXPENSE, 50, 1, d = day),
+        )
+        val csv = String(CsvIO.export(d), Charsets.UTF_8)
+        assertTrue(csv.lines().first().endsWith("外幣金額,外幣幣別"))
+        assertTrue(csv.contains("1000.00,USD"))
+        assertTrue(csv.contains("12.50,USD"))
+        val (back, n) = CsvIO.import(Defaults.create(), csv)
+        assertEquals(3, n)
+        val usdAcc = back.accounts.single { it.name == "美元帳戶" }      // 匯入時自動建立成外幣帳戶
+        assertEquals(AccountType.FOREIGN, usdAcc.type)
+        assertEquals("USD", usdAcc.currency)
+        assertEquals(listOf(100_000L, 1_250L), back.txns.filter { it.fxAmount > 0 }.sortedBy { it.day }.map { it.fxAmount })
+        assertEquals(98_750L, back.balances()[usdAcc.id])                 // US$987.50
+        assertEquals(0L, back.txns.single { it.amount == 50L }.fxAmount)
+        // 沒有外幣欄位的舊 CSV 照常匯入
+        val old = "日期,類型,金額,分類,帳戶
+2026-10-01,支出,100,餐飲,現金
+"
+        assertEquals(1, CsvIO.import(Defaults.create(), old).second)
+    }
+
+    @Test
     fun foreignDataSurvivesSaveAndOldBackupsStillLoad() {
         val d = data(txn(1, TxType.TRANSFER, 31_500, 1, 2, fx = 100_000), rates = listOf(FxRate("USD", 31.8, day)))
         val back = Codec.decode(Codec.encode(d))

@@ -413,7 +413,7 @@ object Calc {
 
 /** CSV 匯出與匯入 */
 object CsvIO {
-    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間")
+    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間", "外幣金額", "外幣幣別")
 
     private fun esc(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
@@ -434,6 +434,12 @@ object CsvIO {
         t.type == TxType.EXPENSE -> "支出"
         t.type == TxType.INCOME -> "收入"
         else -> "轉帳"
+    }
+
+    private fun fxCells(d: AppData, t: Txn): Array<String> {
+        if (t.fxAmount <= 0L) return arrayOf("", "")
+        val fa = listOfNotNull(t.accountId, t.toAccountId).mapNotNull { d.accMap[it] }.firstOrNull { it.isForeign } ?: return arrayOf("", "")
+        return arrayOf(fxPlain(t.fxAmount, fa.cur.decimals), fa.currency)
     }
 
     fun export(d: AppData): ByteArray {
@@ -462,6 +468,8 @@ object CsvIO {
                 txt(t.note),
                 txt(t.tags.joinToString(" ")),
                 formatTime(t.time),
+                // 動到外幣帳戶的記錄：外幣金額（純數字、小數位照幣別）和幣別；金額欄位仍是約當台幣
+                *fxCells(d, t),
             )
             sb.append(row.joinToString(",") { esc(it) }).append('\n')
         }
@@ -521,6 +529,8 @@ object CsvIO {
         val cDisc = col("優惠", "折扣")
         val cReimb = col("報銷")
         val cReimbAmt = col("報銷金額")
+        val cFx = col("外幣金額")
+        val cFxCur = col("外幣幣別")
         if (cDate < 0 || cAmt < 0) return Pair(d0, 0)
 
         var d = d0
@@ -530,10 +540,11 @@ object CsvIO {
         val bookId = d.currentBook.id
         val defaultAcc = d.visibleAccounts.firstOrNull()?.id ?: accs.firstOrNull()?.id
 
-        fun findAcc(name: String): Long? {
+        fun findAcc(name: String, currency: String = ""): Long? {
             if (name.isBlank()) return defaultAcc
             accs.firstOrNull { it.name == name }?.let { return it.id }
-            val a = Account(nextId++, name, "img:acc_purse", AccountType.OTHER, 0L, accs.size)
+            val a = if (currency.isEmpty()) Account(nextId++, name, "img:acc_purse", AccountType.OTHER, 0L, accs.size)
+            else Account(nextId++, name, AccountType.FOREIGN.emoji, AccountType.FOREIGN, 0L, accs.size, currency = currency)
             accs.add(a)
             return a.id
         }
@@ -576,9 +587,16 @@ object CsvIO {
                 else -> TxType.EXPENSE
             }
             val amount = kotlin.math.abs(Math.round(amtD))
-            if (amount == 0L) continue
-            val accId = findAcc(get(cAcc))
-            val toId = if (type == TxType.TRANSFER) findAcc(get(cTo)) else null
+            val fxCur = get(cFxCur).trim().uppercase().takeIf { Currencies.validCode(it) } ?: ""
+            val fxRaw = if (fxCur.isNotEmpty()) parseFx(get(cFx), Currencies.of(fxCur).decimals) ?: 0L else 0L
+            if (amount == 0L && fxRaw <= 0L) continue
+            // 外幣在哪一邊：消費／收入是這個帳戶；轉帳看轉出帳戶本來就是外幣帳戶，不是的話就是轉入那邊
+            val fromName = get(cAcc)
+            val fxOnFrom = fxRaw > 0L && (type != TxType.TRANSFER || accs.firstOrNull { it.name == fromName }?.isForeign == true)
+            val accId = findAcc(fromName, if (fxOnFrom) fxCur else "")
+            val toId = if (type == TxType.TRANSFER) findAcc(get(cTo), if (fxRaw > 0L && !fxOnFrom) fxCur else "") else null
+            val fxAcc = accs.firstOrNull { it.id == (if (fxOnFrom) accId else toId) }
+            val fxVal = if (fxRaw > 0L && fxAcc != null && fxAcc.isForeign && fxAcc.currency == fxCur) fxRaw else 0L
             val catId = if (type == TxType.TRANSFER || isAdjust) null else findCat(type, get(cCat), get(cSub))
             added.add(
                 Txn(
@@ -597,6 +615,7 @@ object CsvIO {
                     discount = if (type == TxType.EXPENSE) get(cDisc).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L else 0L,
                     reimb = if (type == TxType.EXPENSE && !isAdjust) when (get(cReimb)) { "待報銷" -> 1; "已報銷" -> 2; else -> 0 } else 0,
                     adjust = isAdjust,
+                    fxAmount = fxVal,
                 ).let { t ->
                     if (t.reimb == 0) t
                     else t.copy(reimbAmount = get(cReimbAmt).replace(",", "").toDoubleOrNull()?.let { Math.round(it) }?.coerceIn(0L, t.paid) ?: t.paid)

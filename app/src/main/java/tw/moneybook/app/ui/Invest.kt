@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
+import tw.moneybook.app.isForeign
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.Markets
 import tw.moneybook.app.Position
@@ -330,7 +331,7 @@ private fun TradeDialog(
     var fee by remember { mutableStateOf("") }
     var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
     var datePick by remember { mutableStateOf(false) }
-    val cashAccs = d.visibleAccounts.filter { it.id != a.id && it.type != AccountType.INVEST }
+    val cashAccs = d.visibleAccounts.filter { it.id != a.id && it.type != AccountType.INVEST && !it.isForeign }
     // null＝不連動，只記買賣
     var cash by remember { mutableStateOf(cashAccs.firstOrNull()?.id) }
 

@@ -57,6 +57,7 @@ import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.ReimbCodec
 import tw.moneybook.app.ReimbItem
 import tw.moneybook.app.ReimbPay
+import tw.moneybook.app.isForeign
 import tw.moneybook.app.ReimbReceipt
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
@@ -474,7 +475,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     val claims = claimsOf(d.bookTxns).filter { !it.item.closed && it.who == who }.sortedWith(compareBy({ it.txn.day }, { it.txn.id }))
     val totalRemaining = claims.sumOf { it.item.remaining }
     var amountText by remember { mutableStateOf(totalRemaining.toString()) }
-    var accId by remember { mutableStateOf(d.visibleAccounts.firstOrNull()?.id) }
+    var accId by remember { mutableStateOf(d.visibleAccounts.firstOrNull { !it.isForeign }?.id) }
     var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
     var timeMin by remember { mutableStateOf(LocalTime.now().let { it.hour * 60 + it.minute }) }
     var pickDate by remember { mutableStateOf(false) }
@@ -529,7 +530,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                 }
                 Text("存進哪個帳戶", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    d.visibleAccounts.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
+                    d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
@@ -713,7 +714,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     CompactField(amt, { v -> amt = v.filter { ch -> ch.isDigit() }.take(9) }, "金額", Modifier.fillMaxWidth(), number = true, prefix = "$")
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        d.visibleAccounts.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
+                        d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
