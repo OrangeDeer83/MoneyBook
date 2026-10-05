@@ -722,10 +722,15 @@ def tap_wheel_to_type():
 def type_time(hh, mm):
     """鍵盤輸入的時間：一出現小時就已經選取，直接打；小時輸入滿 2 位數會自動跳到分鐘（也是選取狀態）。
     輸入太快會吃掉字，所以分兩段、中間等一下。畫面上同時只有一格是輸入框，不能用重試（重試會打到分鐘那格）"""
-    d.type_text(hh)
-    d.time.sleep(1.2)
-    d.type_text(mm)
-    d.time.sleep(1.0)
+    # 一個數字一個數字打、中間等一下：adb 一次送兩個字太快，第二個字會被套在還沒更新的舊內容上（真人打不出這個速度）
+    for ch in hh:
+        d.type_text(ch)
+        d.time.sleep(0.5)
+    d.time.sleep(0.8)
+    for ch in mm:
+        d.type_text(ch)
+        d.time.sleep(0.5)
+    d.time.sleep(0.6)
 
 
 @case(D, "記一筆可以設定時間並在編輯時看得到")
