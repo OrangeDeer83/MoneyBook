@@ -208,6 +208,50 @@ class FxTest {
         assertEquals(1, CsvIO.import(Defaults.create(), old).second)
     }
 
+    private val spend = txn(1, TxType.EXPENSE, 646, 2, fx = 2_050)        // 用美元帳戶花 US$20.50，約當 $646
+
+    @Test
+    fun reimbursementReceivedInForeignCurrencyCreditsTheForeignAccount() {
+        // 對方還了 US$20.50，存回美元帳戶：美元餘額回到 0，台幣帳戶不動
+        val full = spend.withItems(listOf(ReimbItem("A", 646, listOf(ReimbPay(day, 2L, 646, -1, 2_050)), true)))
+        val d = data(full)
+        assertEquals(0L, d.balances()[2L])
+        assertEquals(100_000L, d.balances()[1L])
+        assertEquals(0L, full.reimbOutstanding)
+        assertEquals(0L, full.spent)                                    // 報銷收齊，這筆不算自己的支出
+        assertEquals(2_050L, d.runningBalances(2L)["p1_0"]?.minus(-2_050L))    // 花 -2,050 之後，收款加回 2,050
+        // 對方還台幣 $646，存進台幣帳戶：台幣帳戶增加，美元帳戶只扣花掉的
+        val inTwd = spend.withItems(listOf(ReimbItem("A", 646, listOf(ReimbPay(day, 1L, 646)), true)))
+        val d2 = data(inTwd)
+        assertEquals(100_646L, d2.balances()[1L])
+        assertEquals(-2_050L, d2.balances()[2L])
+    }
+
+    @Test
+    fun convertsBetweenTwdAndForeignAtTheSpendingRate() {
+        assertEquals(2_050L, spend.twdToFxAt(646))
+        assertEquals(646L, spend.fxToTwdAt(2_050))
+        assertEquals(315L, spend.fxToTwdAt(1_000))                       // US$10.00 約 $315
+        assertEquals(1_050L, spend.twdToFxAt(331))
+        assertEquals(0L, txn(2, TxType.EXPENSE, 100, 1).twdToFxAt(100))   // 台幣消費沒有外幣
+        assertEquals(0L, txn(2, TxType.EXPENSE, 100, 1).fxToTwdAt(100))
+        assertEquals("USD", data(spend).fxAccountOf(spend)!!.currency)
+        assertNull(data(txn(2, TxType.EXPENSE, 100, 1)).fxAccountOf(txn(2, TxType.EXPENSE, 100, 1)))
+    }
+
+    @Test
+    fun foreignReimbursementReceiptSurvivesSave() {
+        val t = spend.withItems(listOf(ReimbItem("A", 646, listOf(ReimbPay(day, 2L, 315, 600, 1_000)), false)))
+        val back = Codec.decode(Codec.encode(data(t))).txns.single().items.single().pays.single()
+        assertEquals(1_000L, back.fxAmount)
+        assertEquals(315L, back.amount)
+        // 舊備份的收款沒有 fxAmount
+        val root = org.json.JSONObject(Codec.encode(data(t)))
+        val arr = root.getJSONArray("txns").getJSONObject(0).getJSONArray("reimbItems").getJSONObject(0).getJSONArray("pays")
+        for (i in 0 until arr.length()) arr.getJSONObject(i).remove("fxAmount")
+        assertEquals(0L, Codec.decode(root.toString()).txns.single().items.single().pays.single().fxAmount)
+    }
+
     @Test
     fun foreignDataSurvivesSaveAndOldBackupsStillLoad() {
         val d = data(txn(1, TxType.TRANSFER, 31_500, 1, 2, fx = 100_000), rates = listOf(FxRate("USD", 31.8, day)))

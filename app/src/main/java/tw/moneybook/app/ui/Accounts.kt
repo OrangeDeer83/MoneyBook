@@ -159,7 +159,7 @@ fun AccountDetailScreen(
     val running = remember(d, a.id) { d.runningBalances(a.id) }
 
     fun flow(t: Txn): Long = t.flowFor(a)
-    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.pay.amount }
+    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.pay.flowFor(a) }
     val inflow = flows.filter { it > 0 }.sum()
     val outflow = -flows.filter { it < 0 }.sum()
 
@@ -276,7 +276,7 @@ fun AccountDetailScreen(
                             )
                         }
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("+" + formatMoney(pay.amount), color = cute.income, fontWeight = FontWeight.SemiBold)
+                            Text("+" + a.fmt(pay.flowFor(a)), color = cute.income, fontWeight = FontWeight.SemiBold)
                             running["p${t.id}_$idx"]?.let { b ->
                                 Text("餘額 ${formatMoney(b)}", style = MaterialTheme.typography.labelSmall, color = if (b < 0) cute.expense else cute.sub, maxLines = 1)
                             }

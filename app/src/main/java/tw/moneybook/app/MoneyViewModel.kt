@@ -47,7 +47,7 @@ data class TxnDraft(
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
-class ReimbReceipt(val txnId: Long, val index: Int, val amount: Long, val chase: Boolean)
+class ReimbReceipt(val txnId: Long, val index: Int, val amount: Long, val chase: Boolean, val fx: Long = 0L)
 
 /** 報銷總額不能超過原價 + 手續費；沒有收款紀錄又是 0 元的對象直接拿掉 */
 private fun capItems(t: Txn, items: List<ReimbItem>): List<ReimbItem> {
@@ -427,7 +427,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     for (r in mine) {
                         val cur = items.getOrNull(r.index) ?: continue
                         if (cur.closed) continue
-                        val pays = if (r.amount > 0L) cur.pays + ReimbPay(day, accountId, r.amount, time) else cur.pays
+                        val pays = if (r.amount > 0L) cur.pays + ReimbPay(day, accountId, r.amount, time, r.fx) else cur.pays
                         items[r.index] = cur.copy(pays = pays, closed = pays.sumOf { it.amount } >= cur.amount || !r.chase)
                     }
                     t.withItems(items)

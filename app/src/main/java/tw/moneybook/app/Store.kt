@@ -642,7 +642,7 @@ object ReimbCodec {
                         "pays",
                         JSONArray().apply {
                             i.pays.forEach { p ->
-                                put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount).put("time", p.time))
+                                put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount).put("time", p.time).put("fxAmount", p.fxAmount))
                             }
                         },
                     )
@@ -659,7 +659,7 @@ object ReimbCodec {
             val pays = ArrayList<ReimbPay>()
             if (pa != null) for (k in 0 until pa.length()) {
                 val po = pa.getJSONObject(k)
-                pays.add(ReimbPay(po.optLong("day", 0L), if (po.isNull("accountId")) null else po.getLong("accountId"), po.optLong("amount", 0L), po.optInt("time", -1)))
+                pays.add(ReimbPay(po.optLong("day", 0L), if (po.isNull("accountId")) null else po.getLong("accountId"), po.optLong("amount", 0L), po.optInt("time", -1), po.optLong("fxAmount", 0L)))
             }
             out.add(ReimbItem(o.optString("who", ""), o.optLong("amount", 0L), pays, o.optBoolean("closed", false)))
         }

@@ -66,8 +66,12 @@ data class Category(
     val order: Int,
 )
 
-/** 一筆實際收到的報銷款（time：收到的時間，從 0 點算起的分鐘數；-1 是沒有時間，舊資料） */
-data class ReimbPay(val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1)
+/**
+ * 一筆實際收到的報銷款（time：收到的時間，從 0 點算起的分鐘數；-1 是沒有時間，舊資料）。
+ * amount 是這筆收款沖掉的台幣金額（統計用）；收到的是外幣、存進外幣帳戶時，fxAmount 是實際入帳的外幣金額（最小單位），
+ * 外幣帳戶的餘額用它；其他情況是 0。
+ */
+data class ReimbPay(val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L)
 
 /**
  * 一個報銷對象（例如幫 5 個人付款，每個人一項）：應收金額與實際收款紀錄。
@@ -276,7 +280,7 @@ data class AppData(
         for (t in txns) {
             t.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
             t.toAccountId?.let { id -> if (id != t.accountId) accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
-            for (p in t.items.flatMap { it.pays }) p.accountId?.let { m[it] = (m[it] ?: 0L) + p.amount }
+            for (p in t.items.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + p.flowFor(a) } }
         }
         return m
     }
@@ -301,7 +305,7 @@ data class AppData(
                 ev.add(Ev("t${t.id}", t.day, t.time, t.id * 1000, t.flowFor(a)))
             }
             t.items.flatMap { it.pays }.forEachIndexed { i, p ->
-                if (p.accountId == accountId) ev.add(Ev("p${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 1 + i, p.amount))
+                if (p.accountId == accountId) ev.add(Ev("p${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 1 + i, p.flowFor(a)))
             }
         }
         ev.sortWith(compareBy({ it.day }, { it.time }, { it.order }))

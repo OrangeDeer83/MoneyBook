@@ -57,7 +57,15 @@ import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.ReimbCodec
 import tw.moneybook.app.ReimbItem
 import tw.moneybook.app.ReimbPay
+import tw.moneybook.app.Account
+import tw.moneybook.app.cur
+import tw.moneybook.app.formatFx
+import tw.moneybook.app.fxAccountOf
+import tw.moneybook.app.fxExpr
+import tw.moneybook.app.fxToTwdAt
 import tw.moneybook.app.isForeign
+import tw.moneybook.app.parseFx
+import tw.moneybook.app.twdToFxAt
 import tw.moneybook.app.ReimbReceipt
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
@@ -78,6 +86,7 @@ internal fun CompactField(
     modifier: Modifier = Modifier,
     number: Boolean = false,
     prefix: String = "",
+    decimal: Boolean = false,
 ) {
     val cute = LocalCute.current
     BasicTextField(
@@ -86,7 +95,7 @@ internal fun CompactField(
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        keyboardOptions = KeyboardOptions(keyboardType = if (number) KeyboardType.Number else KeyboardType.Text),
+        keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else if (number) KeyboardType.Number else KeyboardType.Text),
         modifier = modifier,
         decorationBox = { inner ->
             Row(
@@ -452,7 +461,7 @@ private fun ReimbHome(
                                 Column(Modifier.weight(1f)) {
                                     Text("${dayTimeLabel(pay.day, pay.time)}　${ownerLabel(who)}", style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}",
+                                        "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}" + if (acc != null && acc.isForeign && pay.fxAmount > 0L) "（${formatFx(pay.fxAmount, acc.currency)}）" else "",
                                         style = MaterialTheme.typography.labelMedium, color = cute.sub,
                                     )
                                 }
@@ -468,14 +477,46 @@ private fun ReimbHome(
 
 // ───────────────────────── 收款 ─────────────────────────
 
+/** 外幣的輸入文字：只留數字、一個小數點，小數位數不超過幣別的位數 */
+private fun fxInput(v: String, dec: Int): String {
+    var dot = false
+    val sb = StringBuilder()
+    for (c in v) when {
+        c.isDigit() -> sb.append(c)
+        c == '.' && !dot && dec > 0 -> { dot = true; sb.append(c) }
+    }
+    val t = sb.toString()
+    val at = t.indexOf('.')
+    return (if (at >= 0 && t.length - at - 1 > dec) t.take(at + 1 + dec) else t).take(14)
+}
+
+/** 收款的金額文字：收外幣（有 fxAmount）是「US$20.50（$646）」，台幣是「$646」 */
+private fun payText(d: AppData, pay: ReimbPay): String {
+    val acc = pay.accountId?.let { d.accMap[it] }
+    return if (acc != null && acc.isForeign && pay.fxAmount > 0L) "${formatFx(pay.fxAmount, acc.currency)}（${formatMoney(pay.amount)}）" else formatMoney(pay.amount)
+}
+
 @Composable
 private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDone: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
     val claims = claimsOf(d.bookTxns).filter { !it.item.closed && it.who == who }.sortedWith(compareBy({ it.txn.day }, { it.txn.id }))
-    val totalRemaining = claims.sumOf { it.item.remaining }
-    var amountText by remember { mutableStateOf(totalRemaining.toString()) }
     var accId by remember { mutableStateOf(d.visibleAccounts.firstOrNull { !it.isForeign }?.id) }
+    val acc = accId?.let { d.accMap[it] }
+    // 收外幣（存進外幣帳戶）時，只能沖銷同幣別的外幣消費；收台幣可以沖銷所有的
+    val fxAcc = acc?.takeIf { it.isForeign }
+    val dec = fxAcc?.cur?.decimals ?: 0
+    fun eligible(c: Claim) = fxAcc == null || d.fxAccountOf(c.txn)?.currency == fxAcc.currency
+    // 這一筆還欠多少，用「這次收的幣別」表示：台幣就是剩餘金額；外幣用那筆消費當時的匯率換算（收到原本的外幣金額就剛好收齊）
+    fun remU(c: Claim): Long = if (fxAcc == null) c.item.remaining else if (eligible(c)) c.txn.twdToFxAt(c.item.remaining) else 0L
+    val rows = claims.filter { eligible(it) }
+    val totalRemaining = claims.sumOf { it.item.remaining }
+    val totalRemU = rows.sumOf { remU(it) }
+    fun plain(u: Long) = if (fxAcc != null) fxExpr(u, dec) else u.toString()
+    fun unitText(u: Long) = if (fxAcc != null) formatFx(u, fxAcc.currency) else formatMoney(u)
+    fun parseU(t: String): Long? = if (fxAcc != null) parseFx(t, dec) else t.toLongOrNull()
+
+    var amountText by remember { mutableStateOf(totalRemaining.toString()) }
     var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
     var timeMin by remember { mutableStateOf(LocalTime.now().let { it.hour * 60 + it.minute }) }
     var pickDate by remember { mutableStateOf(false) }
@@ -484,29 +525,54 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     val chase = remember { mutableStateMapOf<String, Boolean>() }
     var askChase by remember { mutableStateOf(false) }
 
+    // 換收款帳戶時，金額換成那個幣別的預設值（全部還欠的）
+    fun pickAccount(a: Account) {
+        accId = a.id
+        overrides.clear()
+        chase.clear()
+        amountText = if (a.isForeign) {
+            fxExpr(claims.filter { c -> d.fxAccountOf(c.txn)?.currency == a.currency }.sumOf { c -> c.txn.twdToFxAt(c.item.remaining) }, a.cur.decimals)
+        } else totalRemaining.toString()
+    }
+
     // 由舊到新自動分配；多收的算在最後一筆
-    val amount = amountText.toLongOrNull() ?: 0L
-    var left = amount
+    val amountU = parseU(amountText) ?: 0L
+    var left = amountU
     val auto = ArrayList<Long>()
-    for (c in claims) {
-        val a = minOf(c.item.remaining, left)
+    for (c in rows) {
+        val a = minOf(remU(c), left)
         auto.add(a)
         left -= a
     }
     if (left > 0L && auto.isNotEmpty()) auto[auto.lastIndex] = auto.last() + left
-    val alloc = claims.mapIndexed { i, c -> overrides[c.key]?.toLongOrNull() ?: auto[i] }
-    val sum = alloc.sum()
+    val alloc = rows.mapIndexed { i, c -> overrides[c.key]?.let { parseU(it) } ?: auto[i] }
+    val sumU = alloc.sum()
+    // 這次收的金額沖掉多少台幣：台幣就是原金額；外幣收齊就是剩餘的台幣，不足照那筆消費的匯率換算，多收的多出來算回饋
+    val credit = rows.mapIndexed { i, c ->
+        if (fxAcc == null) alloc[i]
+        else {
+            val r = remU(c)
+            when {
+                alloc[i] == r -> c.item.remaining
+                alloc[i] > r -> c.item.remaining + c.txn.fxToTwdAt(alloc[i] - r)
+                else -> c.txn.fxToTwdAt(alloc[i])
+            }
+        }
+    }
+    val sumCredit = credit.sum()
     // 收得比剩下的少、又還沒選要不要追的
-    val shortIdx = claims.indices.filter { alloc[it] in 1 until claims[it].item.remaining }
-    val undecided = shortIdx.filter { chase[claims[it].key] == null }
+    val shortIdx = rows.indices.filter { alloc[it] in 1 until remU(rows[it]) }
+    val undecided = shortIdx.filter { chase[rows[it].key] == null }
 
     fun submit() {
-        val list = claims.indices.filter { alloc[it] > 0L }.map { i ->
-            ReimbReceipt(claims[i].txn.id, claims[i].index, alloc[i], chase[claims[i].key] != false)
+        val list = rows.indices.filter { alloc[it] > 0L }.map { i ->
+            ReimbReceipt(rows[i].txn.id, rows[i].index, credit[i], chase[rows[i].key] != false, if (fxAcc != null) alloc[i] else 0L)
         }
         vm.receiveReimb(list, accId, day, timeMin)
         onDone()
     }
+
+    val fxChoices = d.visibleAccounts.filter { a -> a.isForeign && claims.any { c -> d.fxAccountOf(c.txn)?.currency == a.currency } }
 
     SubPage("收款・${ownerLabel(who)}", onBack) {
         Column(Modifier.fillMaxSize()) {
@@ -519,18 +585,25 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                         Text("${ownerLabel(who)}還欠你（${claims.size} 筆）", style = MaterialTheme.typography.bodyLarge, color = cute.sub, modifier = Modifier.weight(1f))
                         Text(formatMoney(totalRemaining), style = MaterialTheme.typography.titleLarge, color = cute.expense)
                     }
+                    if (fxAcc != null) {
+                        Text("其中可以用 ${fxAcc.currency} 收的：${unitText(totalRemU)}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    }
                 }
                 CuteCard(Modifier.fillMaxWidth()) {
-                    Text("這次收到多少", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    Text(if (fxAcc != null) "這次收到多少（${fxAcc.currency}）" else "這次收到多少", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     Spacer(Modifier.height(6.dp))
                     CompactField(
-                        amountText, { v -> amountText = v.filter { c -> c.isDigit() }.take(9); overrides.clear() },
-                        "金額", Modifier.fillMaxWidth(), number = true, prefix = "$",
+                        amountText, { v -> amountText = if (fxAcc != null) fxInput(v, dec) else v.filter { c -> c.isDigit() }.take(9); overrides.clear() },
+                        "金額", Modifier.fillMaxWidth(), number = true, decimal = fxAcc != null && dec > 0, prefix = fxAcc?.cur?.symbol?.trim() ?: "$",
                     )
                 }
                 Text("存進哪個帳戶", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
+                    d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { pickAccount(a) }) }
+                    fxChoices.forEach { a -> CuteChip(accLabel(a), accId == a.id, { pickAccount(a) }) }
+                }
+                if (fxChoices.isNotEmpty() && fxAcc == null) {
+                    Text("有幾筆是用外幣付的，對方還外幣的話，選外幣帳戶收。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
@@ -538,24 +611,34 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                 }
 
                 Text("分配到這幾筆（由舊到新自動分配，可以直接改金額）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
-                claims.forEachIndexed { i, c ->
+                claims.filter { !eligible(it) }.forEach { c ->
+                    CuteCard(Modifier.fillMaxWidth()) {
+                        Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
+                        Text("還剩 ${formatMoney(c.item.remaining)}・不是用 ${fxAcc?.currency} 付的，要改選台幣帳戶才能收", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    }
+                }
+                rows.forEachIndexed { i, c ->
                     val a = alloc[i]
-                    val short = a in 1 until c.item.remaining
+                    val remainU = remU(c)
+                    val short = a in 1 until remainU
                     CuteCard(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge)
-                                Text("還剩 ${formatMoney(c.item.remaining)}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                Text(
+                                    "還剩 ${formatMoney(c.item.remaining)}" + (if (fxAcc != null) "（${unitText(remainU)}）" else ""),
+                                    style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                                )
                             }
                             CompactField(
-                                overrides[c.key] ?: a.toString(),
-                                { v -> overrides[c.key] = v.filter { ch -> ch.isDigit() }.take(9) },
-                                "收", Modifier.width(120.dp), number = true, prefix = "$",
+                                overrides[c.key] ?: plain(a),
+                                { v -> overrides[c.key] = if (fxAcc != null) fxInput(v, dec) else v.filter { ch -> ch.isDigit() }.take(9) },
+                                "收", Modifier.width(120.dp), number = true, decimal = fxAcc != null && dec > 0, prefix = fxAcc?.cur?.symbol?.trim() ?: "$",
                             )
                         }
                         if (short) {
                             Spacer(Modifier.height(8.dp))
-                            Text("還差 ${formatMoney(c.item.remaining - a)}，要繼續追嗎？", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            Text("還差 ${unitText(remainU - a)}，要繼續追嗎？", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                             Spacer(Modifier.height(4.dp))
                             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 CuteChip("繼續追剩下的", chase[c.key] == true, { chase[c.key] = true })
@@ -564,16 +647,19 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                         }
                     }
                 }
-                if (sum > totalRemaining) {
-                    Text("多收 ${formatMoney(sum - totalRemaining)}，多的部分會算成報銷回饋收入。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                if (sumU > totalRemU) {
+                    Text("多收 ${unitText(sumU - totalRemU)}，多的部分會算成報銷回饋收入。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                }
+                if (fxAcc != null && sumU > 0L) {
+                    Text("這次收款沖掉 ${formatMoney(sumCredit)}（用各筆消費當時的匯率換算）。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
             }
             Box(Modifier.fillMaxWidth().background(cute.card).padding(horizontal = 16.dp, vertical = 10.dp)) {
                 Button(
                     onClick = { if (undecided.isNotEmpty()) askChase = true else submit() },
-                    enabled = sum > 0L,
+                    enabled = sumU > 0L,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("確認收款 ${formatMoney(sum)}") }
+                ) { Text("確認收款 ${unitText(sumU)}") }
             }
         }
     }
@@ -590,14 +676,14 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     undecided.forEach { i ->
-                        Text("${billLabel(d, claims[i].txn)} 還差 ${formatMoney(claims[i].item.remaining - alloc[i])}")
+                        Text("${billLabel(d, rows[i].txn)} 還差 ${unitText(remU(rows[i]) - alloc[i])}")
                     }
                     Text("要繼續追剩下的嗎？選「不追了」的差額會算成你自己的支出。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    undecided.forEach { chase[claims[it].key] = true }
+                    undecided.forEach { chase[rows[it].key] = true }
                     askChase = false
                     submit()
                 }) { Text("繼續追") }
@@ -606,7 +692,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                 Row {
                     TextButton(onClick = { askChase = false }) { Text("取消") }
                     TextButton(onClick = {
-                        undecided.forEach { chase[claims[it].key] = false }
+                        undecided.forEach { chase[rows[it].key] = false }
                         askChase = false
                         submit()
                     }) { Text("不追了") }
@@ -659,7 +745,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                     CuteCard(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("${dayTimeLabel(pay.day, pay.time)}　收到 ${formatMoney(pay.amount)}", style = MaterialTheme.typography.bodyLarge)
+                                Text("${dayTimeLabel(pay.day, pay.time)}　收到 ${payText(d, pay)}", style = MaterialTheme.typography.bodyLarge)
                                 Text("${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                             }
                             Box {
@@ -701,8 +787,22 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
 
     editing?.let { entry ->
         val (c, n, pay) = entry
-        var amt by remember { mutableStateOf(pay.amount.toString()) }
+        val payAcc0 = pay.accountId?.let { d.accMap[it] }
+        var amt by remember { mutableStateOf(if (payAcc0 != null && payAcc0.isForeign) fxExpr(pay.fxAmount, payAcc0.cur.decimals) else pay.amount.toString()) }
         var accId by remember { mutableStateOf(pay.accountId) }
+        val editAcc = accId?.let { d.accMap[it] }
+        val editFx = editAcc?.takeIf { it.isForeign }
+        val editDec = editFx?.cur?.decimals ?: 0
+        // 這筆帳是外幣付的，才能改成收外幣（同幣別的外幣帳戶）
+        val fxOptions = d.visibleAccounts.filter { a -> a.isForeign && d.fxAccountOf(c.txn)?.currency == a.currency }
+        fun switchAccount(a: Account) {
+            val toFx = a.isForeign
+            if (toFx != (editFx != null)) {
+                amt = if (toFx) fxExpr(c.txn.twdToFxAt(amt.toLongOrNull() ?: 0L), a.cur.decimals)
+                else c.txn.fxToTwdAt(parseFx(amt, editDec) ?: 0L).toString()
+            }
+            accId = a.id
+        }
         var day by remember { mutableStateOf(pay.day) }
         var timeMin by remember { mutableStateOf(pay.time) }
         var pickDate by remember { mutableStateOf(false) }
@@ -712,9 +812,16 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
             title = { Text("修改收款") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CompactField(amt, { v -> amt = v.filter { ch -> ch.isDigit() }.take(9) }, "金額", Modifier.fillMaxWidth(), number = true, prefix = "$")
+                    CompactField(
+                        amt, { v -> amt = if (editFx != null) fxInput(v, editDec) else v.filter { ch -> ch.isDigit() }.take(9) },
+                        "金額", Modifier.fillMaxWidth(), number = true, decimal = editFx != null && editDec > 0, prefix = editFx?.cur?.symbol?.trim() ?: "$",
+                    )
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
+                        d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { switchAccount(a) }) }
+                        fxOptions.forEach { a -> CuteChip(accLabel(a), accId == a.id, { switchAccount(a) }) }
+                    }
+                    if (editFx != null) {
+                        Text("收外幣：沖掉的台幣用這筆消費當時的匯率換算。", style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
@@ -724,7 +831,11 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
             },
             confirmButton = {
                 TextButton(onClick = {
-                    vm.editReimbPay(c.txn.id, c.index, n, ReimbPay(day, accId, amt.toLongOrNull() ?: 0L, timeMin))
+                    val newPay = if (editFx != null) {
+                        val fxv = parseFx(amt, editDec) ?: 0L
+                        ReimbPay(day, accId, c.txn.fxToTwdAt(fxv), timeMin, fxv)
+                    } else ReimbPay(day, accId, amt.toLongOrNull() ?: 0L, timeMin)
+                    vm.editReimbPay(c.txn.id, c.index, n, newPay)
                     editing = null
                 }) { Text("儲存") }
             },
