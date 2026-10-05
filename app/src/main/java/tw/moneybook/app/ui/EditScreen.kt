@@ -367,9 +367,9 @@ fun EditScreen(
             expr = if (v > 0) v.toString() else ""
         }
     }
-    // 外幣帳戶轉出／消費：沒有手續費、優惠、報銷、分期
+    // 外幣帳戶轉出／消費：沒有手續費、優惠、分期（報銷可以：金額用換算的台幣）
     LaunchedEffect(fromFx) { if (fromFx) { fee = 0L; discount = 0L } }
-    LaunchedEffect(plan.mode) { if (plan.mode == FxMode.SPEND) { reimbOn = false; inst = 1 } }
+    LaunchedEffect(plan.mode) { if (plan.mode == FxMode.SPEND) inst = 1 }
 
     fun setType(t: TxType) {
         if (t == type) return
@@ -588,7 +588,7 @@ fun EditScreen(
                 else -> "手續費"
             }
             if (!fromFx) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "vec:coin")
-            if (type == TxType.EXPENSE && !tplMode && plan.mode != FxMode.SPEND) {
+            if (type == TxType.EXPENSE && !tplMode) {
                 val totalReimb = reimbItems.sumOf { it.effective }
                 val part = if (reimbItems.isNotEmpty() && totalReimb != actual) " ${formatMoney(totalReimb)}" else ""
                 val people = if (reimbItems.size > 1) "・${reimbItems.size} 人" else ""
