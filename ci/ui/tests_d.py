@@ -712,7 +712,11 @@ def tap_wheel_to_type():
     """點一下滾輪上的小時（正中間那個）→ 直接變成鍵盤輸入，不用按任何切換按鈕"""
     hs = wheel_hours(d.nodes())
     d.tap(hs[len(hs) // 2])
-    d.time.sleep(1)
+    for _ in range(10):         # 等螢幕鍵盤真的出來再打字，太早打會被吃掉
+        d.time.sleep(0.5)
+        if d.ime_shown():
+            break
+    d.time.sleep(0.5)
 
 
 def type_time(hh, mm):
