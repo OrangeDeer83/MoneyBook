@@ -1324,7 +1324,7 @@ def t_fx_new_account():
     acc_tab()
     d.tap_text("新增帳戶", exact=False)
     d.wait_text("新增帳戶", timeout=10)
-    d.fill(d.edits()[0], "日本錢包")
+    d.fill(d.edits()[0], "JPWallet")      # adb 打不了中文，名稱用英文
     d.hide_ime()
     # 類型那一排要往左滑才看得到「外幣」
     for _ in range(4):
@@ -1351,7 +1351,7 @@ def t_fx_new_account():
     ns = d.shot("新增後的帳戶分頁")
     d.check("帳戶分頁有 ¥10,000", d.has(ns, "¥10,000", True), [n.text for n in ns if "¥" in n.text])
     d.check("還沒有匯率：帳戶下面提示「還沒有匯率」", d.has(ns, "還沒有匯率", True))
-    d.check("總資產提醒日本錢包還沒有匯率、沒有算進去", any("日本錢包還沒有匯率" in n.text for n in ns), [n.text for n in ns if "匯率" in n.text])
+    d.check("總資產提醒 JPWallet 還沒有匯率、沒有算進去", any("JPWallet還沒有匯率" in n.text for n in ns), [n.text for n in ns if "匯率" in n.text])
 
 
 @case(D, "外幣：更新外幣帳戶餘額，補記外幣差額")
