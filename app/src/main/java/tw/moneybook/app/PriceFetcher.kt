@@ -36,6 +36,12 @@ object PriceFetcher {
         }
     }
 
+    /** 抓外幣換台幣的目前匯率（1 單位外幣 = 幾元台幣，例如 USD → 31.5）；抓不到回傳 null。只送出幣別代碼 */
+    suspend fun fetchRate(code: String): Double? = withContext(Dispatchers.IO) {
+        val p = meta("${code.trim().uppercase()}TWD=X")?.optDouble("regularMarketPrice", Double.NaN) ?: return@withContext null
+        if (p.isNaN() || p <= 0.0) null else p
+    }
+
     /** 抓某個代號的最新價格，外幣用當下匯率換成 NT$；抓不到（或匯率抓不到）回傳 null */
     suspend fun fetch(symbol: String, market: String = ""): Quote? = withContext(Dispatchers.IO) {
         for (s in Markets.candidates(symbol, market)) {

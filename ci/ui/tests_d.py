@@ -1484,3 +1484,21 @@ def t_fx_edit_existing():
     save_to_detail()
     ns = d.shot("消費原封不動存回去")
     d.check("美元帳戶餘額還是 US$987.50，這一筆仍是約 $394", d.has(ns, "US$987.50", True) and any("約 $394" in n.text for n in ns))
+
+
+@case(D, "外幣：上網更新匯率要先同意，不同意就不連網")
+def t_fx_online_rate_consent():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    d.tap_text("上網更新", exact=True)
+    d.wait_text("上網更新匯率？", timeout=10)
+    ns = d.shot("同意視窗")
+    d.check("說明只傳幣別代碼、不傳記帳資料", any("不會傳送任何記帳資料" in n.text for n in ns), [n.text for n in ns if "傳" in n.text])
+    d.tap_text("不要", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("按不要之後")
+    d.check("視窗關掉，匯率沒變（31.5，最近一次買賣）", not d.has(ns, "上網更新匯率？") and d.has(ns, "目前匯率 31.5（最近一次買賣）", True))
+    d.tap_text("設定匯率", exact=True)
+    d.wait_text("設定 USD 匯率", timeout=10)
+    ns = d.shot("設定匯率對話框")
+    d.check("設定匯率裡有「允許上網更新匯率與股價」開關（預設關閉，可以隨時關）", d.has(ns, "允許上網更新匯率與股價", True))

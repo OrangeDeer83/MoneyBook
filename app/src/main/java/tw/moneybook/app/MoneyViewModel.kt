@@ -332,6 +332,36 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         update { d -> d.copy(prefs = d.prefs.copy(priceFetch = on)) }
     }
 
+    /** 正在上網更新匯率 */
+    var ratesFetching by mutableStateOf(false)
+        private set
+
+    /** 上網更新所有外幣帳戶用到的幣別匯率（按了才連網；結果用提示說明，抓不到的幣別保留原本的匯率） */
+    fun refreshRates() {
+        if (ratesFetching) return
+        val codes = data.accounts.filter { it.isForeign }.map { it.currency }.distinct()
+        if (codes.isEmpty()) return
+        ratesFetching = true
+        viewModelScope.launch {
+            val today = LocalDate.now().toEpochDay()
+            val got = ArrayList<FxRate>()
+            val failed = ArrayList<String>()
+            for (c in codes) {
+                val r = try { PriceFetcher.fetchRate(c) } catch (_: Exception) { null }
+                if (r != null) got.add(FxRate(c, r, today)) else failed.add(c)
+            }
+            ratesFetching = false
+            if (got.isNotEmpty()) update { d -> d.copy(rates = d.rates.filter { r -> got.none { it.code == r.code } } + got) }
+            toast(
+                when {
+                    failed.isEmpty() -> "已更新匯率：" + got.joinToString("、") { "${it.code} ${rateText(it.rate)}" }
+                    got.isEmpty() -> "抓不到匯率（${failed.joinToString("、")}），請稍後再試，或手動輸入"
+                    else -> "已更新 ${got.joinToString("、") { it.code }}；${failed.joinToString("、")} 抓不到，沿用原本的匯率"
+                }
+            )
+        }
+    }
+
     /** 上網抓持股的最新價格（所有投資帳戶的持股一起抓）；silent 時全部成功就不顯示提示 */
     fun refreshPrices(silent: Boolean = false) {
         if (fetching) return

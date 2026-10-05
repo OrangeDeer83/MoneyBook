@@ -142,6 +142,7 @@ fun AccountDetailScreen(
     var editing by remember { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     var rateDialog by remember { mutableStateOf(false) }
+    var fetchAsk by remember { mutableStateOf(false) }
     var month by remember { mutableStateOf(vm.month) }
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     // 這個帳戶相關的記錄（所有帳本）
@@ -198,6 +199,13 @@ fun AccountDetailScreen(
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.weight(1f),
                             )
                             TextButton(onClick = { rateDialog = true }) { Text("設定匯率") }
+                            TextButton(onClick = {
+                                when {
+                                    vm.ratesFetching -> {}
+                                    d.prefs.priceFetch -> vm.refreshRates()
+                                    else -> fetchAsk = true
+                                }
+                            }) { Text(if (vm.ratesFetching) "更新中…" else "上網更新") }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             androidx.compose.material3.Button(onClick = { onFxTrade(a.id, true) }) { Text("買進 ${a.currency}") }
@@ -296,8 +304,25 @@ fun AccountDetailScreen(
     if (rateDialog) {
         RateDialog(
             code = a.currency, current = d.rateOf(a.currency), manual = d.rates.any { it.code == a.currency },
+            fetchOn = d.prefs.priceFetch, onFetchOn = { vm.setPriceFetch(it) },
             onSave = { vm.setRate(a.currency, it); rateDialog = false },
             onDismiss = { rateDialog = false },
+        )
+    }
+    if (fetchAsk) {
+        AlertDialog(
+            onDismissRequest = { fetchAsk = false },
+            title = { Text("上網更新匯率？") },
+            text = {
+                Text(
+                    "記帳本平常完全不連網。開啟後，只有按「上網更新」（或持股頁的「抓最新價格」）時，" +
+                        "才會把幣別代碼（例如 USDTWD）傳給 Yahoo Finance 查匯率，不會傳送任何記帳資料。\n" +
+                        "之後可以隨時在「設定匯率」裡關閉。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.setPriceFetch(true); fetchAsk = false; vm.refreshRates() }) { Text("開啟並更新") } },
+            dismissButton = { TextButton(onClick = { fetchAsk = false }) { Text("不要") } },
         )
     }
     if (editing) {
@@ -314,7 +339,11 @@ fun AccountDetailScreen(
 
 /** 設定外幣的目前匯率：1 單位外幣 = 多少台幣；清除就改用最近一次買賣的匯率 */
 @Composable
-private fun RateDialog(code: String, current: Double?, manual: Boolean, onSave: (Double?) -> Unit, onDismiss: () -> Unit) {
+private fun RateDialog(
+    code: String, current: Double?, manual: Boolean,
+    fetchOn: Boolean, onFetchOn: (Boolean) -> Unit,
+    onSave: (Double?) -> Unit, onDismiss: () -> Unit,
+) {
     val cute = LocalCute.current
     var text by remember { mutableStateOf(current?.let { rateText(it) } ?: "") }
     val value = text.toDoubleOrNull()?.takeIf { it > 0.0 }
@@ -335,6 +364,10 @@ private fun RateDialog(code: String, current: Double?, manual: Boolean, onSave: 
                 )
                 if (manual) {
                     TextButton(onClick = { onSave(null) }) { Text("清除手動匯率（改用最近一次買賣的匯率）") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("允許上網更新匯率與股價", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = fetchOn, onCheckedChange = onFetchOn)
                 }
             }
         },
