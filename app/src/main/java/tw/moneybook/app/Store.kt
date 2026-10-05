@@ -370,6 +370,45 @@ object Calc {
     }
 
     fun pretty(expr: String): String = expr.replace("-", " − ").replace("+", " + ")
+
+    private const val MAX_FX = 99_999_999_999L
+
+    /** 外幣模式：金額可以有小數（dec 位），結果是最小單位（美元的分） */
+    fun evalMinor(expr: String, dec: Int): Long {
+        var total = 0L
+        var sign = 1L
+        val cur = StringBuilder()
+        fun flush() {
+            total += sign * (parseFx(cur.toString(), dec) ?: 0L)
+            cur.clear()
+        }
+        for (ch in expr) {
+            when {
+                ch.isDigit() || ch == '.' -> cur.append(ch)
+                ch == '+' -> { flush(); sign = 1L }
+                ch == '-' -> { flush(); sign = -1L }
+            }
+        }
+        flush()
+        return total.coerceIn(0L, MAX_FX)
+    }
+
+    /** 外幣模式的按鍵：多了小數點，小數位數不超過幣別的位數（日圓這類 0 位的不能打小數點） */
+    fun pressFx(expr: String, key: String, dec: Int): String {
+        val last = expr.takeLastWhile { it.isDigit() || it == '.' }
+        return when {
+            key == "." -> when {
+                dec == 0 || '.' in last -> expr
+                last.isEmpty() -> expr + "0."
+                else -> expr + "."
+            }
+            key.all { it.isDigit() } && '.' in last -> {
+                val room = dec - (last.length - last.indexOf('.') - 1)
+                if (room <= 0) expr else expr + key.take(room)
+            }
+            else -> press(expr, key)
+        }
+    }
 }
 
 /** CSV 匯出與匯入 */

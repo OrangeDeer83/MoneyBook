@@ -146,3 +146,29 @@ fun AppData.fxNote(t: Txn, inForeign: Boolean): String? {
         if (t.amount <= 0L) null else (if (trade) "" else "約 ") + formatMoney(t.amount) + rate
     } else formatFx(t.fxAmount, fa.currency) + rate
 }
+
+/**
+ * 記一筆的外幣模式（看轉出／轉入帳戶的幣別）：
+ * SPEND＝外幣帳戶的消費或收入；BUY＝台幣帳戶轉進外幣帳戶（買外幣）；SELL＝外幣帳戶轉回台幣帳戶（賣外幣）；
+ * SAME＝同幣別外幣帳戶之間轉帳；UNSUPPORTED＝不同幣別的外幣帳戶互轉（要先換回台幣）。
+ */
+enum class FxMode { NONE, SPEND, BUY, SELL, SAME, UNSUPPORTED }
+
+class FxPlan(val mode: FxMode, val acc: Account?)
+
+fun AppData.fxPlan(type: TxType, accId: Long?, toId: Long?): FxPlan {
+    val from = accId?.let { accMap[it] }
+    if (type != TxType.TRANSFER) return if (from?.isForeign == true) FxPlan(FxMode.SPEND, from) else FxPlan(FxMode.NONE, null)
+    val to = toId?.let { accMap[it] }
+    return when {
+        from?.isForeign == true && to?.isForeign == true ->
+            if (from.currency == to.currency) FxPlan(FxMode.SAME, from) else FxPlan(FxMode.UNSUPPORTED, from)
+        from?.isForeign == true -> FxPlan(FxMode.SELL, from)
+        to?.isForeign == true -> FxPlan(FxMode.BUY, to)
+        else -> FxPlan(FxMode.NONE, null)
+    }
+}
+
+/** 放進計算機的外幣文字：1250（美元）→ "12.5"；去掉多餘的 0 */
+fun fxExpr(minor: Long, decimals: Int): String =
+    fxPlain(minor, decimals).let { if ('.' in it) it.trimEnd('0').trimEnd('.') else it }

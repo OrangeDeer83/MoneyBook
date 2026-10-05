@@ -128,6 +128,8 @@ fun AccountDetailScreen(
     accountId: Long,
     onEdit: (Long) -> Unit,
     onPayCard: (Long, Long?) -> Unit,
+    /** 買賣外幣：帳戶 id、true = 買進（台幣轉進來）、false = 賣出（轉回台幣） */
+    onFxTrade: (Long, Boolean) -> Unit = { _, _ -> },
     onBack: () -> Unit,
 ) {
     val d = vm.data
@@ -196,6 +198,10 @@ fun AccountDetailScreen(
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.weight(1f),
                             )
                             TextButton(onClick = { rateDialog = true }) { Text("設定匯率") }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.material3.Button(onClick = { onFxTrade(a.id, true) }) { Text("買進 ${a.currency}") }
+                            androidx.compose.material3.OutlinedButton(onClick = { onFxTrade(a.id, false) }) { Text("賣出 ${a.currency}") }
                         }
                         if (avg != null) {
                             Text(
@@ -493,7 +499,7 @@ fun AccountLine(a: Account, balance: Long, on: Boolean, onFavorite: ((Account) -
         AccountIcon(a, 32.dp)
         Spacer(Modifier.width(10.dp))
         Text((if (a.favorite && onFavorite == null) "★ " else "") + a.name, modifier = Modifier.weight(1f))
-        Text(formatMoney(balance), color = cute.sub, style = MaterialTheme.typography.labelLarge)
+        Text(a.fmt(balance), color = cute.sub, style = MaterialTheme.typography.labelLarge)
         if (onFavorite != null) FavoriteStar(a.favorite) { onFavorite(a) }
     }
 }

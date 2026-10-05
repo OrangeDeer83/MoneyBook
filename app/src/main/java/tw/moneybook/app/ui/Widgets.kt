@@ -345,7 +345,7 @@ fun RatioBar(fraction: Float, color: Color, modifier: Modifier = Modifier, thick
 // ───────────────────────── 計算機鍵盤 ─────────────────────────
 
 @Composable
-fun Keypad(onKey: (String) -> Unit, doneLabel: String, doneEnabled: Boolean, onDone: () -> Unit, modifier: Modifier = Modifier) {
+fun Keypad(onKey: (String) -> Unit, doneLabel: String, doneEnabled: Boolean, onDone: () -> Unit, modifier: Modifier = Modifier, dotKey: Boolean = false) {
     val cute = LocalCute.current
     val primary = MaterialTheme.colorScheme.primary
     val haptic = LocalHapticFeedback.current
@@ -353,7 +353,7 @@ fun Keypad(onKey: (String) -> Unit, doneLabel: String, doneEnabled: Boolean, onD
         listOf("7", "8", "9", "⌫"),
         listOf("4", "5", "6", "+"),
         listOf("1", "2", "3", "-"),
-        listOf("C", "0", "00", "OK"),
+        listOf("C", "0", if (dotKey) "." else "00", "OK"),
     )
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { r ->

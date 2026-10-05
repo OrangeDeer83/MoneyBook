@@ -63,6 +63,8 @@ sealed interface Route {
         val tplId: Long? = null,
         /** 預設日期（日曆選了日期時，記一筆就預設那一天） */
         val presetDay: Long? = null,
+        /** 預設轉出帳戶（賣外幣：從外幣帳戶轉回台幣） */
+        val presetFrom: Long? = null,
     ) : Route
     data class Page(val name: String) : Route
 }
@@ -72,14 +74,14 @@ private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
     save = { list ->
         ArrayList(list.map { r ->
             when (r) {
-                is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}"
+                is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}|${r.presetFrom ?: ""}"
                 is Route.Page -> "P|${r.name}"
             }
         })
     },
     restore = { saved ->
         saved.mapNotNull { s ->
-            val p = s.split("|", limit = 7)
+            val p = s.split("|", limit = 8)
             when (p.firstOrNull()) {
                 "E" -> if (p.size >= 6) Route.Edit(
                     id = p[1].toLongOrNull(),
@@ -88,6 +90,7 @@ private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
                     tplMode = p[4] == "true",
                     tplId = p[5].toLongOrNull(),
                     presetDay = p.getOrNull(6)?.toLongOrNull(),
+                    presetFrom = p.getOrNull(7)?.toLongOrNull(),
                 ) else null
                 "P" -> if (p.size >= 2) Route.Page(s.substring(2)) else null
                 else -> null
@@ -170,7 +173,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 // 「我的 → 帳戶管理」直接切到帳戶分頁
                 open = { if (it == "accounts") { tab = 1 } else { push(Route.Page(it)) } },
             )
-            is Route.Edit -> EditScreen(vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, onClose = { pop() })
+            is Route.Edit -> EditScreen(vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, presetFrom = top.presetFrom, onClose = { pop() })
             is Route.Page -> when (top.name) {
                 "books" -> BooksScreen(vm) { pop() }
                 "categories" -> CategoriesScreen(vm) { pop() }
@@ -187,6 +190,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                             vm, accId,
                             onEdit = { push(Route.Edit(it)) },
                             onPayCard = { acc, amt -> push(Route.Edit(null, presetTo = acc, presetAmount = amt)) },
+                            onFxTrade = { acc, buy -> push(if (buy) Route.Edit(null, presetTo = acc) else Route.Edit(null, presetFrom = acc)) },
                         ) { pop() }
                     }
                 }

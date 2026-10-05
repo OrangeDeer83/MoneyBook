@@ -86,6 +86,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tw.moneybook.app.AppData
 import tw.moneybook.app.Calc
+import tw.moneybook.app.FxMode
+import tw.moneybook.app.cur
+import tw.moneybook.app.formatFx
+import tw.moneybook.app.fxExpr
+import tw.moneybook.app.fxPlain
+import tw.moneybook.app.fxPlan
+import tw.moneybook.app.fxToTwd
+import tw.moneybook.app.impliedRate
+import tw.moneybook.app.isForeign
+import tw.moneybook.app.parseFx
+import tw.moneybook.app.rateOf
+import tw.moneybook.app.rateText
+import tw.moneybook.app.twdToFx
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.TxType
 import tw.moneybook.app.ReimbCodec
@@ -106,6 +119,7 @@ fun EditScreen(
     tplMode: Boolean = false,
     tplId: Long? = null,
     presetDay: Long? = null,
+    presetFrom: Long? = null,
     onClose: () -> Unit,
 ) {
     val d = vm.data
@@ -118,21 +132,37 @@ fun EditScreen(
     var showTpl by remember { mutableStateOf(false) }
 
     var type by rememberSaveable {
-        mutableStateOf(orig?.type ?: tpl?.type ?: if (presetTo != null) TxType.TRANSFER else TxType.EXPENSE)
+        mutableStateOf(orig?.type ?: tpl?.type ?: if (presetTo != null || presetFrom != null) TxType.TRANSFER else TxType.EXPENSE)
     }
+    // 外幣：編輯既有的外幣記錄時，算出當初是哪一種外幣模式，計算機和另一邊的金額才放得回去
+    val origPlan = remember(editId) { orig?.let { d.fxPlan(it.type, it.accountId, it.toAccountId) } }
+    val origDec = origPlan?.acc?.cur?.decimals ?: 0
     var expr by rememberSaveable {
-        mutableStateOf(orig?.amount?.toString() ?: tpl?.amount?.takeIf { it > 0 }?.toString() ?: presetAmount?.takeIf { it > 0 }?.toString() ?: "")
+        mutableStateOf(
+            when {
+                orig != null && origPlan != null && origPlan.mode == FxMode.BUY -> orig.amount.toString()
+                orig != null && origPlan != null && origPlan.mode != FxMode.NONE -> fxExpr(orig.fxAmount, origDec)
+                else -> orig?.amount?.toString() ?: tpl?.amount?.takeIf { it > 0 }?.toString() ?: presetAmount?.takeIf { it > 0 }?.toString() ?: ""
+            }
+        )
     }
     var catId by rememberSaveable { mutableStateOf(orig?.categoryId ?: tpl?.categoryId ?: defaultCat(d, type)) }
     var accId by rememberSaveable {
         mutableStateOf(
             orig?.accountId
                 ?: tpl?.accountId
-                ?: (if (presetTo != null) accs.firstOrNull { it.id != presetTo && it.type != tw.moneybook.app.AccountType.CARD }?.id else null)
+                ?: presetFrom
+                ?: (if (presetTo != null) accs.firstOrNull { it.id != presetTo && it.type != tw.moneybook.app.AccountType.CARD && !it.isForeign }?.id else null)
                 ?: accs.firstOrNull()?.id
         )
     }
-    var toAccId by rememberSaveable { mutableStateOf(orig?.toAccountId ?: presetTo ?: accs.getOrNull(1)?.id) }
+    var toAccId by rememberSaveable {
+        mutableStateOf(
+            orig?.toAccountId ?: presetTo
+                ?: (if (presetFrom != null) accs.firstOrNull { it.id != presetFrom && !it.isForeign && it.type != tw.moneybook.app.AccountType.CARD }?.id else null)
+                ?: accs.getOrNull(1)?.id
+        )
+    }
     var day by rememberSaveable { mutableLongStateOf(orig?.day ?: presetDay ?: LocalDate.now().toEpochDay()) }
     // 時間：新增預設現在；編輯舊記錄沒有時間就是「未設定」（-1）
     var timeMin by rememberSaveable {
@@ -157,6 +187,26 @@ fun EditScreen(
     }
     var reimbWho by rememberSaveable { mutableStateOf(origItems.singleOrNull()?.who ?: "") }
     var reimbJson by rememberSaveable { mutableStateOf(ReimbCodec.encode(origItems)) }
+    // 外幣：買賣外幣時「另一邊」的金額（買＝收到的外幣、賣＝收到的台幣）、有沒有手動改過；外幣消費用的匯率（這一筆自己的）
+    var otherText by rememberSaveable {
+        mutableStateOf(
+            when {
+                orig == null -> ""
+                origPlan?.mode == FxMode.BUY -> fxExpr(orig.fxAmount, origDec)
+                origPlan?.mode == FxMode.SELL -> orig.amount.toString()
+                else -> ""
+            }
+        )
+    }
+    var otherTouched by rememberSaveable { mutableStateOf(origPlan?.mode == FxMode.BUY || origPlan?.mode == FxMode.SELL) }
+    var rateUser by rememberSaveable {
+        mutableStateOf(
+            if (orig != null && (origPlan?.mode == FxMode.SPEND || origPlan?.mode == FxMode.SAME))
+                impliedRate(orig.amount, orig.fxAmount, origDec)?.let { rateText(it) } ?: ""
+            else ""
+        )
+    }
+    var rateUserCode by rememberSaveable { mutableStateOf(origPlan?.acc?.currency ?: "") }
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -173,7 +223,44 @@ fun EditScreen(
     }
 
 
-    val amount = Calc.eval(expr)
+    val plan = d.fxPlan(type, accId, if (type == TxType.TRANSFER) toAccId else null)
+    val fxAcc = plan.acc
+    val dec = fxAcc?.cur?.decimals ?: 0
+    // 計算機輸入的是外幣（消費、賣出、同幣別轉帳）還是台幣（一般記帳、買外幣付出的台幣）
+    val keyIsFx = plan.mode == FxMode.SPEND || plan.mode == FxMode.SELL || plan.mode == FxMode.SAME
+    val keyVal = if (keyIsFx) Calc.evalMinor(expr, dec) else Calc.eval(expr)
+    val rate: Double? = fxAcc?.let { a ->
+        (if (rateUserCode == a.currency) rateUser.toDoubleOrNull()?.takeIf { it > 0.0 } else null) ?: d.rateOf(a.currency)
+    }
+    val other: Long? = when (plan.mode) {
+        FxMode.BUY -> parseFx(otherText, dec)
+        FxMode.SELL -> otherText.filter { it.isDigit() }.toLongOrNull()
+        else -> null
+    }
+    // amount 一律是台幣（統計用）；fxMinor 是外幣帳戶實際增減的外幣金額
+    val amount: Long = when (plan.mode) {
+        FxMode.SPEND, FxMode.SAME -> if (rate != null) fxToTwd(keyVal, dec, rate) else 0L
+        FxMode.SELL -> other ?: 0L
+        else -> keyVal
+    }
+    val fxMinor: Long = when (plan.mode) {
+        FxMode.SPEND, FxMode.SAME, FxMode.SELL -> keyVal
+        FxMode.BUY -> other ?: 0L
+        else -> 0L
+    }
+    val hasValue = when (plan.mode) {
+        FxMode.NONE -> amount > 0
+        FxMode.SPEND, FxMode.SAME -> keyVal > 0 && rate != null
+        FxMode.BUY -> keyVal > 0 && fxMinor > 0
+        FxMode.SELL -> keyVal > 0 && amount > 0
+        FxMode.UNSUPPORTED -> false
+    }
+    val implied: Double? = when (plan.mode) {
+        FxMode.BUY -> impliedRate(keyVal, fxMinor, dec)
+        FxMode.SELL -> impliedRate(amount, keyVal, dec)
+        else -> null
+    }
+    val fromFx = accId?.let { d.accMap[it] }?.isForeign == true
     val pending = Calc.hasOp(expr)
     val tags = tagsText.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
     val effDiscount = if (type == TxType.EXPENSE) discount else 0L
@@ -194,7 +281,7 @@ fun EditScreen(
         TxType.TRANSFER -> accId != null && toAccId != null && accId != toAccId
         else -> catId != null
     }
-    val canSave = if (tplMode) targetOk else amount > 0 && targetOk
+    val canSave = if (tplMode) targetOk else hasValue && targetOk
 
     fun draft() = TxnDraft(
         type = type, amount = amount,
@@ -206,6 +293,7 @@ fun EditScreen(
         fee = fee,
         discount = effDiscount,
         reimbItems = reimbItems,
+        fxAmount = fxMinor,
     )
 
     val initialDraft = remember { draft() }
@@ -228,7 +316,9 @@ fun EditScreen(
         if (!canSave) {
             vm.toast(
                 when {
-                    !tplMode && amount <= 0 -> "請先輸入金額"
+                    plan.mode == FxMode.UNSUPPORTED -> "不同幣別的外幣帳戶之間不能直接轉帳，請先換回台幣"
+                    !tplMode && (plan.mode == FxMode.SPEND || plan.mode == FxMode.SAME) && keyVal > 0 && rate == null -> "請先設定匯率（點金額下面的字）"
+                    !tplMode && !hasValue -> if (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) "請輸入付出和收到的金額" else "請先輸入金額"
                     type == TxType.TRANSFER -> "請選擇兩個不同的帳戶"
                     else -> "請選擇分類"
                 }
@@ -260,6 +350,24 @@ fun EditScreen(
     }
 
     BackHandler { tryClose() }
+
+    // 買賣外幣：另一邊的金額沒有手動改過，就依匯率帶入（有輸入付出金額、也有匯率時）
+    LaunchedEffect(plan.mode, keyVal, rate) {
+        if (!otherTouched && (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL)) {
+            if (keyVal <= 0L) otherText = ""
+            else if (rate != null) otherText = if (plan.mode == FxMode.BUY) fxPlain(twdToFx(keyVal, dec, rate), dec) else fxToTwd(keyVal, dec, rate).toString()
+        }
+    }
+    // 從外幣模式換回台幣時，計算機裡的小數點拿掉（台幣只有整數）
+    LaunchedEffect(keyIsFx) {
+        if (!keyIsFx && '.' in expr) {
+            val v = Calc.evalMinor(expr, 2) / 100
+            expr = if (v > 0) v.toString() else ""
+        }
+    }
+    // 外幣帳戶轉出／消費：沒有手續費、優惠、報銷、分期
+    LaunchedEffect(fromFx) { if (fromFx) { fee = 0L; discount = 0L } }
+    LaunchedEffect(plan.mode) { if (plan.mode == FxMode.SPEND) { reimbOn = false; inst = 1 } }
 
     fun setType(t: TxType) {
         if (t == type) return
@@ -342,6 +450,48 @@ fun EditScreen(
                         CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:down", 22.sp) }
                     }
                     AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶") { dialog = "to" }
+                    if ((plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) && fxAcc != null) {
+                        val buy = plan.mode == FxMode.BUY
+                        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                otherText,
+                                { v ->
+                                    otherTouched = true
+                                    otherText = if (buy) {
+                                        var dot = false
+                                        val sb = StringBuilder()
+                                        for (c in v) when {
+                                            c.isDigit() -> sb.append(c)
+                                            c == '.' && !dot && dec > 0 -> { dot = true; sb.append(c) }
+                                        }
+                                        val t = sb.toString()
+                                        val at = t.indexOf('.')
+                                        (if (at >= 0 && t.length - at - 1 > dec) t.take(at + 1 + dec) else t).take(14)
+                                    } else v.filter { c -> c.isDigit() }.take(10)
+                                },
+                                label = { Text(if (buy) "收到的外幣（${fxAcc.currency}）" else "收到的台幣") },
+                                prefix = { Text(if (buy) fxAcc.cur.symbol.trim() else "$") },
+                                supportingText = {
+                                    Text(
+                                        when {
+                                            implied != null -> "成交匯率 ${rateText(implied)}"
+                                            rate != null -> "目前匯率 ${rateText(rate)}"
+                                            else -> "還沒有匯率，請直接輸入收到的金額"
+                                        }
+                                    )
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = if (buy && dec > 0) KeyboardType.Decimal else KeyboardType.Number),
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (rate != null) {
+                                TextButton(onClick = { otherTouched = false; focus.clearFocus() }, modifier = Modifier.padding(top = 6.dp)) { Text("依目前匯率算") }
+                            }
+                        }
+                    }
+                    if (plan.mode == FxMode.UNSUPPORTED) {
+                        Text("不同幣別的外幣帳戶之間不能直接轉帳，請先換回台幣，再買另一種外幣。", style = MaterialTheme.typography.bodySmall, color = cute.expense)
+                    }
                     if (accs.size < 2) {
                         Text("轉帳需要至少兩個帳戶，可以到「我的 → 帳戶管理」新增。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                     }
@@ -435,8 +585,8 @@ fun EditScreen(
                 type == TxType.EXPENSE -> "手續費／優惠"
                 else -> "手續費"
             }
-            CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "vec:coin")
-            if (type == TxType.EXPENSE && !tplMode) {
+            if (!fromFx) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "vec:coin")
+            if (type == TxType.EXPENSE && !tplMode && plan.mode != FxMode.SPEND) {
                 val totalReimb = reimbItems.sumOf { it.effective }
                 val part = if (reimbItems.isNotEmpty() && totalReimb != actual) " ${formatMoney(totalReimb)}" else ""
                 val people = if (reimbItems.size > 1) "・${reimbItems.size} 人" else ""
@@ -451,10 +601,10 @@ fun EditScreen(
                     icon = if (reimbItems.isNotEmpty() && reimbItems.all { it.closed }) "vec:check" else "vec:receipt",
                 )
             }
-            if (orig == null && type == TxType.EXPENSE && !tplMode) {
+            if (orig == null && type == TxType.EXPENSE && !tplMode && plan.mode != FxMode.SPEND) {
                 CuteChip(if (inst > 1) "分 $inst 期" else "分期", inst > 1, { dialog = "inst" }, icon = "vec:repeat")
             }
-            if (orig == null && !tplMode) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "vec:star")
+            if (orig == null && !tplMode && plan.mode == FxMode.NONE) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "vec:star")
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
 
@@ -467,11 +617,11 @@ fun EditScreen(
                         if (cat == null && type != TxType.TRANSFER) "請先選分類" else "",
                         style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f),
                     )
-                    if (pending) Text("= ${formatMoney(amount)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    if (pending) Text("= " + (if (keyIsFx && fxAcc != null) formatFx(keyVal, fxAcc.currency) else formatMoney(keyVal)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
             }
             Text(
-                if (expr.isEmpty()) "$0" else "$" + Calc.pretty(expr),
+                (if (keyIsFx && fxAcc != null) fxAcc.cur.symbol.trim() else "$") + (if (expr.isEmpty()) "0" else Calc.pretty(expr)),
                 style = MaterialTheme.typography.displaySmall,
                 color = when (type) {
                     TxType.EXPENSE -> cute.expense
@@ -483,6 +633,24 @@ fun EditScreen(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // 外幣：換算成台幣（消費）、成交匯率與收到的金額（買賣）
+            when (plan.mode) {
+                FxMode.SPEND, FxMode.SAME -> Text(
+                    if (rate != null) "≈ ${formatMoney(amount)}（匯率 ${rateText(rate)}，點這裡改）" else "還沒有匯率，點這裡設定",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth().clickable { dialog = "fxrate" }.padding(vertical = 2.dp),
+                )
+                FxMode.BUY -> if (fxAcc != null) Text(
+                    "付出 ${formatMoney(keyVal)}　收到 ${formatFx(fxMinor, fxAcc.currency)}" + (implied?.let { "　匯率 ${rateText(it)}" } ?: ""),
+                    style = MaterialTheme.typography.labelMedium, color = cute.sub, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth(),
+                )
+                FxMode.SELL -> if (fxAcc != null) Text(
+                    "賣出 ${formatFx(keyVal, fxAcc.currency)}　收到 ${formatMoney(amount)}" + (implied?.let { "　匯率 ${rateText(it)}" } ?: ""),
+                    style = MaterialTheme.typography.labelMedium, color = cute.sub, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth(),
+                )
+                else -> {}
+            }
             if (fee > 0 || effDiscount > 0) {
                 val parts = ArrayList<String>()
                 parts.add(if (type == TxType.TRANSFER) "轉帳 ${formatMoney(amount)}" else "金額 ${formatMoney(amount)}")
@@ -505,17 +673,18 @@ fun EditScreen(
         Spacer(Modifier.height(8.dp))
 
         Keypad(
-            onKey = { k -> expr = Calc.press(expr, k) },
+            onKey = { k -> expr = if (keyIsFx) Calc.pressFx(expr, k, dec) else Calc.press(expr, k) },
             doneLabel = if (pending) "=" else "完成",
             doneEnabled = pending || canSave,
             onDone = {
                 if (pending) {
-                    expr = if (amount > 0) amount.toString() else ""
+                    expr = if (keyVal > 0) (if (keyIsFx) fxExpr(keyVal, dec) else keyVal.toString()) else ""
                 } else {
                     doSave()
                 }
             },
             modifier = Modifier.padding(bottom = 10.dp),
+            dotKey = keyIsFx && dec > 0,
         )
     }
 
@@ -543,7 +712,7 @@ fun EditScreen(
         "unsaved" -> AlertDialog(
             onDismissRequest = { dialog = "" },
             title = { Text("要儲存修改嗎？") },
-            text = { Text(if (canSave) "你有還沒儲存的修改。" else "你有還沒儲存的修改，但目前的內容還不能儲存（${if (!tplMode && amount <= 0) "沒有金額" else "資料不完整"}）。") },
+            text = { Text(if (canSave) "你有還沒儲存的修改。" else "你有還沒儲存的修改，但目前的內容還不能儲存（${if (!tplMode && !hasValue) "沒有金額" else "資料不完整"}）。") },
             confirmButton = {
                 Row {
                     TextButton(onClick = { dialog = "" }) { Text("繼續編輯") }
@@ -561,6 +730,31 @@ fun EditScreen(
                     OutlinedTextField(text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 },
                 confirmButton = { TextButton(onClick = { tplName = text.trim(); dialog = "" }) { Text("好") } },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "fxrate" -> if (fxAcc != null) {
+            var text by remember { mutableStateOf(rate?.let { rateText(it) } ?: "") }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("${fxAcc.currency} 匯率") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            text, { v -> text = v.filter { c -> c.isDigit() || c == '.' }.take(12) },
+                            label = { Text("1 ${fxAcc.currency} = 幾元台幣") }, prefix = { Text("$") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text("只用在這一筆換算成台幣（統計用）。要改幣別的目前匯率，到帳戶明細的「設定匯率」。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = text.toDoubleOrNull()?.let { it > 0.0 } == true,
+                        onClick = { rateUser = text; rateUserCode = fxAcc.currency; dialog = "" },
+                    ) { Text("好") }
+                },
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
             )
         }

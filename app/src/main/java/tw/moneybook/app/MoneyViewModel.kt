@@ -42,6 +42,8 @@ data class TxnDraft(
     val reimbItems: List<ReimbItem> = emptyList(),
     /** 當天的幾點幾分（分鐘數），-1 是沒有時間 */
     val time: Int = -1,
+    /** 外幣金額（最小單位）：動到外幣帳戶時外幣帳戶實際增減的金額，0 = 沒有外幣 */
+    val fxAmount: Long = 0L,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -160,6 +162,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
                 adjust = old.adjust && dr.type != TxType.TRANSFER,
                 time = dr.time,
+                fxAmount = dr.fxAmount,
             ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             return
@@ -175,6 +178,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     categoryId = dr.categoryId, accountId = dr.accountId, toAccountId = dr.toAccountId,
                     day = dr.day, note = dr.note, tags = dr.tags, time = dr.time,
                     fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
+                    fxAmount = dr.fxAmount,
                 ).let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })

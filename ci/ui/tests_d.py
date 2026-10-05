@@ -1370,3 +1370,117 @@ def t_fx_adjust_balance():
     ns = d.shot("更新之後")
     d.check("餘額變成 US$1,000.50", d.has(ns, "US$1,000.50", True))
     d.check("多一筆餘額調整 +US$13.00", d.has(ns, "+US$13.00", True), [n.text for n in ns if "US$" in n.text])
+
+
+def save_to_detail():
+    """從帳戶明細進入記一筆，按完成後會回到帳戶明細（不是主畫面）"""
+    ns = d.nodes()
+    c = [n for n in ns if n.text == "完成"]
+    d.tap(max(c, key=lambda n: n.cy))
+    d.wait_text("更新餘額", timeout=15)
+    d.time.sleep(1)
+
+
+def edit_with_text(txt):
+    """記一筆畫面裡目前文字是 txt 的輸入框"""
+    for n in d.edits():
+        if n.text == txt:
+            return n
+    return None
+
+
+@case(D, "買進外幣：付出台幣，收到的外幣依匯率帶入，可以改成實際拿到的金額")
+def t_fx_buy():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    d.tap_text("買進 USD", exact=True)
+    d.wait_text("備註（選填）", timeout=15)
+    ns = d.shot("買進外幣（還沒輸入）")
+    d.check("轉帳畫面出現「收到的外幣（USD）」輸入框", d.has(ns, "收到的外幣（USD）", False), [n.text for n in ns if n.text][:25])
+    f.keypad("3000")
+    d.time.sleep(1)
+    ns = d.shot("付出 3,000 之後")
+    d.check("依匯率 31.5 自動帶入收到的外幣 95.24（3000 ÷ 31.5）", edit_with_text("95.24") is not None, [n.text for n in d.edits()])
+    d.check("金額下面顯示付出 $3,000、收到 US$95.24", any("付出 $3,000" in n.text and "收到 US$95.24" in n.text for n in ns), [n.text for n in ns if "付出" in n.text])
+    # 銀行實際只給 95.00：手動改
+    d.fill(edit_with_text("95.24"), "95")
+    d.hide_ime()
+    ns = d.shot("改成實際拿到的 95")
+    d.check("收到 US$95.00，成交匯率 3000 ÷ 95 = 31.5789", any("收到 US$95.00" in n.text and "31.5789" in n.text for n in ns), [n.text for n in ns if "收到" in n.text])
+    save_to_detail()
+    ns = d.shot("買進之後的美元帳戶")
+    d.check("美元帳戶餘額 US$1,082.50（987.50 + 95.00）", d.has(ns, "US$1,082.50", True), [n.text for n in ns if "US$" in n.text])
+    d.check("明細多一筆 +US$95.00，備註 $3,000 @ 31.5789", d.has(ns, "+US$95.00", True) and any("$3,000 @ 31.5789" in n.text for n in ns),
+            [n.text for n in ns if "@" in n.text])
+
+
+@case(D, "賣出外幣：賣出的外幣依匯率換算收到的台幣")
+def t_fx_sell():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    d.tap_text("賣出 USD", exact=True)
+    d.wait_text("備註（選填）", timeout=15)
+    ns = d.shot("賣出外幣（還沒輸入）")
+    d.check("出現「收到的台幣」輸入框", d.has(ns, "收到的台幣", False), [n.text for n in ns if n.text][:25])
+    d.check("計算機有小數點鍵（外幣可以輸入小數）", d.has(ns, ".", True))
+    f.keypad("100")
+    d.time.sleep(1)
+    ns = d.shot("賣出 100 之後")
+    d.check("依匯率 31.5 自動帶入收到的台幣 3150", edit_with_text("3150") is not None, [n.text for n in d.edits()])
+    d.check("金額下面顯示賣出 US$100.00、收到 $3,150", any("賣出 US$100.00" in n.text and "收到 $3,150" in n.text for n in ns), [n.text for n in ns if "賣出" in n.text])
+    save_to_detail()
+    ns = d.shot("賣出之後的美元帳戶")
+    d.check("美元帳戶餘額 US$887.50（987.50 − 100.00）", d.has(ns, "US$887.50", True), [n.text for n in ns if "US$" in n.text])
+    d.check("明細多一筆 -US$100.00，備註 $3,150 @ 31.5", d.has(ns, "-US$100.00", True) and any("$3,150 @ 31.5" in n.text for n in ns), [n.text for n in ns if "@" in n.text])
+    # 賣出收到的台幣進了現金：1,000 + 3,150
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("現金增加 3,150：$4,150", d.has(ns, "$4,150", True), [n.text for n in ns if n.text.startswith("$")][:8])
+
+
+@case(D, "外幣帳戶消費：輸入外幣金額（可以有小數），自動換算成台幣統計")
+def t_fx_spend():
+    d.fresh(usd_seed())
+    f.open_add()
+    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.wait_text("選擇帳戶", timeout=10)
+    d.tap_text("美元帳戶", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("選了美元帳戶")
+    d.check("計算機出現小數點鍵，金額前面是 US$", d.has(ns, ".", True) and d.has(ns, "US$0", True), [n.text for n in ns if "US$" in n.text])
+    d.check("不顯示手續費、報銷、分期（外幣帳戶消費用不到）", not d.has(ns, "手續費", False) and not d.has(ns, "報銷", True) and not d.has(ns, "分期", True))
+    f.keypad("20.5")
+    d.time.sleep(1)
+    ns = d.shot("輸入 20.5")
+    d.check("金額顯示 US$20.5", d.has(ns, "US$20.5", True), [n.text for n in ns if "US$" in n.text])
+    d.check("下面換算成台幣：≈ $646（20.5 × 31.5 = 645.75）", any("≈ $646" in n.text and "匯率 31.5" in n.text for n in ns), [n.text for n in ns if "≈" in n.text])
+    f.save_edit()
+    ns = d.shot("記好之後的明細")
+    d.check("主頁明細這一筆金額是約當台幣 -$646，備註 US$20.50", d.has(ns, "-$646", False) and any("US$20.50" in n.text for n in ns), [n.text for n in ns if "US$" in n.text or "646" in n.text])
+    open_account("美元帳戶")
+    ns = d.shot("美元帳戶明細")
+    d.check("美元帳戶餘額 US$967.00（987.50 − 20.50）", d.has(ns, "US$967.00", True), [n.text for n in ns if "US$" in n.text])
+    d.check("明細這一筆 -US$20.50、備註約 $646", d.has(ns, "-US$20.50", True) and any("約 $646" in n.text for n in ns))
+
+
+@case(D, "編輯既有的外幣記錄：外幣金額和匯率都放得回去，不改直接存也不會變")
+def t_fx_edit_existing():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    # 先編輯買進那一筆（台幣 31,500 → US$1,000.00）
+    d.tap(d.wait(lambda n: n.text == "+US$1,000.00", 10, "買進那一筆"))
+    d.wait_text("正在編輯", exact=False, timeout=15)
+    ns = d.shot("編輯買進那一筆")
+    d.check("付出金額 $31500 放回計算機", d.has(ns, "$31500", True), [n.text for n in ns if n.text.startswith("$")][:6])
+    d.check("收到的外幣放回輸入框 1000", edit_with_text("1000") is not None, [n.text for n in d.edits()])
+    save_to_detail()
+    ns = d.shot("原封不動存回去")
+    d.check("美元帳戶餘額還是 US$987.50", d.has(ns, "US$987.50", True), [n.text for n in ns if "US$" in n.text])
+    # 再編輯外幣消費那一筆
+    d.tap(d.wait(lambda n: n.text == "-US$12.50", 10, "消費那一筆"))
+    d.wait_text("正在編輯", exact=False, timeout=15)
+    ns = d.shot("編輯外幣消費")
+    d.check("金額放回 US$12.5，換算 ≈ $394", d.has(ns, "US$12.5", True) and any("≈ $394" in n.text for n in ns), [n.text for n in ns if "US$" in n.text or "≈" in n.text])
+    save_to_detail()
+    ns = d.shot("消費原封不動存回去")
+    d.check("美元帳戶餘額還是 US$987.50，這一筆仍是約 $394", d.has(ns, "US$987.50", True) and any("約 $394" in n.text for n in ns))

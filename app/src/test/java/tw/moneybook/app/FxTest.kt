@@ -138,6 +138,52 @@ class FxTest {
         assertNull(d.avgCost(d.accMap[1L]!!))
     }
 
+    private fun typed(dec: Int, vararg keys: String): String {
+        var e = ""
+        for (k in keys) e = Calc.pressFx(e, k, dec)
+        return e
+    }
+
+    @Test
+    fun calculatorHandlesForeignDecimals() {
+        assertEquals(1250L, Calc.evalMinor("12.5", 2))
+        assertEquals(1649L, Calc.evalMinor("12.5+3.99", 2))
+        assertEquals(900L, Calc.evalMinor("10-1.00", 2))
+        assertEquals(1000L, Calc.evalMinor("1000", 0))
+        assertEquals(0L, Calc.evalMinor("", 2))
+        assertEquals(0L, Calc.evalMinor("1-5", 2))                   // 不會變負的
+        assertEquals("12.5", typed(2, "1", "2", ".", "5"))
+        assertEquals("1.23", typed(2, "1", ".", "2", "3", "4"))      // 超過 2 位小數的第 3 位不收
+        assertEquals("1.2", typed(2, "1", ".", ".", "2"))            // 第二個小數點不收
+        assertEquals("0.5", typed(2, ".", "5"))                      // 一開頭按小數點補 0
+        assertEquals("5+0.5", typed(2, "5", "+", ".", "5"))
+        assertEquals("120", typed(0, "1", ".", "2", "0"))            // 日圓沒有小數
+        assertEquals("1.0", typed(2, "1", ".", "0"))
+        assertEquals("1.05", typed(2, "1", ".", "0", "5"))           // 小數的 0 不會被吃掉
+        assertEquals("1.2", Calc.pressFx("1.25", "⌫", 2))
+        assertEquals("", Calc.pressFx("1.25", "C", 2))
+    }
+
+    @Test
+    fun foreignModeFollowsTheAccounts() {
+        val d = data()
+        assertEquals(FxMode.NONE, d.fxPlan(TxType.EXPENSE, 1, null).mode)
+        assertEquals(FxMode.SPEND, d.fxPlan(TxType.EXPENSE, 2, null).mode)
+        assertEquals(FxMode.SPEND, d.fxPlan(TxType.INCOME, 3, null).mode)
+        assertEquals(FxMode.NONE, d.fxPlan(TxType.TRANSFER, 1, 1).mode)
+        val buy = d.fxPlan(TxType.TRANSFER, 1, 2)
+        assertEquals(FxMode.BUY, buy.mode)
+        assertEquals("USD", buy.acc!!.currency)
+        val sell = d.fxPlan(TxType.TRANSFER, 3, 1)
+        assertEquals(FxMode.SELL, sell.mode)
+        assertEquals("JPY", sell.acc!!.currency)
+        assertEquals(FxMode.UNSUPPORTED, d.fxPlan(TxType.TRANSFER, 2, 3).mode)
+        assertEquals(FxMode.SAME, d.fxPlan(TxType.TRANSFER, 2, 2).mode)
+        assertEquals("12.5", fxExpr(1250, 2))
+        assertEquals("12", fxExpr(1200, 2))
+        assertEquals("1000", fxExpr(1000, 0))
+    }
+
     @Test
     fun foreignDataSurvivesSaveAndOldBackupsStillLoad() {
         val d = data(txn(1, TxType.TRANSFER, 31_500, 1, 2, fx = 100_000), rates = listOf(FxRate("USD", 31.8, day)))
