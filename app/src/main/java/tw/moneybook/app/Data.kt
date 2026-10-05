@@ -13,6 +13,7 @@ enum class AccountType(val label: String, val emoji: String) {
     LOAN("貸款", "img:acc_loan_icon"),
     ECARD("電子票證", "img:acc_transit"),
     EPAY("電子支付", "img:acc_epay"),
+    FOREIGN("外幣", "img:acc_foreign"),
     INVEST("投資", "img:extra_gold"),
     OTHER("其他", "img:acc_purse"),
 }
@@ -51,6 +52,8 @@ data class Account(
     val sharedLimitOf: Long = 0L,
     /** 手動標了星號的常用帳戶：記一筆選帳戶時固定放在最上面 */
     val favorite: Boolean = false,
+    /** 外幣帳戶的幣別代碼（例如 USD）；空白是台幣帳戶。外幣帳戶的初始金額與餘額都用該幣別的最小單位（美元是分） */
+    val currency: String = "",
 )
 
 data class Category(
@@ -113,6 +116,12 @@ data class Txn(
     val adjust: Boolean = false,
     /** 當天的幾點幾分（從 0 點算起的分鐘數 0～1439）；-1 是沒有時間（舊資料）。同一天的先後順序靠它 */
     val time: Int = -1,
+    /**
+     * 外幣金額（最小單位）：這筆記錄動到外幣帳戶時，外幣帳戶實際增減的金額；0 代表沒有外幣。
+     * 這時 amount 一律是約當台幣（統計用）：外幣帳戶的消費／收入是當時匯率換算的台幣，
+     * 台幣 ⇄ 外幣帳戶的轉帳（買賣外幣）則是台幣那一邊實際付出／收到的金額。
+     */
+    val fxAmount: Long = 0L,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -198,6 +207,8 @@ data class AppData(
     val templates: List<Template>,
     val prefs: Prefs,
     val nextId: Long,
+    /** 外幣的目前匯率（手動設定，沒有的幣別看最近一次買賣的成交匯率），舊資料沒有這個欄位 */
+    val rates: List<FxRate> = emptyList(),
     /** 投資帳戶的買賣記錄與價格（舊資料沒有這兩個欄位，就是空的） */
     val trades: List<Trade> = emptyList(),
     val prices: List<PriceSnap> = emptyList(),
@@ -263,14 +274,8 @@ data class AppData(
         val m = HashMap<Long, Long>()
         for (a in accounts) m[a.id] = a.initial
         for (t in txns) {
-            when (t.type) {
-                TxType.EXPENSE -> t.accountId?.let { m[it] = (m[it] ?: 0L) - t.paid }
-                TxType.INCOME -> t.accountId?.let { m[it] = (m[it] ?: 0L) + t.paid }
-                TxType.TRANSFER -> {
-                    t.accountId?.let { m[it] = (m[it] ?: 0L) - t.amount - t.fee }
-                    t.toAccountId?.let { m[it] = (m[it] ?: 0L) + t.amount }
-                }
-            }
+            t.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
+            t.toAccountId?.let { id -> if (id != t.accountId) accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
             for (p in t.items.flatMap { it.pays }) p.accountId?.let { m[it] = (m[it] ?: 0L) + p.amount }
         }
         return m
@@ -293,13 +298,7 @@ data class AppData(
         val ev = ArrayList<Ev>()
         for (t in txns) {
             if (t.accountId == accountId || t.toAccountId == accountId) {
-                val delta = when (t.type) {
-                    TxType.EXPENSE -> if (t.accountId == accountId) -t.paid else 0L
-                    TxType.INCOME -> if (t.accountId == accountId) t.paid else 0L
-                    TxType.TRANSFER ->
-                        (if (t.toAccountId == accountId) t.amount else 0L) - (if (t.accountId == accountId) t.amount + t.fee else 0L)
-                }
-                ev.add(Ev("t${t.id}", t.day, t.time, t.id * 1000, delta))
+                ev.add(Ev("t${t.id}", t.day, t.time, t.id * 1000, t.flowFor(a)))
             }
             t.items.flatMap { it.pays }.forEachIndexed { i, p ->
                 if (p.accountId == accountId) ev.add(Ev("p${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 1 + i, p.amount))
@@ -400,6 +399,21 @@ fun List<Txn>.pendingReimb(): List<Txn> = filter { it.type == TxType.EXPENSE && 
 
 fun sortTxns(list: List<Txn>): List<Txn> =
     list.sortedWith(compareByDescending<Txn> { it.day }.thenByDescending { it.time }.thenByDescending { it.id })
+
+/**
+ * 這筆記錄讓帳戶 a 的餘額增減多少（用 a 自己的幣別：台幣帳戶是台幣、外幣帳戶是外幣最小單位）。
+ * 外幣帳戶用 fxAmount（轉帳時手續費只算在台幣那一邊）；台幣帳戶用 amount／實付。
+ */
+fun Txn.flowFor(a: Account): Long {
+    val fx = a.isForeign
+    return when (type) {
+        TxType.EXPENSE -> if (accountId == a.id) -(if (fx) fxAmount else paid) else 0L
+        TxType.INCOME -> if (accountId == a.id) (if (fx) fxAmount else paid) else 0L
+        TxType.TRANSFER ->
+            (if (toAccountId == a.id) (if (fx) fxAmount else amount) else 0L) -
+                (if (accountId == a.id) (if (fx) fxAmount else amount + fee) else 0L)
+    }
+}
 
 /** 時間文字：570 → "09:30"；沒有時間（-1）回傳空字串 */
 fun formatTime(min: Int): String = if (min < 0) "" else "%02d:%02d".format(min / 60, min % 60)

@@ -53,6 +53,7 @@ import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.ReimbPay
+import tw.moneybook.app.flowFor
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
 import tw.moneybook.app.cardCycle
@@ -143,11 +144,7 @@ fun AccountDetailScreen(
     // 每一筆做完之後的餘額
     val running = remember(d, a.id) { d.runningBalances(a.id) }
 
-    fun flow(t: Txn): Long = when (t.type) {
-        TxType.EXPENSE -> if (t.accountId == a.id) -t.paid else 0L
-        TxType.INCOME -> if (t.accountId == a.id) t.paid else 0L
-        TxType.TRANSFER -> (if (t.toAccountId == a.id) t.amount else 0L) - (if (t.accountId == a.id) t.amount + t.fee else 0L)
-    }
+    fun flow(t: Txn): Long = t.flowFor(a)
     val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.pay.amount }
     val inflow = flows.filter { it > 0 }.sum()
     val outflow = -flows.filter { it < 0 }.sum()

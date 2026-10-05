@@ -48,7 +48,7 @@ object Codec {
                         .put("badgeFrom", a.badgeFrom).put("badgeTo", a.badgeTo)
                         .put("creditLimit", a.creditLimit).put("statementDay", a.statementDay).put("dueDay", a.dueDay)
                         .put("sharedLimitOf", a.sharedLimitOf)
-                        .put("favorite", a.favorite)
+                        .put("favorite", a.favorite).put("currency", a.currency)
                 )
             }
         })
@@ -74,7 +74,7 @@ object Codec {
                         .put("reimbAccountId", nullable(t.reimbAccountId)).put("reimbDay", nullable(t.reimbDay))
                         .put("reimbAmount", t.reimbAmount)
                         .put("reimbItems", ReimbCodec.toJson(t.reimbItems))
-                        .put("adjust", t.adjust).put("time", t.time)
+                        .put("adjust", t.adjust).put("time", t.time).put("fxAmount", t.fxAmount)
                 )
             }
         })
@@ -99,6 +99,9 @@ object Codec {
         })
         root.put("prices", JSONArray().apply {
             d.prices.forEach { p -> put(JSONObject().put("symbol", p.symbol).put("day", p.day).put("price", p.price)) }
+        })
+        root.put("rates", JSONArray().apply {
+            d.rates.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
         })
         val p = d.prefs
         root.put(
@@ -135,6 +138,7 @@ object Codec {
                 order = o.optInt("order", 0),
                 hidden = o.optBoolean("hidden", false),
                 favorite = o.optBoolean("favorite", false),
+                currency = o.optString("currency", ""),
                 badge = o.optString("badge", ""),
                 badgeColor = o.optInt("badgeColor", 0),
                 badgeFrom = o.optLong("badgeFrom", 0L),
@@ -180,6 +184,7 @@ object Codec {
                 reimbItems = ReimbCodec.fromJson(o.optJSONArray("reimbItems")),
                 adjust = o.optBoolean("adjust", false),
                 time = o.optInt("time", -1),
+                fxAmount = o.optLong("fxAmount", 0L),
             )
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
@@ -214,6 +219,9 @@ object Codec {
         val prices = objects(root.optJSONArray("prices")) { o ->
             PriceSnap(o.getString("symbol"), o.getLong("day"), o.optDouble("price", 0.0))
         }
+        val rates = objects(root.optJSONArray("rates")) { o ->
+            FxRate(o.getString("code"), o.optDouble("rate", 0.0), o.optLong("day", 0L))
+        }.filter { it.rate > 0.0 }
         require(books.isNotEmpty()) { "沒有帳本資料" }
         val po = root.optJSONObject("prefs") ?: JSONObject()
         val prefs = Prefs(
@@ -240,6 +248,7 @@ object Codec {
             nextId = maxOf(root.optLong("nextId", 1L), maxId + 1),
             trades = trades,
             prices = prices,
+            rates = rates,
         )
     }
 

@@ -227,7 +227,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 更新餘額：把帳戶餘額改成實際的數字，差額記成一筆不算收支的「餘額調整」（漏記帳時補平用） */
     fun adjustBalance(accountId: Long, target: Long, day: Long = LocalDate.now().toEpochDay()) {
         val d = data
-        if (d.accMap[accountId] == null) return
+        val acc = d.accMap[accountId] ?: return
         val diff = target - (d.balances()[accountId] ?: 0L)
         if (diff == 0L) {
             toast("餘額一樣，不用調整")
@@ -236,12 +236,14 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val t = Txn(
             id = d.nextId, bookId = d.currentBook.id,
             type = if (diff > 0) TxType.INCOME else TxType.EXPENSE,
-            amount = if (diff > 0) diff else -diff,
+            // 外幣帳戶：fxAmount 是外幣差額，amount 放約當台幣（沒有匯率就是 0，餘額調整不算收支）
+            amount = if (acc.isForeign) d.twdValue(acc, kotlin.math.abs(diff)) ?: 0L else if (diff > 0) diff else -diff,
             categoryId = null, accountId = accountId, toAccountId = null,
             day = day, note = "", tags = emptyList(), adjust = true,
+            fxAmount = if (acc.isForeign) kotlin.math.abs(diff) else 0L,
         )
         commit(d.copy(txns = sortTxns(d.txns + t), nextId = d.nextId + 1))
-        _messages.tryEmit(UiMsg("已更新餘額，${if (diff > 0) "增加" else "減少"} ${formatMoney(t.amount)}", "復原") {
+        _messages.tryEmit(UiMsg("已更新餘額，${if (diff > 0) "增加" else "減少"} ${acc.fmt(kotlin.math.abs(diff))}", "復原") {
             val now = data
             commit(now.copy(txns = now.txns.filter { it.id != t.id }))
         })
