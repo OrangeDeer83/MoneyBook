@@ -204,9 +204,7 @@ class FxTest {
         assertEquals(98_750L, back.balances()[usdAcc.id])                 // US$987.50
         assertEquals(0L, back.txns.single { it.amount == 50L }.fxAmount)
         // 沒有外幣欄位的舊 CSV 照常匯入
-        val old = "日期,類型,金額,分類,帳戶
-2026-10-01,支出,100,餐飲,現金
-"
+        val old = "日期,類型,金額,分類,帳戶\n2026-10-01,支出,100,餐飲,現金\n"
         assertEquals(1, CsvIO.import(Defaults.create(), old).second)
     }
 
