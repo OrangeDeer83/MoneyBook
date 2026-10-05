@@ -1190,9 +1190,12 @@ def t_time_tap_outside():
 def set_time_in_dialog(hh, mm):
     d.wait_text("選擇時間", timeout=10)
     tap_wheel_to_type()
+    d.shot("點滾輪之後")
     type_time(hh, mm)
+    d.shot(f"輸入 {hh}:{mm} 之後")
     d.hide_ime()
     d.time.sleep(1.2)
+    d.shot("收起鍵盤之後")
     d.tap_text("確定", exact=True)
     d.time.sleep(1)
 
