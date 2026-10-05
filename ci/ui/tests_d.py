@@ -1333,7 +1333,7 @@ def t_fx_new_account():
             break
         a = next((x for x in (d.first(ns, t, True) for t in ("電子票證", "電子支付", "貸款", "信用卡", "銀行")) if x), None)
         if a:
-            d.swipe(950, a.cy, 150, a.cy, 400)
+            d.swipe(820, a.cy, 260, a.cy, 600)       # 在對話框裡面滑（對話框左右各約 100px 的邊）
         d.time.sleep(0.8)
     d.tap_text("外幣", exact=True)
     d.time.sleep(0.8)
