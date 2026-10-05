@@ -77,7 +77,7 @@ class TxnTimeTest {
         val cat = Defaults.create().topCategories(TxType.EXPENSE).first().id
         val t = Txn(9001, Defaults.create().currentBook.id, TxType.EXPENSE, 120, cat, acc, null, day, "午餐", emptyList(), time = 735)
         val csv = String(CsvIO.export(Defaults.create().copy(txns = listOf(t))), Charsets.UTF_8)
-        assertTrue(csv.lineSequence().first().endsWith("時間"))
+        assertTrue(csv.lineSequence().first().contains(",時間,"))      // 時間欄後面還有外幣金額、外幣幣別兩欄
         assertTrue(csv.contains("12:15"))
         val (imported, n) = CsvIO.import(Defaults.create(), csv)
         assertEquals(1, n)
