@@ -54,6 +54,16 @@ import tw.moneybook.app.AccountType
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.ReimbPay
 import tw.moneybook.app.flowFor
+import tw.moneybook.app.Currencies
+import tw.moneybook.app.cur
+import tw.moneybook.app.fmt
+import tw.moneybook.app.fxPlain
+import tw.moneybook.app.isForeign
+import tw.moneybook.app.parseFx
+import tw.moneybook.app.rateOf
+import tw.moneybook.app.twdValue
+import tw.moneybook.app.avgCost
+import tw.moneybook.app.rateText
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
 import tw.moneybook.app.cardCycle
@@ -129,6 +139,7 @@ fun AccountDetailScreen(
     }
     var editing by remember { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
+    var rateDialog by remember { mutableStateOf(false) }
     var month by remember { mutableStateOf(vm.month) }
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     // 這個帳戶相關的記錄（所有帳本）
@@ -159,7 +170,7 @@ fun AccountDetailScreen(
                         Column(Modifier.weight(1f)) {
                             Text(a.type.label, style = MaterialTheme.typography.labelMedium, color = cute.sub)
                             Text(
-                                formatMoney(balance),
+                                a.fmt(balance),
                                 style = MaterialTheme.typography.headlineMedium,
                                 color = if (balance < 0) cute.expense else cute.ink,
                             )
@@ -167,6 +178,31 @@ fun AccountDetailScreen(
                         Column(horizontalAlignment = Alignment.End) {
                             TextButton(onClick = { editing = true }) { Text("編輯") }
                             TextButton(onClick = { adjusting = true }) { Text("更新餘額") }
+                        }
+                    }
+                    if (a.isForeign) {
+                        val rate = d.rateOf(a.currency)
+                        val manual = d.rates.any { it.code == a.currency }
+                        val twdv = d.twdValue(a, balance)
+                        val avg = d.avgCost(a)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            if (twdv != null) "約當 ${formatMoney(twdv)}" else "還沒有匯率，無法換算成台幣",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (rate != null) "目前匯率 ${rateText(rate)}（${if (manual) "手動設定" else "最近一次買賣"}）" else "目前匯率：未設定",
+                                style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { rateDialog = true }) { Text("設定匯率") }
+                        }
+                        if (avg != null) {
+                            Text(
+                                "平均買進成本 ${rateText(avg)}" +
+                                    if (rate != null && kotlin.math.abs(rate - avg) > 1e-6) "（目前比成本${if (rate > avg) "高" else "低"} ${rateText(kotlin.math.abs(rate - avg))}）" else "",
+                                style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                            )
                         }
                     }
                     val limitInfo = remember(d, a) { d.limitInfo(a) }
@@ -244,10 +280,18 @@ fun AccountDetailScreen(
     }
     if (adjusting) {
         AdjustBalanceDialog(
+            acc = a,
             current = balance,
             isCard = a.type == AccountType.CARD || a.type == AccountType.LOAN,
             onConfirm = { target -> vm.adjustBalance(a.id, target); adjusting = false },
             onDismiss = { adjusting = false },
+        )
+    }
+    if (rateDialog) {
+        RateDialog(
+            code = a.currency, current = d.rateOf(a.currency), manual = d.rates.any { it.code == a.currency },
+            onSave = { vm.setRate(a.currency, it); rateDialog = false },
+            onDismiss = { rateDialog = false },
         )
     }
     if (editing) {
@@ -262,24 +306,54 @@ fun AccountDetailScreen(
     }
 }
 
+/** 設定外幣的目前匯率：1 單位外幣 = 多少台幣；清除就改用最近一次買賣的匯率 */
+@Composable
+private fun RateDialog(code: String, current: Double?, manual: Boolean, onSave: (Double?) -> Unit, onDismiss: () -> Unit) {
+    val cute = LocalCute.current
+    var text by remember { mutableStateOf(current?.let { rateText(it) } ?: "") }
+    val value = text.toDoubleOrNull()?.takeIf { it > 0.0 }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("設定 $code 匯率") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    text, { s -> text = s.filter { c -> c.isDigit() || c == '.' }.take(12) },
+                    label = { Text("1 $code = 幾元台幣") }, prefix = { Text("$") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "匯率用來把外幣餘額換成約當台幣；每次買賣外幣時，成交的匯率會另外記在那一筆。",
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                )
+                if (manual) {
+                    TextButton(onClick = { onSave(null) }) { Text("清除手動匯率（改用最近一次買賣的匯率）") }
+                }
+            }
+        },
+        confirmButton = { TextButton(enabled = value != null, onClick = { onSave(value) }) { Text("儲存") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
 /** 更新餘額：輸入帳戶現在實際的餘額，差額會記成一筆「餘額調整」 */
 @Composable
-private fun AdjustBalanceDialog(current: Long, isCard: Boolean, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
+private fun AdjustBalanceDialog(acc: Account, current: Long, isCard: Boolean, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
     val cute = LocalCute.current
     var text by remember { mutableStateOf("") }
-    // 只留數字，欠款（信用卡）可以在最前面加負號
-    val target = text.trim().let { s ->
-        val neg = s.startsWith("-")
-        s.filter { it.isDigit() }.toLongOrNull()?.let { if (neg) -it else it }
-    }
+    val dec = if (acc.isForeign) acc.cur.decimals else 0
+    // 只留數字（外幣可以有小數點），欠款（信用卡）可以在最前面加負號
+    val target = parseFx(text, dec)
+    fun money(v: Long) = acc.fmt(v)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("更新餘額") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("目前記錄的餘額：${formatMoney(current)}", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
+                Text("目前記錄的餘額：${money(current)}", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(
-                    text, { text = it.filter { c -> c.isDigit() || c == '-' }.take(12) },
+                    text, { text = it.filter { c -> c.isDigit() || c == '-' || (c == '.' && dec > 0) }.take(14) },
                     label = { Text("實際的餘額") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -289,8 +363,8 @@ private fun AdjustBalanceDialog(current: Long, isCard: Boolean, onConfirm: (Long
                     when {
                         diff == null -> if (isCard) "信用卡或貸款的欠款請輸入負數，例如 -3000" else "輸入帳戶現在實際的金額"
                         diff == 0L -> "和記錄的一樣，不用調整"
-                        diff > 0 -> "會補記 +${formatMoney(diff)}，不算收入"
-                        else -> "會補記 −${formatMoney(-diff)}，不算支出"
+                        diff > 0 -> "會補記 +${money(diff)}，不算收入"
+                        else -> "會補記 −${money(-diff)}，不算支出"
                     },
                     color = cute.sub, style = MaterialTheme.typography.bodySmall,
                 )

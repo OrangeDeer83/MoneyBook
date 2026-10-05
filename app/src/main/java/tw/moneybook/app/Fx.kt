@@ -130,3 +130,19 @@ fun AppData.avgCost(a: Account): Double? {
     }
     return impliedRate(twd, fx, a.cur.decimals)
 }
+
+/**
+ * 明細列的外幣備註：inForeign（在外幣帳戶的明細裡，主金額已經是外幣）→ 顯示台幣那一邊；否則顯示外幣金額。
+ * 台幣 ⇄ 外幣的買賣會附上成交匯率（台幣 ÷ 外幣）。
+ */
+fun AppData.fxNote(t: Txn, inForeign: Boolean): String? {
+    if (t.fxAmount <= 0L) return null
+    val fa = listOfNotNull(t.accountId, t.toAccountId).mapNotNull { accMap[it] }.firstOrNull { it.isForeign } ?: return null
+    val from = t.accountId?.let { accMap[it] }
+    val to = t.toAccountId?.let { accMap[it] }
+    val trade = t.type == TxType.TRANSFER && from != null && to != null && from.isForeign != to.isForeign
+    val rate = if (trade) impliedRate(t.amount, t.fxAmount, fa.cur.decimals)?.let { " @ ${rateText(it)}" } ?: "" else ""
+    return if (inForeign) {
+        if (t.amount <= 0L) null else (if (trade) "" else "約 ") + formatMoney(t.amount) + rate
+    } else formatFx(t.fxAmount, fa.currency) + rate
+}

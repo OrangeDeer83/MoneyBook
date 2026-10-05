@@ -33,8 +33,8 @@ class FxTest {
     @Test
     fun parsesTypedAmounts() {
         assertEquals(1250L, parseFx("12.5", 2))
-        assertEquals(1234L, parseFx("12.345", 2))          // 超過的小數位四捨五入
-        assertEquals(1235L, parseFx("12.346", 2))
+        assertEquals(1234L, parseFx("12.344", 2))          // 超過的小數位四捨五入
+        assertEquals(1235L, parseFx("12.345", 2))
         assertEquals(1_200_000L, parseFx("12,000", 2))
         assertEquals(500L, parseFx("500", 0))
         assertEquals(501L, parseFx("500.6", 0))

@@ -62,6 +62,14 @@ import tw.moneybook.app.BadgePresets
 import tw.moneybook.app.Book
 import tw.moneybook.app.Category
 import tw.moneybook.app.MoneyViewModel
+import tw.moneybook.app.Currencies
+import tw.moneybook.app.cur
+import tw.moneybook.app.fmt
+import tw.moneybook.app.fxPlain
+import tw.moneybook.app.isForeign
+import tw.moneybook.app.parseFx
+import tw.moneybook.app.rateOf
+import tw.moneybook.app.twdValue
 import tw.moneybook.app.TxType
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.limitInfo
@@ -351,10 +359,18 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
             }
         }
         item {
-            val total = d.visibleAccounts.sumOf { bal[it.id] ?: 0L }
+            // 外幣帳戶用目前匯率換成台幣再加總；還沒有匯率的外幣帳戶不算，並提醒
+            val total = d.visibleAccounts.sumOf { d.twdValue(it, bal[it.id] ?: 0L) ?: 0L }
+            val noRate = d.visibleAccounts.filter { it.isForeign && d.rateOf(it.currency) == null && (bal[it.id] ?: 0L) != 0L }
             CuteCard(Modifier.fillMaxWidth()) {
                 Text("總資產", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
+                if (noRate.isNotEmpty()) {
+                    Text(
+                        "${noRate.joinToString("、") { it.name }}還沒有匯率，沒有算進總資產（點進帳戶設定匯率）",
+                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                    )
+                }
             }
         }
         // 依帳戶類型分組（現金、銀行、信用卡…），每組有小計；拖曳排序只在同一組裡進行
@@ -363,7 +379,7 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
             if (group.isEmpty()) continue
             val collapsed = type.name in d.prefs.collapsedAccTypes && !editing   // 編輯排序時全部展開
             item(key = "head-${type.name}") {
-                val sub = group.filter { !it.hidden }.sumOf { bal[it.id] ?: 0L }
+                val sub = group.filter { !it.hidden }.sumOf { d.twdValue(it, bal[it.id] ?: 0L) ?: 0L }
                 // 點標題收折／展開這一組
                 Row(
                     Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
@@ -412,8 +428,15 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                                     d.limitInfo(a, bal)?.let { info ->
                                         Text("可用 ${formatMoney(info.available)}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                                     }
+                                    if (a.isForeign) {
+                                        val twdv = d.twdValue(a, b)
+                                        Text(
+                                            if (twdv != null) "約 ${formatMoney(twdv)}" else "還沒有匯率",
+                                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                                        )
+                                    }
                                 }
-                                Text(formatMoney(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
+                                Text(a.fmt(b), color = if (b < 0) cute.expense else cute.ink, style = MaterialTheme.typography.titleMedium)
                                 FavoriteStar(a.favorite) { vm.setFavorite(a.id, !a.favorite) }
                                 if (editing) DragHandle(handle)
                             }
@@ -426,7 +449,7 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
         item {
             Text(
                 if (editing) "按住右邊的 ≡ 拖曳排序，排好按「完成」。"
-                else "點帳戶可以看它的明細。餘額 = 初始金額 + 收入 − 支出 ± 轉帳。",
+                else "點帳戶可以看它的明細。餘額 = 初始金額 + 收入 − 支出 ± 轉帳。外幣帳戶用目前匯率換成台幣加進總資產。",
                 style = MaterialTheme.typography.bodySmall, color = cute.sub,
             )
         }
@@ -464,7 +487,16 @@ fun AccountDialog(
     // 雙色漸層的起點／終點（0 = 沒有漸層，用 badgeCol 的單色）
     var gradFrom by remember { mutableStateOf(acc?.badgeFrom ?: 0L) }
     var gradTo by remember { mutableStateOf(acc?.badgeTo ?: 0L) }
-    var initial by remember { mutableStateOf(acc?.initial?.takeIf { it != 0L }?.toString() ?: "") }
+    // 外幣帳戶的初始金額是外幣（可以有小數）；幣別建立後不能改（金額是用該幣別的最小單位存的）
+    var initial by remember {
+        mutableStateOf(
+            acc?.initial?.takeIf { it != 0L }?.let { if (acc.isForeign) fxPlain(it, acc.cur.decimals) else it.toString() } ?: ""
+        )
+    }
+    var curChoice by remember { mutableStateOf(acc?.currency?.takeIf { c -> Currencies.builtin.any { it.code == c } } ?: if (acc?.isForeign == true) "" else "USD") }
+    var curCustom by remember { mutableStateOf(acc?.currency?.takeIf { c -> Currencies.builtin.none { it.code == c } } ?: "") }
+    val currency = if (type != AccountType.FOREIGN) "" else if (Currencies.validCode(curCustom)) curCustom.trim().uppercase() else curChoice
+    val curInfo = if (currency.isNotEmpty()) Currencies.of(currency) else null
     var hidden by remember { mutableStateOf(acc?.hidden ?: false) }
     var favorite by remember { mutableStateOf(acc?.favorite ?: false) }
     var limit by remember { mutableStateOf(acc?.creditLimit?.takeIf { it > 0 }?.toString() ?: "") }
@@ -505,7 +537,8 @@ fun AccountDialog(
         name = name.trim(),
         emoji = emoji,
         type = type,
-        initial = initial.toLongOrNull() ?: 0L,
+        initial = if (curInfo != null) parseFx(initial, curInfo.decimals) ?: 0L else initial.toLongOrNull() ?: 0L,
+        currency = currency,
         order = acc?.order ?: 0,
         hidden = hidden,
         favorite = favorite,
@@ -601,19 +634,61 @@ fun AccountDialog(
                 } else {
                     TextButton(onClick = { pick = true }) { Text("換一個表情符號") }
                 }
+                // 已經存在的帳戶不能在台幣和外幣之間改類型（記錄的金額單位不一樣）
+                val types = when {
+                    acc == null -> AccountType.values().toList()
+                    acc.isForeign -> listOf(AccountType.FOREIGN)
+                    else -> AccountType.values().filter { it != AccountType.FOREIGN }
+                }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    AccountType.values().forEach { t ->
+                    types.forEach { t ->
                         CuteChip(iconLabel(t.emoji, t.label), type == t, {
                             if (emoji == type.emoji) emoji = t.emoji
                             type = t
                         })
                     }
                 }
+                if (type == AccountType.FOREIGN) {
+                    if (acc != null) {
+                        Text("幣別：${curInfo?.name ?: currency}（$currency），建立後不能更改", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    } else {
+                        Text("幣別", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Currencies.builtin.forEach { c ->
+                                CuteChip("${c.code} ${c.name}", curCustom.isBlank() && curChoice == c.code, { curChoice = c.code; curCustom = "" })
+                            }
+                        }
+                        OutlinedTextField(
+                            curCustom, { curCustom = it.filter { ch -> ch in 'A'..'Z' || ch in 'a'..'z' }.take(3).uppercase() },
+                            label = { Text("其他幣別代碼（3 個英文字母，例如 CAD）") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
                 OutlinedTextField(
                     initial,
-                    { s -> initial = s.filterIndexed { i, c -> c.isDigit() || (i == 0 && c == '-') }.take(11) },
+                    { s ->
+                        initial = if (curInfo != null) {
+                            // 外幣：數字、最前面的負號、一個小數點，小數位數不超過幣別的位數
+                            var dot = false
+                            val out = StringBuilder()
+                            for ((i, c) in s.withIndex()) {
+                                when {
+                                    c.isDigit() -> out.append(c)
+                                    i == 0 && c == '-' -> out.append(c)
+                                    c == '.' && !dot && curInfo.decimals > 0 -> { dot = true; out.append(c) }
+                                }
+                            }
+                            val txt = out.toString()
+                            val at = txt.indexOf('.')
+                            (if (at >= 0 && txt.length - at - 1 > curInfo.decimals) txt.take(at + 1 + curInfo.decimals) else txt).take(14)
+                        } else s.filterIndexed { i, c -> c.isDigit() || (i == 0 && c == '-') }.take(11)
+                    },
                     label = { Text(if (type == AccountType.CARD || type == AccountType.LOAN) "初始金額（欠款請填負數）" else "初始金額") },
-                    prefix = { Text("$") }, singleLine = true,
+                    prefix = { Text(curInfo?.symbol?.trim() ?: "$") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -719,7 +794,7 @@ fun AccountDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) { onSave(build()); onShares(shareUpdates()) } }) { Text("儲存") }
+            TextButton(onClick = { if (name.isNotBlank() && (type != AccountType.FOREIGN || currency.isNotEmpty())) { onSave(build()); onShares(shareUpdates()) } }) { Text("儲存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )

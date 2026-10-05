@@ -54,6 +54,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tw.moneybook.app.AppData
 import tw.moneybook.app.MoneyViewModel
+import tw.moneybook.app.flowFor
+import tw.moneybook.app.formatFx
+import tw.moneybook.app.fmt
+import tw.moneybook.app.fxNote
+import tw.moneybook.app.isForeign
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
 import tw.moneybook.app.expenseSum
@@ -109,6 +114,10 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
     if (t.instTotal > 1) details.add("分期 ${t.instIndex}/${t.instTotal}")
     if (t.discount > 0) details.add("優惠 ${formatMoney(t.discount)}")
     if (t.fee > 0) details.add("手續費 ${formatMoney(t.fee)}")
+    // 外幣：在外幣帳戶的明細裡主金額是外幣、備註放台幣；其他地方主金額是台幣、備註放外幣
+    val signedAcc = signedFor?.let { d.accMap[it] }
+    val inForeign = signedAcc?.isForeign == true
+    d.fxNote(t, inForeign)?.let { details.add(it) }
     if (t.note.isNotBlank()) details.add(t.note.lineSequence().first())
 
     Row(
@@ -171,13 +180,18 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
             signedFor != null && t.accountId == signedFor -> "-" to cute.expense
             else -> "" to cute.sub
         }
-        val shown = if (t.type == TxType.TRANSFER && signedFor != null && t.accountId == signedFor) t.amount + t.fee else t.paid
+        val shown = when {
+            inForeign && signedAcc != null -> kotlin.math.abs(t.flowFor(signedAcc))
+            t.type == TxType.TRANSFER && signedFor != null && t.accountId == signedFor -> t.amount + t.fee
+            else -> t.paid
+        }
+        val shownText = if (inForeign && signedAcc != null) formatFx(shown, signedAcc.currency) else formatMoney(shown)
         // 金額下面小字：這一筆做完之後這個帳戶的餘額（只有帳戶明細會帶 balance），和左邊的標題／備註一大一小
         Column(horizontalAlignment = Alignment.End) {
-            Text(sign + formatMoney(shown), color = c, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(sign + shownText, color = c, fontWeight = FontWeight.SemiBold, maxLines = 1)
             if (balance != null) {
                 Text(
-                    "餘額 ${formatMoney(balance)}", style = MaterialTheme.typography.labelSmall,
+                    "餘額 ${signedAcc?.fmt(balance) ?: formatMoney(balance)}", style = MaterialTheme.typography.labelSmall,
                     color = if (balance < 0) cute.expense else cute.sub, maxLines = 1,
                 )
             }

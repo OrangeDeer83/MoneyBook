@@ -510,6 +510,16 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 設定某個外幣的目前匯率（1 單位外幣換多少台幣）；rate 是 null 或 0 代表清掉手動匯率，改用最近一次買賣的匯率 */
+    fun setRate(code: String, rate: Double?) {
+        val c = code.trim().uppercase()
+        update { d ->
+            val rest = d.rates.filter { it.code != c }
+            d.copy(rates = if (rate != null && rate > 0.0) rest + FxRate(c, rate, LocalDate.now().toEpochDay()) else rest)
+        }
+        toast(if (rate != null && rate > 0.0) "已設定 $c 匯率 ${rateText(rate)}" else "已清除 $c 的手動匯率")
+    }
+
     /** 標星號／取消星號（常用帳戶） */
     fun setFavorite(id: Long, on: Boolean) {
         update { d -> d.copy(accounts = d.accounts.map { if (it.id == id) it.copy(favorite = on) else it }) }

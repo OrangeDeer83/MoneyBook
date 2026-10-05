@@ -10,6 +10,7 @@ INVEST = 600   # 投資帳戶（invest=True 時才有）
 LOAN = 601     # 貸款帳戶「信貸」，初始 -200,000（loan=True 時才有）
 CARD2 = 602    # 第二張信用卡「第二張卡」，沒有自己的額度（card2=True 時才有）
 CARD3 = 603    # 第三張信用卡「第三張卡」，沒有自己的額度（card3=True 時才有）
+USD = 701      # 外幣帳戶「美元帳戶」（usd=True 時才有）：買 US$1,000.00 共 31,500 台幣、花 US$12.50（約當 394）
 # 支出分類：頂層與子分類
 C_FOOD, C_BREAKFAST, C_LUNCH, C_DINNER, C_DRINK = 10, 11, 12, 13, 14
 C_TRAFFIC, C_METRO, C_HSR = 20, 21, 22
@@ -26,7 +27,7 @@ def eday(d):
 
 
 class Seed:
-    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0, extra_books=0, invest=False, hidden_account=False, loan=False, fav_card=False, card2=False, card3=False, card2_shared=False):
+    def __init__(self, today, dark=0, mascot="deer", budget=0, month_budgets=None, many_categories=False, extra_accounts=0, extra_books=0, invest=False, hidden_account=False, loan=False, fav_card=False, card2=False, card3=False, card2_shared=False, usd=False):
         self.today = today
         self.dark = dark
         self.mascot = mascot
@@ -46,6 +47,7 @@ class Seed:
         self.card2 = card2
         self.card3 = card3
         self.card2_shared = card2_shared
+        self.usd = usd
         self.trades = []
         self.prices = []
 
@@ -57,13 +59,13 @@ class Seed:
         return eday(self.today + datetime.timedelta(days=offset))
 
     def add(self, offset, type_, amount, cat=None, acc=CASH, to=None, note="", tags=(), fee=0, disc=0,
-            reimb=0, reimb_amount=-1, items=None, time=-1):
+            reimb=0, reimb_amount=-1, items=None, time=-1, fx=0):
         t = dict(
             id=self.nid(), bookId=BOOK, type=type_, amount=amount, categoryId=cat, accountId=acc, toAccountId=to,
             day=self.day(offset), note=note, tags=list(tags), instGroup=None, instIndex=0, instTotal=0,
             fee=fee, discount=disc, reimb=reimb, reimbAccountId=None, reimbDay=None,
             reimbAmount=0 if reimb == 0 else (amount if reimb_amount < 0 else reimb_amount),
-            reimbItems=items or [], time=time,
+            reimbItems=items or [], time=time, fxAmount=fx,
         )
         self.txns.append(t)
         return t
@@ -132,6 +134,8 @@ class Seed:
             accounts[-1]["sharedLimitOf"] = CARD      # 第二張卡一開始就和測試信用卡共用額度
         if self.card3:
             accounts.append(dict(id=CARD3, name="第三張卡", emoji="img:acc_card", type="CARD", initial=0, order=9, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
+        if self.usd:
+            accounts.append(dict(id=USD, name="美元帳戶", emoji="img:acc_foreign", type="FOREIGN", currency="USD", initial=0, order=11, hidden=False, badge="", badgeColor=0, creditLimit=0, statementDay=0, dueDay=0))
         if self.fav_card:
             accounts[2]["favorite"] = True   # 測試信用卡：從沒用過，但標了星號
         mb = dict(self.month_budgets)

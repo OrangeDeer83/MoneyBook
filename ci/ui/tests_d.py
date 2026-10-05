@@ -1263,3 +1263,110 @@ def t_reimb_edit_pay_time():
 def reimb_seed2():
     s = S.with_reimb(f.today())
     return s.json()
+
+
+# ───────────────────────── 外幣 ─────────────────────────
+def usd_seed(**kw):
+    return empty_seed(usd=True, **kw).json()
+
+
+@case(D, "外幣：帳戶分頁顯示外幣餘額與約當台幣，總資產用匯率換算")
+def t_fx_accounts_tab():
+    d.fresh(usd_seed())
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("有「外幣」類型分組", d.has(ns, "外幣", True))
+    d.check("美元帳戶餘額是外幣格式 US$987.50（1,000.00 − 12.50）", d.has(ns, "US$987.50", True), [n.text for n in ns if "US$" in n.text])
+    d.check("美元帳戶下面有約當台幣「約 $31,106」（987.5 × 31.5，匯率取最近一次買賣）", d.has(ns, "約 $31,106", True), [n.text for n in ns if "約" in n.text])
+    # 總資產 = 現金 1,000 + 測試銀行 50,000 − 31,500 + 約當 31,106
+    d.check("總資產把外幣換成台幣後加總：$50,606", d.has(ns, "$50,606", True), [n.text for n in ns if n.text.startswith("$")][:8])
+
+
+@case(D, "外幣：帳戶明細顯示外幣金額、匯率與平均成本")
+def t_fx_account_detail():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    ns = d.shot("美元帳戶明細")
+    d.check("標題餘額 US$987.50", d.has(ns, "US$987.50", True))
+    d.check("約當 $31,106", d.has(ns, "約當 $31,106", True), [n.text for n in ns if "約當" in n.text])
+    d.check("目前匯率 31.5（最近一次買賣）", d.has(ns, "目前匯率 31.5（最近一次買賣）", True), [n.text for n in ns if "匯率" in n.text])
+    d.check("平均買進成本 31.5", d.has(ns, "平均買進成本 31.5", False), [n.text for n in ns if "成本" in n.text])
+    d.check("買進那一筆：+US$1,000.00，備註 $31,500 @ 31.5", d.has(ns, "+US$1,000.00", True) and any("$31,500 @ 31.5" in n.text for n in ns),
+            [n.text for n in ns if "US$" in n.text or "@" in n.text])
+    d.check("消費那一筆：-US$12.50，備註約 $394", d.has(ns, "-US$12.50", True) and any("約 $394" in n.text for n in ns))
+    d.check("每一筆下面的餘額也是外幣：餘額 US$1,000.00、餘額 US$987.50", d.has(ns, "餘額 US$1,000.00", True) and d.has(ns, "餘額 US$987.50", True),
+            [n.text for n in ns if n.text.startswith("餘額")])
+
+
+@case(D, "外幣：設定匯率後約當台幣和總資產跟著變")
+def t_fx_set_rate():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    d.tap_text("設定匯率", exact=True)
+    d.wait_text("設定 USD 匯率", timeout=10)
+    d.shot("設定匯率對話框")
+    d.fill(d.edits()[0], "33")
+    d.hide_ime()
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("設定匯率後")
+    d.check("約當變成 $32,588（987.5 × 33）", d.has(ns, "約當 $32,588", True), [n.text for n in ns if "約當" in n.text])
+    d.check("匯率顯示 33（手動設定）", d.has(ns, "目前匯率 33（手動設定）", True), [n.text for n in ns if "匯率" in n.text])
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("帳戶分頁約當也更新：約 $32,588", d.has(ns, "約 $32,588", True))
+    d.check("總資產跟著變：1,000 + 18,500 + 32,588 = $52,088", d.has(ns, "$52,088", True), [n.text for n in ns if n.text.startswith("$")][:8])
+
+
+@case(D, "外幣：新增日圓帳戶（初始金額、沒有匯率的提醒）")
+def t_fx_new_account():
+    d.fresh(empty_seed().json())
+    acc_tab()
+    d.tap_text("新增帳戶", exact=False)
+    d.wait_text("新增帳戶", timeout=10)
+    d.fill(d.edits()[0], "日本錢包")
+    d.hide_ime()
+    # 類型那一排要往左滑才看得到「外幣」
+    for _ in range(4):
+        ns = d.nodes()
+        if d.has(ns, "外幣", True):
+            break
+        a = d.first(ns, "電子票證", True)
+        if a:
+            d.swipe(a.cx + 300, a.cy, a.cx - 400, a.cy, 400)
+        d.time.sleep(0.6)
+    d.tap_text("外幣", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("選了外幣")
+    d.check("選了外幣類型後出現幣別選項（USD 美元、JPY 日圓…）", d.has(ns, "JPY 日圓", False) or scroll_to("JPY 日圓"), [n.text for n in ns if n.text][:30])
+    d.tap_text("JPY 日圓", exact=False)
+    d.time.sleep(0.6)
+    scroll_to("初始金額")
+    ed = [n for n in d.edits()]
+    d.fill(ed[-1], "10000")
+    d.hide_ime()
+    ns = d.shot("填了初始金額")
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("新增後的帳戶分頁")
+    d.check("帳戶分頁有 ¥10,000", d.has(ns, "¥10,000", True), [n.text for n in ns if "¥" in n.text])
+    d.check("還沒有匯率：帳戶下面提示「還沒有匯率」", d.has(ns, "還沒有匯率", True))
+    d.check("總資產提醒日本錢包還沒有匯率、沒有算進去", any("日本錢包還沒有匯率" in n.text for n in ns), [n.text for n in ns if "匯率" in n.text])
+
+
+@case(D, "外幣：更新外幣帳戶餘額，補記外幣差額")
+def t_fx_adjust_balance():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    d.tap_text("更新餘額", exact=True)
+    d.wait_text("實際的餘額", timeout=10)
+    d.fill(d.edits()[0], "1000.5")
+    d.hide_ime()
+    ns = d.shot("輸入實際餘額")
+    d.check("對話框顯示目前記錄的餘額 US$987.50", d.has(ns, "目前記錄的餘額：US$987.50", True), [n.text for n in ns if "餘額" in n.text])
+    d.check("提示會補記 +US$13.00，不算收入", d.has(ns, "會補記 +US$13.00，不算收入", True), [n.text for n in ns if "補記" in n.text])
+    d.tap_text("更新", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("更新之後")
+    d.check("餘額變成 US$1,000.50", d.has(ns, "US$1,000.50", True))
+    d.check("多一筆餘額調整 +US$13.00", d.has(ns, "+US$13.00", True), [n.text for n in ns if "US$" in n.text])
