@@ -150,8 +150,8 @@ def reimb_item(who, amount, closed=False, pays=None):
     return dict(who=who, amount=amount, closed=closed, pays=pays or [])
 
 
-def pay(day_offset_date, account, amount):
-    return dict(day=eday(day_offset_date), accountId=account, amount=amount)
+def pay(day_offset_date, account, amount, time=-1):
+    return dict(day=eday(day_offset_date), accountId=account, amount=amount, time=time)
 
 
 # ───────────────────────── 常用資料組合 ─────────────────────────

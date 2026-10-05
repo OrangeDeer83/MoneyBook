@@ -1181,3 +1181,73 @@ def t_time_tap_outside():
     d.tap_text("確定", exact=True)
     d.time.sleep(1)
     d.check("按確定後時間按鈕是 09:30", d.has(d.nodes(), "09:30", True))
+
+
+def set_time_in_dialog(hh, mm):
+    d.wait_text("選擇時間", timeout=10)
+    tap_wheel_to_type()
+    type_time(hh, mm)
+    d.hide_ime()
+    d.time.sleep(1.2)
+    d.tap_text("確定", exact=True)
+    d.time.sleep(1)
+
+
+@case(D, "報銷收款可以設定收到的時間")
+def t_reimb_receive_time():
+    import re
+    d.fresh(reimb_seed2())
+    f.me_page("報銷")
+    d.wait_text("還沒收到的報銷款", timeout=15)
+    d.tap(d.wait(lambda n: n.text == "Hua", 10, "Hua"))
+    d.wait_text("這次收到多少", timeout=15)
+    ns = d.shot("收款頁")
+    chip = next((n for n in ns if re.fullmatch(r"\d\d:\d\d", n.text)), None)
+    d.check("日期旁邊有時間按鈕，預設是現在的時間", chip is not None, [n.text for n in ns if ":" in n.text][:5])
+    if chip:
+        d.tap(chip)
+        set_time_in_dialog("09", "30")
+    ns = d.shot("設定時間後")
+    d.check("時間按鈕變成 09:30", d.has(ns, "09:30", True))
+    d.tap_text("確認收款", exact=False)
+    d.time.sleep(1.5)
+    d.tap_text("已收款", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("已收款分頁")
+    d.check("已收款的列顯示收到的時間 09:30", any("09:30" in n.text and "Hua" in n.text for n in ns), [n.text for n in ns if "Hua" in n.text])
+    row = d.wait(lambda n: "Hua" in n.text, 8, "Hua")
+    d.tap(row)
+    d.wait_text("收款紀錄", timeout=10)
+    ns = d.shot("Hua 的收款紀錄")
+    d.check("收款紀錄顯示 09:30 收到 $800", any("09:30" in n.text and "收到 $800" in n.text for n in ns), [n.text for n in ns if "收到" in n.text])
+
+
+@case(D, "修改收款紀錄可以改時間；舊的收款顯示未設定時間")
+def t_reimb_edit_pay_time():
+    d.fresh(reimb_seed2())
+    f.me_page("報銷")
+    d.wait_text("還沒收到的報銷款", timeout=15)
+    d.tap_text("已收款", exact=True)
+    d.time.sleep(1)
+    d.tap(d.wait(lambda n: "Lin" in n.text, 8, "Lin"))
+    d.wait_text("收款紀錄", timeout=10)
+    ns = d.shot("Lin 的明細")
+    d.check("舊的收款只有日期，沒有時間", not any("收到 $200" in n.text and ":" in n.text for n in ns), [n.text for n in ns if "收到" in n.text])
+    d.tap_text("⋯", exact=True)
+    d.tap_text("修改", exact=True)
+    d.wait_text("修改收款", timeout=8)
+    ns = d.shot("修改收款")
+    d.check("時間按鈕顯示「未設定時間」", d.has(ns, "未設定時間", True))
+    d.tap(d.first(ns, "未設定時間", True))
+    set_time_in_dialog("08", "15")
+    ns = d.shot("設定時間之後")
+    d.check("時間按鈕變成 08:15", d.has(ns, "08:15", True))
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("儲存後")
+    d.check("收款紀錄顯示 08:15 收到 $200", any("08:15" in n.text and "收到 $200" in n.text for n in ns), [n.text for n in ns if "收到" in n.text])
+
+
+def reimb_seed2():
+    s = S.with_reimb(f.today())
+    return s.json()

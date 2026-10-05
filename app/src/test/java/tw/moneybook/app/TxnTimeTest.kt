@@ -58,6 +58,20 @@ class TxnTimeTest {
     }
 
     @Test
+    fun reimbursementReceiptTimeSurvivesSaveAndOldDataHasNone() {
+        val item = ReimbItem("A", 100L, listOf(ReimbPay(day, null, 60L, 750), ReimbPay(day, null, 40L)), true)
+        val t = txn(9001, 570).copy(type = TxType.EXPENSE, amount = 100L).withItems(listOf(item))
+        val d = Defaults.create().copy(txns = listOf(t), nextId = 9100)
+        val pays = Codec.decode(Codec.encode(d)).txns.single().items.single().pays
+        assertEquals(listOf(750, -1), pays.map { it.time })
+        // 舊備份的收款沒有 time 欄位
+        val root = org.json.JSONObject(Codec.encode(d))
+        val arr = root.getJSONArray("txns").getJSONObject(0).getJSONArray("reimbItems").getJSONObject(0).getJSONArray("pays")
+        for (i in 0 until arr.length()) arr.getJSONObject(i).remove("time")
+        assertTrue(Codec.decode(root.toString()).txns.single().items.single().pays.all { it.time == -1 })
+    }
+
+    @Test
     fun csvKeepsTheTime() {
         val acc = Defaults.create().accounts.first().id
         val cat = Defaults.create().topCategories(TxType.EXPENSE).first().id

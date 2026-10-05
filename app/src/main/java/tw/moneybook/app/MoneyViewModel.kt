@@ -381,7 +381,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     // ───────── 報銷 ─────────
 
     /** 收到報銷款：每一筆收款對應一個報銷對象；收齊自動結案，沒收齊時看 chase 決定繼續追或結案不追 */
-    fun receiveReimb(list: List<ReimbReceipt>, accountId: Long?, day: Long) {
+    fun receiveReimb(list: List<ReimbReceipt>, accountId: Long?, day: Long, time: Int = -1) {
         update { d ->
             d.copy(txns = d.txns.map { t ->
                 val mine = list.filter { it.txnId == t.id }
@@ -391,7 +391,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     for (r in mine) {
                         val cur = items.getOrNull(r.index) ?: continue
                         if (cur.closed) continue
-                        val pays = if (r.amount > 0L) cur.pays + ReimbPay(day, accountId, r.amount) else cur.pays
+                        val pays = if (r.amount > 0L) cur.pays + ReimbPay(day, accountId, r.amount, time) else cur.pays
                         items[r.index] = cur.copy(pays = pays, closed = pays.sumOf { it.amount } >= cur.amount || !r.chase)
                     }
                     t.withItems(items)

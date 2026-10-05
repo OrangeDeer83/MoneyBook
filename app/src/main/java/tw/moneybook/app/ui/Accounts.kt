@@ -224,7 +224,7 @@ fun AccountDetailScreen(
                         Column(Modifier.weight(1f)) {
                             Text("報銷入帳" + if (who.isNotBlank()) "・$who" else "", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                "${dayLabel(pay.day)}・${c?.name ?: ""}",
+                                "${dayTimeLabel(pay.day, pay.time)}・${c?.name ?: ""}",
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
                             )
                         }

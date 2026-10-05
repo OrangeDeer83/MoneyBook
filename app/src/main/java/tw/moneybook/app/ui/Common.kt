@@ -324,6 +324,9 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () ->
     )
 }
 
+/** 日期加上時間（沒有時間就只有日期），例如「今天・10/5 14:30」 */
+fun dayTimeLabel(day: Long, time: Int): String = dayLabel(day) + if (time >= 0) " " + tw.moneybook.app.formatTime(time) else ""
+
 fun dayLabel(day: Long): String {
     val d = LocalDate.ofEpochDay(day)
     val today = LocalDate.now()

@@ -63,6 +63,7 @@ import tw.moneybook.app.Txn
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.pendingReimb
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 
 // ───────────────────────── 共用小元件 ─────────────────────────
@@ -438,7 +439,7 @@ private fun ReimbHome(
                     }
                 }
                 else -> {
-                    val pays = claims.flatMap { c -> c.item.pays.map { pay -> Triple(c, c.item.who.trim(), pay) } }.sortedByDescending { it.third.day }
+                    val pays = claims.flatMap { c -> c.item.pays.map { pay -> Triple(c, c.item.who.trim(), pay) } }.sortedByDescending { it.third.day * 1440L + maxOf(it.third.time, 0) }
                     if (pays.isEmpty()) {
                         item { EmptyHint(d.prefs.mascot, "還沒有收款紀錄") }
                     }
@@ -448,7 +449,7 @@ private fun ReimbHome(
                         CuteCard(Modifier.fillMaxWidth().clickable { onPerson(who) }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("${dayLabel(pay.day)}　${ownerLabel(who)}", style = MaterialTheme.typography.bodyLarge)
+                                    Text("${dayTimeLabel(pay.day, pay.time)}　${ownerLabel(who)}", style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}",
                                         style = MaterialTheme.typography.labelMedium, color = cute.sub,
@@ -475,7 +476,9 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     var amountText by remember { mutableStateOf(totalRemaining.toString()) }
     var accId by remember { mutableStateOf(d.visibleAccounts.firstOrNull()?.id) }
     var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
+    var timeMin by remember { mutableStateOf(LocalTime.now().let { it.hour * 60 + it.minute }) }
     var pickDate by remember { mutableStateOf(false) }
+    var pickTime by remember { mutableStateOf(false) }
     val overrides = remember { mutableStateMapOf<String, String>() }
     val chase = remember { mutableStateMapOf<String, Boolean>() }
     var askChase by remember { mutableStateOf(false) }
@@ -500,7 +503,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
         val list = claims.indices.filter { alloc[it] > 0L }.map { i ->
             ReimbReceipt(claims[i].txn.id, claims[i].index, alloc[i], chase[claims[i].key] != false)
         }
-        vm.receiveReimb(list, accId, day)
+        vm.receiveReimb(list, accId, day, timeMin)
         onDone()
     }
 
@@ -528,7 +531,10 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     d.visibleAccounts.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
                 }
-                CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
+                    CuteChip(tw.moneybook.app.formatTime(timeMin), false, { pickTime = true }, icon = "vec:clock")
+                }
 
                 Text("分配到這幾筆（由舊到新自動分配，可以直接改金額）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 claims.forEachIndexed { i, c ->
@@ -573,6 +579,9 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     if (pickDate) {
         CuteDatePickerDialog(day, { day = it; pickDate = false }, { pickDate = false }, "收到報銷款的日期")
     }
+    if (pickTime) {
+        TimePickerDialog(timeMin, { timeMin = it; pickTime = false }, { pickTime = false })
+    }
     if (askChase) {
         AlertDialog(
             onDismissRequest = { askChase = false },
@@ -615,7 +624,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
     val claims = claimsOf(d.bookTxns).filter { it.who == who }.sortedWith(compareByDescending<Claim> { it.txn.day }.thenByDescending { it.txn.id })
     val owed = claims.filter { !it.item.closed }.sumOf { it.item.remaining }
     val got = claims.sumOf { it.item.received }
-    val pays = claims.flatMap { c -> c.item.pays.mapIndexed { n, pay -> Triple(c, n, pay) } }.sortedByDescending { it.third.day }
+    val pays = claims.flatMap { c -> c.item.pays.mapIndexed { n, pay -> Triple(c, n, pay) } }.sortedByDescending { it.third.day * 1440L + maxOf(it.third.time, 0) }
     var menuFor by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Triple<Claim, Int, ReimbPay>?>(null) }
 
@@ -649,7 +658,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                     CuteCard(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("${dayLabel(pay.day)}　收到 ${formatMoney(pay.amount)}", style = MaterialTheme.typography.bodyLarge)
+                                Text("${dayTimeLabel(pay.day, pay.time)}　收到 ${formatMoney(pay.amount)}", style = MaterialTheme.typography.bodyLarge)
                                 Text("${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                             }
                             Box {
@@ -694,7 +703,9 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
         var amt by remember { mutableStateOf(pay.amount.toString()) }
         var accId by remember { mutableStateOf(pay.accountId) }
         var day by remember { mutableStateOf(pay.day) }
+        var timeMin by remember { mutableStateOf(pay.time) }
         var pickDate by remember { mutableStateOf(false) }
+        var pickTime by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text("修改收款") },
@@ -704,12 +715,15 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         d.visibleAccounts.forEach { a -> CuteChip(accLabel(a), accId == a.id, { accId = a.id }) }
                     }
-                    CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
+                        CuteChip(if (timeMin >= 0) tw.moneybook.app.formatTime(timeMin) else "未設定時間", false, { pickTime = true }, icon = "vec:clock")
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    vm.editReimbPay(c.txn.id, c.index, n, ReimbPay(day, accId, amt.toLongOrNull() ?: 0L))
+                    vm.editReimbPay(c.txn.id, c.index, n, ReimbPay(day, accId, amt.toLongOrNull() ?: 0L, timeMin))
                     editing = null
                 }) { Text("儲存") }
             },
@@ -717,6 +731,9 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
         )
         if (pickDate) {
             CuteDatePickerDialog(day, { day = it; pickDate = false }, { pickDate = false }, "收到報銷款的日期")
+        }
+        if (pickTime) {
+            TimePickerDialog(timeMin, { timeMin = it; pickTime = false }, { pickTime = false })
         }
     }
 }

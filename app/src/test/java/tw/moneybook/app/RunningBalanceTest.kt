@@ -85,6 +85,18 @@ class RunningBalanceTest {
     }
 
     @Test
+    fun reimbursementReceiptWithATimeFollowsThatTime() {
+        // 同一天：10:00 支出 100、11:00 收到報銷款 3、15:00 支出 200；收款有時間就排在 11:00，不是當天最後
+        val item = ReimbItem("A", 3L, listOf(ReimbPay(day, 2L, 3L, time = 660)), true)
+        val d = data(txn(1, TxType.EXPENSE, 100, 2, time = 600, items = listOf(item)), txn(2, TxType.EXPENSE, 200, 2, time = 900))
+        val r = d.rb()
+        assertEquals(49_900L, r["t1"])
+        assertEquals(49_903L, r["p1_0"])        // 收款排在 11:00，在 15:00 的支出之前
+        assertEquals(49_703L, r["t2"])
+        assertEquals(d.balances()[2L], r["t2"])
+    }
+
+    @Test
     fun unknownAccountHasNothing() {
         assertEquals(emptyMap<String, Long>(), data(txn(1, TxType.EXPENSE, 1, 2)).runningBalances(999L))
     }
