@@ -41,6 +41,16 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /** 滾輪重複排的圈數：看起來可以一直循環（23 之後接 00），從正中間那一圈開始 */
@@ -162,5 +172,59 @@ private fun TimeField(
             .focusRequester(focus)
             .onFocusChanged { if (it.isFocused) onFocused() },
         decorationBox = { inner -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { inner() } },
+    )
+}
+
+/**
+ * 選擇時間的對話框（記一筆、報銷收款共用）：預設是滾輪；點一下數字變成鍵盤輸入。
+ * 鍵盤輸入時，收起鍵盤或點旁邊的空白處，就自動回到滾輪（不用按任何按鈕）。
+ * minute：目前的時間（從 0 點算起的分鐘數），沒有時間（-1）就從現在開始。
+ */
+@Composable
+fun TimePickerDialog(minute: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    val init = if (minute >= 0) minute else java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+    var typing by remember { mutableStateOf(false) }
+    var hh by remember { mutableIntStateOf(init / 60) }
+    var mm by remember { mutableIntStateOf(init % 60) }
+    val view = LocalView.current
+    val focus = LocalFocusManager.current
+    fun backToWheel() { focus.clearFocus(); typing = false }
+    // 鍵盤出現過、之後又收起來 → 回到滾輪（沒有螢幕鍵盤的裝置不會觸發，點旁邊一樣可以回去）
+    LaunchedEffect(typing) {
+        if (!typing) return@LaunchedEffect
+        var shown = false
+        while (true) {
+            delay(120)
+            val ime = ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            if (ime) shown = true else if (shown) { backToWheel(); break }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("選擇時間") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (typing) backToWheel() },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+                    if (!typing) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WheelColumn(24, hh, { hh = it }, onTap = { typing = true })
+                            Text(":", style = MaterialTheme.typography.headlineMedium)
+                            WheelColumn(60, mm, { mm = it }, onTap = { typing = true })
+                        }
+                    } else {
+                        TimeTypeInput(hh, mm) { h, m -> hh = h; mm = m }
+                    }
+                }
+                Text(
+                    if (typing) "收起鍵盤或點旁邊空白處，回到滾輪" else "點一下數字可以直接輸入",
+                    style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(hh * 60 + mm) }) { Text("確定") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }

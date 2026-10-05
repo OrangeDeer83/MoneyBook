@@ -564,40 +564,7 @@ fun EditScreen(
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
             )
         }
-        "time" -> {
-            val init = if (timeMin >= 0) timeMin else java.time.LocalTime.now().let { it.hour * 60 + it.minute }
-            // 預設是滾輪（可以一直循環）；點一下滾輪就直接變成鍵盤輸入
-            var typing by remember { mutableStateOf(false) }
-            var hh by remember { mutableIntStateOf(init / 60) }
-            var mm by remember { mutableIntStateOf(init % 60) }
-            AlertDialog(
-                onDismissRequest = { dialog = "" },
-                title = { Text("選擇時間") },
-                text = {
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
-                            if (!typing) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    WheelColumn(24, hh, { hh = it }, onTap = { typing = true })
-                                    Text(":", style = MaterialTheme.typography.headlineMedium)
-                                    WheelColumn(60, mm, { mm = it }, onTap = { typing = true })
-                                }
-                            } else {
-                                TimeTypeInput(hh, mm) { h, m -> hh = h; mm = m }
-                            }
-                        }
-                        if (!typing) Text("點一下數字可以直接輸入", style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub)
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        timeMin = hh * 60 + mm
-                        dialog = ""
-                    }) { Text("確定") }
-                },
-                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
-            )
-        }
+        "time" -> TimePickerDialog(timeMin, { timeMin = it; dialog = "" }, { dialog = "" })
         "date" -> CuteDatePickerDialog(
             initial = day,
             onPick = { day = it; dialog = "" },

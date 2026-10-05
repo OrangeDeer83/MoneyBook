@@ -1135,3 +1135,49 @@ def t_acc_bottom_space():
         gap = fab.y1 - hint.y2
         d.check("說明文字在記一筆按鈕上方，至少留 50 像素的空隙（小螢幕、說明折成兩行時才不會被擋住）", gap >= 50, gap)
         d.check("空隙也不能太大（最多 160 像素），不然底下一大塊空白", gap <= 160, gap)
+
+
+# ───────────────────────── 鍵盤輸入時間：自動回滾輪、報銷收款時間 ─────────────────────────
+def open_time_typing():
+    """記一筆 → 時間按鈕 → 點一下滾輪變鍵盤輸入"""
+    import re
+    f.open_add()
+    chip = next(n for n in d.nodes() if re.fullmatch(r"\d\d:\d\d", n.text))
+    d.tap(chip)
+    d.wait_text("選擇時間", timeout=10)
+    tap_wheel_to_type()
+
+
+@case(D, "選時間：鍵盤輸入時收起鍵盤，自動回到滾輪")
+def t_time_collapse_keyboard():
+    d.fresh(empty_seed().json())
+    open_time_typing()
+    ns = d.shot("鍵盤輸入")
+    d.check("先確認變成鍵盤輸入：有輸入框、螢幕鍵盤有出現", bool(d.edits()) and d.ime_shown(), (len(d.edits()), d.ime_shown()))
+    d.hide_ime()
+    d.time.sleep(1.5)
+    ns = d.shot("收起鍵盤之後")
+    d.check("收起鍵盤後自動回到滾輪：輸入框不見了", not d.edits(), [n.text for n in d.edits()])
+    d.check("看得到小時的滾輪", len(wheel_hours(ns)) >= 3, [n.text for n in wheel_hours(ns)])
+    d.check("對話框還在（沒有被關掉）", d.has(ns, "選擇時間", True) and d.has(ns, "確定", True))
+    d.check("提示文字回到「點一下數字可以直接輸入」", d.has(ns, "點一下數字可以直接輸入"))
+
+
+@case(D, "選時間：鍵盤輸入時點旁邊，回到滾輪並保留已輸入的時間")
+def t_time_tap_outside():
+    d.fresh(empty_seed().json())
+    open_time_typing()
+    type_time("09", "30")
+    ns = d.shot("輸入 09:30")
+    hint = d.first(ns, "收起鍵盤或點旁邊空白處", False)
+    d.check("鍵盤輸入時有提示「收起鍵盤或點旁邊空白處，回到滾輪」", hint is not None, [n.text for n in ns if n.text][:20])
+    if hint:
+        d.tap(hint)
+        d.time.sleep(1.5)
+    ns = d.shot("點旁邊之後")
+    d.check("回到滾輪：輸入框不見了、螢幕鍵盤收起來", not d.edits() and not d.ime_shown(), (len(d.edits()), d.ime_shown()))
+    d.check("滾輪正中間是剛輸入的 09:30", [n.text for n in wheel_hours(ns)][2:3] == ["09"] and [n.text for n in wheel_minutes(ns)][2:3] == ["30"],
+            ([n.text for n in wheel_hours(ns)], [n.text for n in wheel_minutes(ns)]))
+    d.tap_text("確定", exact=True)
+    d.time.sleep(1)
+    d.check("按確定後時間按鈕是 09:30", d.has(d.nodes(), "09:30", True))
