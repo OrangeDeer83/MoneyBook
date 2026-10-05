@@ -62,7 +62,7 @@ def main(res_dir, out_path, triage_path=None, user_path=None):
             status = r["status"]
             t = triage.get(c["id"])
             if status == "fail" and t:
-                status = {"app": "fail", "shots": "review"}.get(t["kind"], "unknown")
+                status = {"app": "fail", "shots": "review", "pass": "pass"}.get(t["kind"], "unknown")
             if t:
                 r["triage"] = t
         else:
@@ -125,6 +125,19 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
 #lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;z-index:20;align-items:center;justify-content:center;padding:16px}
 #lb img{max-height:100%;max-width:100%;border-radius:8px}
 #lb.on{display:flex}
+.rvbar{margin:12px 0;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rvbar.todo{border-color:var(--unknown)}.rvbar b{font-variant-numeric:tabular-nums}
+.rv{border-top:1px dashed var(--line);padding-top:10px;display:grid;gap:8px}
+.rv .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:max-content;max-width:100%}
+.rv .seg button{border:0;background:transparent;color:var(--sub);padding:5px 14px;font:inherit;font-size:13.5px;cursor:pointer;border-right:1px solid var(--line)}
+.rv .seg button:last-child{border-right:0}
+.rv .seg button[aria-pressed="true"][data-v="ok"]{background:var(--pass);color:var(--bg)}
+.rv .seg button[aria-pressed="true"][data-v="bad"]{background:var(--fail);color:var(--bg)}
+.rv .seg button[aria-pressed="true"][data-v="later"]{background:var(--manual);color:var(--bg)}
+.rv textarea{width:100%;min-height:60px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);color:var(--ink);font:inherit}
+.mine{font-size:12px;color:var(--sub)}
+details[data-r="bad"]{border-color:var(--fail)}
+.sync{font-size:12px;color:var(--sub);margin-left:auto}
 .tbl{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--sub);font-weight:500;font-size:12px}.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}.manual-note{color:var(--sub);font-size:14px}
 </style>""")
     w('<div class="wrap">')
@@ -143,6 +156,7 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
         for u in user:
             w(f"<tr><td class='mono'>{esc(u['id'])}<br>{esc(u['name'])}</td><td>{esc(u['yours'])}</td><td><b class='b-{u['tag']}'>{esc(u['verdict'])}</b><br>{esc(u['detail'])}</td></tr>")
         w("</tbody></table></div>")
+    w('<div class="rvbar" id="rvbar" role="status"></div>')
     w('<div class="filters"><input type="search" id="q" placeholder="搜尋用例名稱或編號" aria-label="搜尋"><div class="chips" id="fs"></div></div>')
 
     cur = None
@@ -154,8 +168,8 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
             w(f'<section class="mod"><h2>{esc(mod.strip("/").replace("/", " › "))}</h2>')
             cur = mod
         opn = " open" if status in ("fail", "unknown") else ""
-        w(f'<details data-s="{status}" data-t="{esc((c["id"] + c["n"]).lower())}"{opn}>')
-        w(f'<summary><span class="id">{c["id"]}</span><span class="name">{esc(c["n"])}</span><span class="lv">{c["l"]}</span><span class="badge b-{status}">{STATUS_LABEL[status]}</span></summary>')
+        w(f'<details data-id="{c["id"]}" data-s="{status}" data-r="" data-t="{esc((c["id"] + c["n"]).lower())}"{opn}>')
+        w(f'<summary><span class="id">{c["id"]}</span><span class="name">{esc(c["n"])}</span><span class="lv">{c["l"]}</span><span class="badge b-{status}">{STATUS_LABEL[status]}</span><span class="mine"></span></summary>')
         w('<div class="body">')
         if c["p"]:
             w(f'<div class="pre">前置條件：{esc(c["p"])}</div>')
@@ -187,11 +201,36 @@ ul.ck .d{color:var(--sub);font-size:12.5px}
         else:
             reason = MANUAL[MANUAL_BY_ID.get(c["id"], "todo")]
             w(f'<div class="manual-note">未自動執行：{esc(reason)}。</div>')
+        w(f'<div class="rv" data-id="{c["id"]}"></div>')
         w("</div></details>")
     if cur is not None:
         w("</section>")
     w("</div>")
     w('<div id="lb"><img alt=""></div>')
+    w("""<script>
+(function(){
+const SK='mb-review-v1',REV={};let db=null,syncTxt='只存在這個瀏覽器';const tm={};
+try{Object.assign(REV,JSON.parse(localStorage.getItem(SK)||'{}'))}catch(e){}
+const ls=()=>{try{localStorage.setItem(SK,JSON.stringify(REV))}catch(e){}};
+const LBL={ok:'你：沒問題',bad:'你：有問題',later:'你：先跳過'};
+const $$=s=>[...document.querySelectorAll(s)];
+function persist(id,now){ls();if(!db)return;clearTimeout(tm[id]);const run=()=>{delete tm[id];const r=REV[id];const ref=db.doc('review/'+id);(r&&(r.s||r.note)?ref.set({s:r.s||'',note:r.note||'',at:Date.now()}):ref.delete()).catch(()=>{syncTxt='儲存失敗，暫存在瀏覽器';bar()})};now?run():tm[id]=setTimeout(run,600)}
+function paint(id){const d=document.querySelector('details[data-id="'+id+'"]');if(!d)return;const r=REV[id]||{};d.dataset.r=r.s||'';d.querySelector('.mine').textContent=r.s?LBL[r.s]:'';const box=d.querySelector('.rv');box.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===r.s?'true':'false'));const ta=box.querySelector('textarea');if(document.activeElement!==ta)ta.value=r.note||''}
+function setRv(id,patch){REV[id]=Object.assign(REV[id]||{},patch);paint(id);persist(id,'s' in patch);bar()}
+function bar(){const todo=$$('details[data-s="review"]').filter(d=>!d.dataset.r).length;const all=$$('details[data-s="review"]').length;const bad=$$('details[data-r="bad"]').length;const el=document.getElementById('rvbar');el.className='rvbar'+(todo?' todo':'');el.innerHTML='';const t=document.createElement('span');t.innerHTML=todo?('還有 <b>'+todo+'</b> 個「待看圖」的用例你還沒檢視（共 '+all+' 個）。請看截圖，標記沒問題或有問題。'):('待看圖的 '+all+' 個用例都檢視過了。');el.append(t);if(todo){const b=document.createElement('button');b.className='chip';b.textContent='只看這些';b.onclick=()=>pick('todo');el.append(b)}const m=document.createElement('span');m.innerHTML='你標了 <b>'+bad+'</b> 個「有問題」';el.append(m);const s=document.createElement('span');s.className='sync';s.textContent=syncTxt;el.append(s)}
+let pick=()=>{};
+$$('.rv').forEach(box=>{const id=box.dataset.id;box.innerHTML='<h4>你的檢視</h4>';const seg=document.createElement('div');seg.className='seg';seg.setAttribute('role','group');[['ok','沒問題'],['bad','有問題'],['later','先跳過']].forEach(([v,t])=>{const b=document.createElement('button');b.type='button';b.dataset.v=v;b.textContent=t;b.setAttribute('aria-pressed','false');b.onclick=()=>setRv(id,{s:(REV[id]&&REV[id].s)===v?'':v});seg.append(b)});const ta=document.createElement('textarea');ta.placeholder='你實際看到什麼？（有問題時請寫下現象，方便我修改）';ta.setAttribute('aria-label',id+' 你看到的內容');ta.oninput=()=>setRv(id,{note:ta.value});box.append(seg,ta)});
+// 篩選：加兩個和檢視有關的選項
+const fs=document.getElementById('fs');let cur2='';
+[['todo','待你看圖（未檢視）'],['bad','你標了有問題']].forEach(([v,t])=>{const b=document.createElement('button');b.className='chip';b.textContent=t;b.dataset.v2=v;b.setAttribute('aria-pressed','false');b.onclick=()=>pick(v);fs.append(b)});
+pick=function(v){cur2=cur2===v?'':v;fs.querySelectorAll('.chip').forEach(x=>{if(x.dataset.v2)x.setAttribute('aria-pressed',x.dataset.v2===cur2?'true':'false');else x.setAttribute('aria-pressed','false')});if(cur2){const all=fs.querySelector('.chip[data-v=""]');}
+ const q=document.getElementById('q').value.trim().toLowerCase();$$('details').forEach(d=>{const okR=!cur2||(cur2==='todo'?(d.dataset.s==='review'&&!d.dataset.r):(d.dataset.r==='bad'));d.hidden=!(okR&&(!q||d.dataset.t.includes(q)))});$$('.mod').forEach(m=>{m.hidden=![...m.querySelectorAll('details')].some(d=>!d.hidden)})};
+fs.addEventListener('click',e=>{if(e.target.dataset&&e.target.dataset.v!==undefined)cur2=''},true);document.getElementById('q').addEventListener('input',()=>{cur2='';fs.querySelectorAll('[data-v2]').forEach(x=>x.setAttribute('aria-pressed','false'))});
+Object.keys(REV).forEach(paint);bar();
+(async()=>{try{db=await window.claude.use('db')}catch(e){}if(!db)return;syncTxt='已同步，下次打開還在';bar();
+db.collection('review').onSnapshot(snap=>{const seen=new Set();snap.docs.forEach(x=>{const v=x.data()||{};seen.add(x.id);if(tm[x.id])return;REV[x.id]={s:v.s||'',note:v.note||''};paint(x.id)});Object.keys(REV).forEach(id=>{if(!seen.has(id)&&(REV[id].s||REV[id].note)&&!tm[id])persist(id,true)});ls();bar()},()=>{syncTxt='同步中斷，目前只存在這個瀏覽器';bar()})})();
+})();
+</script>""")
     w("""<script>
 const fs=document.getElementById('fs'),q=document.getElementById('q');let cur='';
 [['','全部'],['fail','App 問題'],['unknown','未能判定'],['review','待看圖'],['pass','通過'],['manual','手動']].forEach(([v,t])=>{const b=document.createElement('button');b.className='chip';b.textContent=t;b.dataset.v=v;b.setAttribute('aria-pressed',v===''?'true':'false');b.onclick=()=>{cur=v;fs.querySelectorAll('.chip').forEach(x=>x.setAttribute('aria-pressed',x.dataset.v===v?'true':'false'));apply()};fs.append(b)});

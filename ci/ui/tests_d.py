@@ -1331,10 +1331,10 @@ def t_fx_new_account():
         ns = d.nodes()
         if d.has(ns, "外幣", True):
             break
-        a = d.first(ns, "電子票證", True)
+        a = next((x for x in (d.first(ns, t, True) for t in ("電子票證", "電子支付", "貸款", "信用卡", "銀行")) if x), None)
         if a:
-            d.swipe(a.cx + 300, a.cy, a.cx - 400, a.cy, 400)
-        d.time.sleep(0.6)
+            d.swipe(950, a.cy, 150, a.cy, 400)
+        d.time.sleep(0.8)
     d.tap_text("外幣", exact=True)
     d.time.sleep(0.8)
     ns = d.shot("選了外幣")

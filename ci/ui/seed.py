@@ -48,6 +48,10 @@ class Seed:
         self.card3 = card3
         self.card2_shared = card2_shared
         self.usd = usd
+        if usd:
+            # 換匯：測試銀行 31,500 台幣 → 美元帳戶 US$1,000.00（匯率 31.5）；再花 US$12.50（約當 394 台幣）
+            self.transfer(-3, 31500, BANK, USD, fx=100000, time=600)
+            self.expense(-1, 394, C_FOOD, acc=USD, note="fx lunch", fx=1250, time=720)
         self.trades = []
         self.prices = []
 
