@@ -132,23 +132,38 @@ fun TimeTypeInput(hour: Int, minute: Int, onChange: (Int, Int) -> Unit) {
     var m by remember { mutableStateOf(TextFieldValue("%02d".format(minute), TextRange(0, 2))) }
     val hFocus = remember { FocusRequester() }
     val mFocus = remember { FocusRequester() }
+    // 剛選取、還沒打字的格子：打的第一個數字要「取代」原本的數字（輸入法有時還沒同步選取範圍，會變成接在後面）
+    var hFresh by remember { mutableStateOf(true) }
+    var mFresh by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) { hFocus.requestFocus() }
     fun report(hv: TextFieldValue, mv: TextFieldValue) =
         onChange(hv.text.toIntOrNull()?.coerceIn(0, 23) ?: 0, mv.text.toIntOrNull()?.coerceIn(0, 59) ?: 0)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TimeField(h, hFocus, { v ->
-            val t = v.text.filter { it.isDigit() }.take(2)
+            val t = typedDigits(h, v, hFresh)
+            hFresh = false
             h = v.copy(text = t, selection = TextRange(t.length))
             report(h, m)
             if (t.length == 2) mFocus.requestFocus()
-        }, { h = h.copy(selection = TextRange(0, h.text.length)) })
+        }, { hFresh = true; h = h.copy(selection = TextRange(0, h.text.length)) })
         Text(":", style = MaterialTheme.typography.headlineMedium)
         TimeField(m, mFocus, { v ->
-            val t = v.text.filter { it.isDigit() }.take(2)
+            val t = typedDigits(m, v, mFresh)
+            mFresh = false
             m = v.copy(text = t, selection = TextRange(t.length))
             report(h, m)
-        }, { m = m.copy(selection = TextRange(0, m.text.length)) })
+        }, { mFresh = true; m = m.copy(selection = TextRange(0, m.text.length)) })
     }
+}
+
+/** 這次輸入的數字（最多 2 位）：fresh 時如果是接在後面多出來的，只取新打的那幾個 */
+internal fun typedDigits(old: TextFieldValue, v: TextFieldValue, fresh: Boolean): String {
+    val n = v.text.length - old.text.length
+    if (fresh && n > 0) {
+        val end = v.selection.end.coerceIn(n, v.text.length)
+        return v.text.substring(end - n, end).filter { it.isDigit() }.take(2)
+    }
+    return v.text.filter { it.isDigit() }.take(2)
 }
 
 @Composable
