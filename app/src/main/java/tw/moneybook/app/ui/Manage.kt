@@ -336,6 +336,7 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     // 隱藏的帳戶預設不顯示（總資產本來就不含），底下有開關可以打開
     val showHidden = vm.accShowHidden
     val shown = sorted.filter { showHidden || !it.hidden }
+    var fetchAsk by remember { mutableStateOf(false) }
     val hiddenCount = sorted.count { it.hidden }
     LazyColumn(
         state = vm.accListState,
@@ -399,6 +400,14 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                     }
                     Text(formatMoney(sub), style = MaterialTheme.typography.labelLarge, color = if (sub < 0) cute.expense else cute.sub)
                 }
+                    // 所有投資帳戶的持股一次抓價（進單一投資帳戶按「抓最新價格」只抓那個帳戶的）
+                    if (type == AccountType.INVEST && !editing && d.trades.isNotEmpty()) {
+                        CuteChip(
+                            if (vm.fetching) "抓價中…" else "更新全部價格", false,
+                            { if (!vm.fetching) { if (d.prefs.priceFetch) vm.refreshPrices() else fetchAsk = true } },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
             }
             if (collapsed) continue
             item(key = "group-${type.name}") {
@@ -460,6 +469,23 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
             cards = d.accounts.filter { it.type == AccountType.CARD },
             onSave = { na -> vm.saveAccount(null, na); adding = false },
             onDelete = null,
+    FetchReportDialog(vm)
+    if (fetchAsk) {
+        AlertDialog(
+            onDismissRequest = { fetchAsk = false },
+            title = { Text("上網抓最新價格？") },
+            text = {
+                Text(
+                    "記帳本平常完全不連網。開啟後，按「更新全部價格」或進投資帳戶按「抓最新價格」時，" +
+                        "才會把持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。
+之後可以隨時在投資帳戶的持股頁下方關閉。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.setPriceFetch(true); fetchAsk = false; vm.refreshPrices() }) { Text("開啟並抓價") } },
+            dismissButton = { TextButton(onClick = { fetchAsk = false }) { Text("不要") } },
+        )
+    }
             onDismiss = { adding = false },
         )
     }

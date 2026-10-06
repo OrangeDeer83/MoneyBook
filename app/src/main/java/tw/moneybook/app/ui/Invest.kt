@@ -75,10 +75,10 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     var tradeSymbol by remember { mutableStateOf("") }
     var pricePos by remember { mutableStateOf<Position?>(null) }
 
-    // 已同意上網抓價、而且超過 3 天沒更新，打開這一頁時自動抓一次（每個月就會有幾次價格當代表）
+    // 已同意上網抓價、而且這個帳戶有持股超過 3 天沒更新，打開這一頁時自動抓一次這個帳戶的（每個月就會有幾次價格當代表）
     LaunchedEffect(a.id) {
         val today = LocalDate.now().toEpochDay()
-        if (d.prefs.priceFetch && pf.positions.isNotEmpty() && today - d.prefs.priceFetchDay >= 3L) vm.refreshPrices(silent = true)
+        if (d.prefs.priceFetch && vm.autoFetched.add(a.id) && pf.positions.any { today - it.priceDay >= 3L }) vm.refreshPrices(silent = true, accountId = a.id)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -118,7 +118,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                         {
                             when {
                                 vm.fetching -> {}
-                                d.prefs.priceFetch -> { vm.refreshPrices() }
+                                d.prefs.priceFetch -> { vm.refreshPrices(accountId = a.id) }
                                 else -> { dialog = "fetchAsk" }
                             }
                         },
@@ -213,6 +213,63 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
         }
     }
 
+    FetchReportDialog(vm)
+
+    when (dialog) {
+        "trade" -> TradeDialog(
+            vm = vm, a = a, held = pf.positions, initialBuy = tradeBuy, initialSymbol = tradeSymbol,
+            onDismiss = { dialog = "" },
+        )
+        "price" -> pricePos?.let { p ->
+            PriceDialog(
+                p = p,
+                onConfirm = { price -> vm.setPrice(p.symbol, price, currency = p.currency); dialog = "" },
+                onDismiss = { dialog = "" },
+            )
+        }
+        "fetchAsk" -> AlertDialog(
+            onDismissRequest = { dialog = "" },
+            title = { Text("上網抓最新價格？") },
+            text = {
+                Text(
+                    "記帳本平常完全不連網。開啟後，只有按「抓最新價格」，或打開這一頁而且超過 3 天沒更新時，" +
+                        "才會把這個帳戶持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。\n" +
+                        "每個月會留下幾次價格當作當月的代表。之後可以隨時在持股頁下方關閉。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.setPriceFetch(true); dialog = ""; vm.refreshPrices(accountId = a.id) }) { Text("開啟並抓價") } },
+            dismissButton = { TextButton(onClick = { dialog = "" }) { Text("不要") } },
+        )
+        "sync" -> AlertDialog(
+            onDismissRequest = { dialog = "" },
+            title = { Text("同步市值到餘額") },
+            text = {
+                Text(
+                    "持股市值 ${formatMoney(pf.value)}，帳戶目前餘額 ${formatMoney(balance)}。\n" +
+                        "更新後帳戶餘額會變成 ${formatMoney(pf.value)}，差額記成「餘額調整」，不算收入或支出。\n" +
+                        "（如果這個帳戶裡還放著現金，請改用「更新餘額」自己輸入。）",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.adjustBalance(a.id, pf.value); dialog = "" }) { Text("更新") } },
+            dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+        )
+    }
+}
+
+/** 單價文字：外幣前面加幣別符號（US$500.00），台幣維持原樣（120.50） */
+private fun unitPrice(price: Double, currency: String): String =
+    if (currency.isEmpty()) priceText(price) else Currencies.of(currency).symbol + priceText(price)
+
+/** 手動改某檔的現價（記成今天的價格） */
+@Composable
+private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(priceText(p.price).replace(",", "")) }
+/** 抓價結果：沒抓到的列出來，抓到的列出價格（投資帳戶頁和帳戶總覽的「更新全部價格」共用） */
+@Composable
+fun FetchReportDialog(vm: MoneyViewModel) {
+    val cute = LocalCute.current
     vm.fetchReport?.let { rep ->
         val failed = rep.filter { !it.ok }
         val okList = rep.filter { it.ok }
@@ -252,58 +309,8 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             confirmButton = { TextButton(onClick = { vm.fetchReport = null }) { Text("關閉") } },
         )
     }
-
-    when (dialog) {
-        "trade" -> TradeDialog(
-            vm = vm, a = a, held = pf.positions, initialBuy = tradeBuy, initialSymbol = tradeSymbol,
-            onDismiss = { dialog = "" },
-        )
-        "price" -> pricePos?.let { p ->
-            PriceDialog(
-                p = p,
-                onConfirm = { price -> vm.setPrice(p.symbol, price, currency = p.currency); dialog = "" },
-                onDismiss = { dialog = "" },
-            )
-        }
-        "fetchAsk" -> AlertDialog(
-            onDismissRequest = { dialog = "" },
-            title = { Text("上網抓最新價格？") },
-            text = {
-                Text(
-                    "記帳本平常完全不連網。開啟後，只有按「抓最新價格」，或打開這一頁而且超過 3 天沒更新時，" +
-                        "才會把持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。\n" +
-                        "每個月會留下幾次價格當作當月的代表。之後可以隨時在持股頁下方關閉。",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = { TextButton(onClick = { vm.setPriceFetch(true); dialog = ""; vm.refreshPrices() }) { Text("開啟並抓價") } },
-            dismissButton = { TextButton(onClick = { dialog = "" }) { Text("不要") } },
-        )
-        "sync" -> AlertDialog(
-            onDismissRequest = { dialog = "" },
-            title = { Text("同步市值到餘額") },
-            text = {
-                Text(
-                    "持股市值 ${formatMoney(pf.value)}，帳戶目前餘額 ${formatMoney(balance)}。\n" +
-                        "更新後帳戶餘額會變成 ${formatMoney(pf.value)}，差額記成「餘額調整」，不算收入或支出。\n" +
-                        "（如果這個帳戶裡還放著現金，請改用「更新餘額」自己輸入。）",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = { TextButton(onClick = { vm.adjustBalance(a.id, pf.value); dialog = "" }) { Text("更新") } },
-            dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
-        )
-    }
 }
 
-/** 單價文字：外幣前面加幣別符號（US$500.00），台幣維持原樣（120.50） */
-private fun unitPrice(price: Double, currency: String): String =
-    if (currency.isEmpty()) priceText(price) else Currencies.of(currency).symbol + priceText(price)
-
-/** 手動改某檔的現價（記成今天的價格） */
-@Composable
-private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(priceText(p.price).replace(",", "")) }
     val price = text.toDoubleOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,

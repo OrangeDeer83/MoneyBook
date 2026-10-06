@@ -390,10 +390,13 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 上網抓持股的最新價格（所有投資帳戶的持股一起抓）；silent 時全部成功就不顯示提示 */
-    fun refreshPrices(silent: Boolean = false) {
+    /** 這次開 App 已經自動抓過價的投資帳戶（不用每次進去都抓） */
+    val autoFetched = HashSet<Long>()
+
+    /** 上網抓持股的最新價格；accountId 有填就只抓那個投資帳戶的持股，空白是所有投資帳戶一起抓；silent 時全部成功就不顯示提示 */
+    fun refreshPrices(silent: Boolean = false, accountId: Long? = null) {
         if (fetching) return
-        val positions = data.portfolio().positions.distinctBy { it.symbol }
+        val positions = data.portfolio(accountId).positions.distinctBy { it.symbol }
         if (positions.isEmpty()) return
         fetching = true
         viewModelScope.launch {
@@ -422,7 +425,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 if (rt != null) newRates.add(FxRate(c, rt, fetchDay))
             }
             val fail = results.count { !it.ok }
-            priceFailed = results.filter { !it.ok }.map { it.symbol }.toSet()
+            // 只抓某個帳戶時，其他帳戶上次沒抓到的標示保留
+            priceFailed = (if (accountId == null) emptySet() else priceFailed - positions.map { it.symbol }.toSet()) + results.filter { !it.ok }.map { it.symbol }.toSet()
             fetching = false
             val today = LocalDate.now()
             if (got.isNotEmpty() || newRates.isNotEmpty()) {
