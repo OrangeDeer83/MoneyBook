@@ -49,7 +49,15 @@ def acc_tab():
 
 def open_account(name):
     acc_tab()
-    d.tap(d.wait(lambda n: n.text == name and n.cy < 2000, 10, f"帳戶「{name}」"))
+    # 帳戶分組多的時候，要找的帳戶可能在畫面下面：找不到就往下捲
+    for _ in range(4):
+        found = [n for n in d.nodes() if n.text == name and n.cy < 2000]
+        if found:
+            d.tap(found[0])
+            break
+        d.scroll_down(1)
+    else:
+        raise TimeoutError(f"找不到帳戶「{name}」")
     d.wait_text("更新餘額", timeout=10)
     d.time.sleep(0.8)
 
