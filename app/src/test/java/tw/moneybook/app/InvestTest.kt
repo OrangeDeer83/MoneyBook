@@ -258,4 +258,49 @@ class InvestTest {
         assertEquals(base, base.renameHolding(1L, "AAPL", "  ", "x", "US"))
         assertEquals("AAPL", base.renameHolding(1L, "AAPL", " aapl ", "", "US").trades.single().symbol)
     }
+
+    // ── 修改持股的市場（可以換幣別）
+
+    @Test
+    fun changingMarketToAnotherCurrencyReinterpretsThePricesWithTheNewRate() {
+        // 本來選成台股、卻是美股：100 股 @ 50 先當台幣記（成本 5,000），改成美股、匯率 30 後成本 150,000
+        val d = data(listOf(buy(1, 100, 100.0, 50.0, sym = "VOO")), listOf(PriceSnap("VOO", 100, 55.0)))
+            .renameHolding(1L, "VOO", "VOO", "", "US", 30.0)
+        val t = d.trades.single()
+        assertEquals("US", t.market)
+        assertEquals("USD", t.currency)
+        assertEquals(30.0, t.rate, 1e-9)
+        assertEquals("USD", d.prices.single().currency)
+        val pos = d.portfolio(1L).positions.single()
+        assertEquals(150_000L, pos.cost)
+        assertEquals("USD", pos.currency)
+        assertEquals(55.0, pos.price, 1e-9)
+    }
+
+    @Test
+    fun changingMarketBackToTaiwanDropsTheRate() {
+        val us = Trade(1, 1L, "2330", "", 100, true, 10.0, 600.0, 0L, null, "US", "USD", 30.0)
+        val d = data(listOf(us), listOf(PriceSnap("2330", 100, 610.0, "USD"))).renameHolding(1L, "2330", "2330", "", "TW")
+        val t = d.trades.single()
+        assertEquals("", t.currency)
+        assertEquals(0.0, t.rate, 1e-9)
+        assertEquals("", d.prices.single().currency)
+        assertEquals(6_000L, d.portfolio(1L).positions.single().cost)
+    }
+
+    @Test
+    fun changingMarketKeepsOldRateWhenNoNewRateGiven() {
+        val us = Trade(1, 1L, "AAPL", "", 100, true, 10.0, 100.0, 0L, null, "US", "USD", 31.0)
+        val d = data(listOf(us)).renameHolding(1L, "AAPL", "AAPL", "", "CRYPTO")   // 同樣是美金
+        assertEquals(31.0, d.trades.single().rate, 1e-9)
+        assertEquals("CRYPTO", d.trades.single().market)
+    }
+
+    @Test
+    fun blankMarketLeavesTheCurrencyAlone() {
+        val us = Trade(1, 1L, "AAPL", "", 100, true, 10.0, 100.0, 0L, null, "US", "USD", 31.0)
+        val d = data(listOf(us)).renameHolding(1L, "AAPL", "AAPL", "新名稱", "")
+        assertEquals("USD", d.trades.single().currency)
+        assertEquals(31.0, d.trades.single().rate, 1e-9)
+    }
 }

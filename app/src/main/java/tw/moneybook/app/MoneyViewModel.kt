@@ -322,8 +322,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 修改一檔持股的代號、名稱、市場（見 renameHolding）；改錯了再改回來就好 */
-    fun editHolding(accountId: Long, symbol: String, newSymbol: String, newName: String, newMarket: String) {
-        val after = data.renameHolding(accountId, symbol, newSymbol, newName, newMarket)
+    fun editHolding(accountId: Long, symbol: String, newSymbol: String, newName: String, newMarket: String, newRate: Double = 0.0) {
+        val after = data.renameHolding(accountId, symbol, newSymbol, newName, newMarket, newRate)
         if (after == data) return
         commit(after)
         toast("已修改持股")

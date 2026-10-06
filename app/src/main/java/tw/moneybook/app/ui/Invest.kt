@@ -230,8 +230,8 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
         }
         "holding" -> pricePos?.let { p ->
             EditHoldingDialog(
-                p = p, others = pf.positions.filter { it.symbol != p.symbol },
-                onSave = { sym, name, market -> vm.editHolding(a.id, p.symbol, sym, name, market); dialog = "" },
+                p = p, others = pf.positions.filter { it.symbol != p.symbol }, rateOf = { c -> d.rateOf(c) },
+                onSave = { sym, name, market, rate -> vm.editHolding(a.id, p.symbol, sym, name, market, rate); dialog = "" },
                 onDismiss = { dialog = "" },
             )
         }
@@ -336,7 +336,7 @@ private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onEdit: () -> 
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                TextButton(onClick = onEdit) { Text("打錯了？修改名稱／代號") }
+                TextButton(onClick = onEdit) { Text("打錯了？修改名稱／代號／市場") }
             }
         },
         confirmButton = { TextButton(onClick = { if (need != null || price == null) tries.count++ else onConfirm(price) }) { Text("更新") } },
@@ -344,30 +344,44 @@ private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onEdit: () -> 
     )
 }
 
-/** 修改一檔持股的名稱、代號、市場（打錯了要改）：這個帳戶這檔的所有買賣一起改，買賣金額和損益不變 */
+/**
+ * 修改一檔持股的名稱、代號、市場（打錯了要改）：這個帳戶這檔的所有買賣一起改。
+ * 市場可以換成不同幣別的（例如台股選成美股）：單價的數字不變、改用新幣別解讀，要填匯率重算台幣成本。
+ */
 @Composable
-private fun EditHoldingDialog(p: Position, others: List<Position>, onSave: (String, String, String) -> Unit, onDismiss: () -> Unit) {
+private fun EditHoldingDialog(
+    p: Position, others: List<Position>, rateOf: (String) -> Double?,
+    onSave: (symbol: String, name: String, market: String, rate: Double) -> Unit, onDismiss: () -> Unit,
+) {
     val cute = LocalCute.current
     var symbol by remember { mutableStateOf(p.symbol) }
     var name by remember { mutableStateOf(p.name) }
     var market by remember { mutableStateOf(p.market) }
     val sym = symbol.trim().uppercase()
-    // 買進時單價的幣別已經記在每筆買賣裡，所以只能換成同幣別的市場（美股⇄加密貨幣，都是美金）
-    val markets = Markets.all.filter { Markets.currencyOf(it.first) == p.currency }
+    val newCur = if (market.isBlank()) p.currency else Markets.currencyOf(market)
+    val curChanged = newCur != p.currency
+    var rateInput by remember { mutableStateOf("") }
+    var rateTouched by remember { mutableStateOf(false) }
+    // 換成外幣市場時，匯率預設用目前匯率（沒有就空著要自己填）
+    LaunchedEffect(newCur) {
+        if (!rateTouched) rateInput = if (curChanged && newCur.isNotEmpty()) rateOf(newCur)?.let { rateText(it) } ?: "" else ""
+    }
+    val rate = rateInput.toDoubleOrNull() ?: 0.0
     val merge = others.firstOrNull { it.symbol == sym }
     val tries = rememberNeedTries()
-    val need = firstNeed(if (sym.isEmpty()) Need("symbol", "請輸入代號") else null)
+    val need = firstNeed(
+        if (sym.isEmpty()) Need("symbol", "請輸入代號") else null,
+        if (curChanged && newCur.isNotEmpty() && rate <= 0.0) Need("rate", "請輸入匯率（1 $newCur = 幾元台幣）") else null,
+    )
     val nv = NeedView(need, tries.count)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("修改持股") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (markets.size > 1) {
-                    Text("市場（決定怎麼抓價）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        markets.forEach { (code, label) -> CuteChip(label, market == code, { market = code }) }
-                    }
+                Text("市場（決定怎麼抓價）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Markets.all.forEach { (code, label) -> CuteChip(label, market == code, { market = code; rateTouched = false }) }
                 }
                 OutlinedTextField(
                     symbol, { symbol = it.filter { c -> c.isLetterOrDigit() || c == '.' || c == '-' }.take(12) },
@@ -380,13 +394,29 @@ private fun EditHoldingDialog(p: Position, others: List<Position>, onSave: (Stri
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
+                if (curChanged && newCur.isNotEmpty()) {
+                    OutlinedTextField(
+                        rateInput, { rateInput = it.filter { c -> c.isDigit() || c == '.' }.take(10); rateTouched = true },
+                        label = { Text("匯率（1 $newCur = 幾元台幣）") }, singleLine = true,
+                        isError = nv.on("rate"), supportingText = nv.supporting("rate"),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().needInView(nv, "rate"),
+                    )
+                }
+                if (curChanged) {
+                    Text(
+                        if (newCur.isEmpty()) "市場換成台股：原本的單價數字改當台幣，不再用匯率換算。已經記好的轉帳金額不會變。"
+                        else "市場換成 $newCur 計價：原本的單價數字改當 $newCur，成本用上面的匯率換成台幣重算。已經記好的轉帳金額不會變。",
+                        style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                    )
+                }
                     if (merge != null) "這個帳戶已經有「${merge.symbol}」，改成同一個代號會把兩檔合併成一檔。"
-                    else "這個帳戶這一檔的所有買賣記錄都會一起改，買賣金額和損益不變；價格記錄跟著搬到新代號。",
+                    else "這個帳戶這一檔的所有買賣記錄都會一起改；價格記錄跟著搬到新代號。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(sym, name, market) }) { Text("儲存") } },
+        confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(sym, name, market, rate) }) { Text("儲存") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }

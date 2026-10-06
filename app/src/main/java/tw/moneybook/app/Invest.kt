@@ -148,13 +148,27 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
 /**
  * 修改某個帳戶裡一檔持股的代號、名稱、市場（打錯了要改）：這個帳戶這個代號的所有買賣都跟著改。
  * 代號改了，而且別的帳戶沒有在用舊代號時，舊代號的價格記錄一起搬到新代號（價格不用重填）。新代號空白就不改。
+ *
+ * 市場可以換成不同幣別的（例如台股選成美股）：這檔每筆買賣的單價就改成用新市場的幣別解讀（數字不變），
+ * 匯率用 newRate（新幣別不是台幣時要填；沒填就沿用各筆原本的匯率）。已經記好的轉帳金額不會跟著變。
  */
-fun AppData.renameHolding(accountId: Long, symbol: String, newSymbol: String, newName: String, newMarket: String): AppData {
+fun AppData.renameHolding(
+    accountId: Long, symbol: String, newSymbol: String, newName: String, newMarket: String,
+    newRate: Double = 0.0,
+): AppData {
     val ns = newSymbol.trim().uppercase()
     if (ns.isEmpty()) return this
-    val nt = trades.map { if (it.accountId == accountId && it.symbol == symbol) it.copy(symbol = ns, name = newName.trim(), market = newMarket) else it }
-    val oldInUse = nt.any { it.symbol == symbol }
-    val np = if (ns == symbol || oldInUse) prices else prices.map { if (it.symbol == symbol) it.copy(symbol = ns) else it }
+    val nc = Markets.currencyOf(newMarket)
+    // 市場空白（舊資料）就不動幣別
+    fun fix(t: Trade): Trade {
+        val moved = t.copy(symbol = ns, name = newName.trim(), market = newMarket)
+        if (newMarket.isBlank() || nc == t.currency) return moved
+        return moved.copy(currency = nc, rate = if (nc.isEmpty()) 0.0 else if (newRate > 0.0) newRate else t.rate)
+    }
+    val nt = trades.map { if (it.accountId == accountId && it.symbol == symbol) fix(it) else it }
+    // 別的帳戶還有這個代號時，價格記錄是大家共用的，不動
+    val usedElsewhere = trades.any { it.accountId != accountId && it.symbol == symbol }
+    val np = if (usedElsewhere) prices else prices.map { if (it.symbol == symbol) it.copy(symbol = ns, currency = if (newMarket.isBlank()) it.currency else nc) else it }
     return copy(trades = nt, prices = np)
 }
 
