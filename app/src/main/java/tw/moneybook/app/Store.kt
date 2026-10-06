@@ -94,11 +94,12 @@ object Codec {
                     JSONObject().put("id", t.id).put("accountId", t.accountId).put("symbol", t.symbol)
                         .put("name", t.name).put("day", t.day).put("buy", t.buy).put("qty", t.qty)
                         .put("price", t.price).put("fee", t.fee).put("txnId", nullable(t.txnId)).put("market", t.market)
+                        .put("currency", t.currency).put("rate", t.rate)
                 )
             }
         })
         root.put("prices", JSONArray().apply {
-            d.prices.forEach { p -> put(JSONObject().put("symbol", p.symbol).put("day", p.day).put("price", p.price)) }
+            d.prices.forEach { p -> put(JSONObject().put("symbol", p.symbol).put("day", p.day).put("price", p.price).put("currency", p.currency)) }
         })
         root.put("rates", JSONArray().apply {
             d.rates.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
@@ -214,10 +215,12 @@ object Codec {
                 fee = o.optLong("fee", 0L),
                 txnId = o.optLongOrNull("txnId"),
                 market = o.optString("market", ""),
+                currency = o.optString("currency", ""),
+                rate = o.optDouble("rate", 0.0),
             )
         }
         val prices = objects(root.optJSONArray("prices")) { o ->
-            PriceSnap(o.getString("symbol"), o.getLong("day"), o.optDouble("price", 0.0))
+            PriceSnap(o.getString("symbol"), o.getLong("day"), o.optDouble("price", 0.0), o.optString("currency", ""))
         }
         val rates = objects(root.optJSONArray("rates")) { o ->
             FxRate(o.getString("code"), o.optDouble("rate", 0.0), o.optLong("day", 0L))

@@ -109,6 +109,93 @@ class InvestTest {
         assertEquals("0.5", qtyText(pos.qty))
     }
 
+    // ───────── 外幣單價（美股用美金記，成本與損益用台幣）
+
+    private fun usdBuy(id: Long, day: Long, qty: Double, price: Double, rate: Double, fee: Long = 0L, sym: String = "VOO") =
+        Trade(id, 1L, sym, "", day, true, qty, price, fee, market = "US", currency = "USD", rate = rate)
+
+    private fun usdSell(id: Long, day: Long, qty: Double, price: Double, rate: Double, fee: Long = 0L, sym: String = "VOO") =
+        Trade(id, 1L, sym, "", day, false, qty, price, fee, market = "US", currency = "USD", rate = rate)
+
+    @Test
+    fun usdTradeKeepsPriceInDollarsAndCostInTwd() {
+        // 買 10 股 @ US$500，匯率 31，手續費 NT$60：成本 = 10×500×31 + 60 = 155,060
+        val pos = data(listOf(usdBuy(1, 100, 10.0, 500.0, 31.0, 60))).portfolio(1L).positions.single()
+        assertEquals("USD", pos.currency)
+        assertEquals(500.0, pos.price, 1e-9)                 // 單價是美金
+        assertEquals(155_060L, pos.cost)
+        assertEquals(500.0, pos.avgPrice, 1e-9)              // 每股平均成本也是美金（不含台幣手續費）
+        assertEquals(155_000L, pos.value)                    // 沒有別的匯率：用最後一筆成交的匯率 31
+    }
+
+    @Test
+    fun valueFollowsTheCurrentRateAndGainMixesPriceAndRate() {
+        val d = data(
+            listOf(usdBuy(1, 100, 10.0, 500.0, 31.0)),
+            listOf(PriceSnap("VOO", 110, 520.0, "USD")),
+        ).copy(rates = listOf(FxRate("USD", 32.0, 110)))
+        val pos = d.portfolio(1L).positions.single()
+        assertEquals(520.0, pos.price, 1e-9)
+        assertEquals(32.0, pos.rate, 1e-9)
+        assertEquals(166_400L, pos.value)                    // 10 × 520 × 32
+        assertEquals(11_400L, pos.gain)                      // 166,400 − 155,000
+        assertEquals(155_000L, d.portfolio(1L).cost)
+    }
+
+    @Test
+    fun oldTwdPriceSnapshotIsNotUsedForAUsdPosition() {
+        // 舊的抓價存成台幣價格（沒有幣別），不能當成美金用
+        val d = data(listOf(usdBuy(1, 100, 10.0, 500.0, 31.0)), listOf(PriceSnap("VOO", 110, 16_000.0)))
+        val pos = d.portfolio(1L).positions.single()
+        assertEquals(500.0, pos.price, 1e-9)
+    }
+
+    @Test
+    fun sellingUsdSharesRealizesGainInTwdAtTheTradeRates() {
+        // 買 10 股 @500 匯率 31（成本 155,000）；賣 4 股 @550 匯率 32、手續費 NT$50：
+        // 收入 4×550×32 − 50 = 70,350，成本 62,000，已實現 8,350；剩 6 股、成本 93,000、每股美金成本仍是 500
+        val p = data(listOf(usdBuy(1, 100, 10.0, 500.0, 31.0), usdSell(2, 101, 4.0, 550.0, 32.0, 50))).portfolio(1L)
+        val pos = p.positions.single()
+        assertEquals(6.0, pos.qty, 1e-9)
+        assertEquals(93_000L, pos.cost)
+        assertEquals(500.0, pos.avgPrice, 1e-9)
+        assertEquals(8_350L, p.realized)
+    }
+
+    @Test
+    fun twdTradesAreUnchangedAndHaveAvgPriceInTwd() {
+        val pos = data(listOf(buy(1, 100, 100.0, 100.0, 20))).portfolio(1L).positions.single()
+        assertEquals("", pos.currency)
+        assertEquals(1.0, pos.rate, 1e-9)
+        assertEquals(100.2, pos.avgPrice, 1e-9)
+    }
+
+    @Test
+    fun marketsSayWhichCurrencyThePriceIsIn() {
+        assertEquals("USD", Markets.currencyOf("US"))
+        assertEquals("USD", Markets.currencyOf("CRYPTO"))
+        assertEquals("JPY", Markets.currencyOf("JP"))
+        assertEquals("", Markets.currencyOf("TW"))
+        assertEquals("", Markets.currencyOf(""))
+    }
+
+    @Test
+    fun usdTradesAndPricesSurviveSaveAndOldBackupsStillLoad() {
+        val d = data(listOf(usdBuy(1, 100, 10.0, 500.0, 31.0, 60)), listOf(PriceSnap("VOO", 110, 520.0, "USD")))
+        val back = Codec.decode(Codec.encode(d))
+        assertEquals("USD", back.trades.single().currency)
+        assertEquals(31.0, back.trades.single().rate, 1e-9)
+        assertEquals("USD", back.prices.single().currency)
+        val root = org.json.JSONObject(Codec.encode(d))
+        val tr = root.getJSONArray("trades")
+        for (i in 0 until tr.length()) { tr.getJSONObject(i).remove("currency"); tr.getJSONObject(i).remove("rate") }
+        val pr = root.getJSONArray("prices")
+        for (i in 0 until pr.length()) pr.getJSONObject(i).remove("currency")
+        val old = Codec.decode(root.toString())
+        assertEquals("", old.trades.single().currency)
+        assertEquals("", old.prices.single().currency)
+    }
+
     @Test
     fun pruneMonthlyKeepsCurrentMonthAndOneOfEachOldMonth() {
         val today = LocalDate.of(2026, 10, 15)

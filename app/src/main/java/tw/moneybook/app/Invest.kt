@@ -2,7 +2,11 @@ package tw.moneybook.app
 
 import kotlin.math.roundToLong
 
-/** 一筆買進或賣出，歸在某個投資帳戶底下。價格用帳戶的幣別（目前一律 NT$） */
+/**
+ * 一筆買進或賣出，歸在某個投資帳戶底下。
+ * 單價用 currency 這個幣別記（空白＝台幣；美股用 USD，單價就是美金）；用外幣記時，rate 是這筆成交當時
+ * 「1 單位外幣 = 幾元台幣」，成本與損益用它換成台幣算。手續費 fee 一律是台幣。
+ */
 data class Trade(
     val id: Long,
     val accountId: Long,
@@ -19,10 +23,14 @@ data class Trade(
     val txnId: Long? = null,
     /** 市場（見 Markets）；空白是舊資料，抓價時自動判斷 */
     val market: String = "",
+    /** 單價的幣別；空白是台幣（舊資料、台股都是） */
+    val currency: String = "",
+    /** 外幣單價換台幣的匯率（currency 不是空白才有意義） */
+    val rate: Double = 0.0,
 )
 
-/** 某個代號在某一天的價格（抓到的或手動輸入的）。每個月抓幾次，當作那個月的代表 */
-data class PriceSnap(val symbol: String, val day: Long, val price: Double)
+/** 某個代號在某一天的價格（抓到的或手動輸入的）。每個月抓幾次，當作那個月的代表。currency 是價格的幣別，空白是台幣 */
+data class PriceSnap(val symbol: String, val day: Long, val price: Double, val currency: String = "")
 
 /** 目前持有的部位 */
 data class Position(
@@ -36,8 +44,14 @@ data class Position(
     /** 這個價格是哪一天的 */
     val priceDay: Long,
     val market: String = "",
+    /** 單價（price、avgPrice）的幣別；空白是台幣。cost、value、gain 一律是台幣 */
+    val currency: String = "",
+    /** 把單價換成台幣用的匯率（台幣是 1.0） */
+    val rate: Double = 1.0,
+    /** 每股平均成本（用單價的幣別；美股是美金） */
+    val avgPrice: Double = 0.0,
 ) {
-    val value: Long get() = (qty * price).roundToLong()
+    val value: Long get() = (qty * price * rate).roundToLong()
     val gain: Long get() = value - cost
     val gainPct: Double get() = if (cost > 0L) gain.toDouble() / cost else 0.0
 }
@@ -78,8 +92,11 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
     }
     class Acc(var name: String) {
         var market = ""
+        var currency = ""
+        var lastRate = 1.0
         var qty = 0.0
-        var cost = 0.0
+        var cost = 0.0           // 台幣
+        var costNative = 0.0     // 單價幣別（美股是美金）
         var lastPrice = 0.0
         var lastDay = Long.MIN_VALUE
     }
@@ -92,26 +109,37 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
         if (t.market.isNotBlank()) a.market = t.market
         a.lastPrice = t.price
         a.lastDay = t.day
+        a.currency = t.currency
+        // 外幣單價：成交金額用「這筆的匯率」換成台幣；台幣就是 1
+        val r = if (t.currency.isNotEmpty() && t.rate > 0.0) t.rate else 1.0
+        a.lastRate = r
         if (t.buy) {
-            a.cost += t.qty * t.price + t.fee
+            a.cost += t.qty * t.price * r + t.fee
+            a.costNative += t.qty * t.price
             a.qty += t.qty
         } else {
             val sold = minOf(t.qty, a.qty)
             val out = if (a.qty > EPS) a.cost / a.qty * sold else 0.0
-            realized += t.qty * t.price - t.fee - out
+            val outNative = if (a.qty > EPS) a.costNative / a.qty * sold else 0.0
+            realized += t.qty * t.price * r - t.fee - out
             a.cost -= out
+            a.costNative -= outNative
             a.qty -= sold
         }
     }
     val list = m.entries.filter { it.value.qty > EPS }.map { (k, a) ->
         val snap = latest[k.second]
-        // 手動／抓到的價格比最後一筆成交價新（或一樣新）才用它
-        val useSnap = snap != null && snap.day >= a.lastDay
+        // 手動／抓到的價格比最後一筆成交價新（或一樣新）、而且幣別一樣才用它（舊的台幣價格不能當美金用）
+        val useSnap = snap != null && snap.day >= a.lastDay && snap.currency == a.currency
+        // 外幣持股用「目前匯率」算市值：手動設定的、最近一次買賣外幣的匯率，都沒有就用最後一筆成交的匯率
+        val rate = if (a.currency.isEmpty()) 1.0 else rateOf(a.currency) ?: a.lastRate
         Position(
             accountId = k.first, symbol = k.second, name = a.name,
             qty = a.qty, cost = a.cost.roundToLong(), market = a.market,
             price = if (useSnap) snap!!.price else a.lastPrice,
             priceDay = if (useSnap) snap!!.day else a.lastDay,
+            currency = a.currency, rate = rate,
+            avgPrice = if (a.currency.isEmpty()) (if (a.qty > EPS) a.cost / a.qty else 0.0) else (if (a.qty > EPS) a.costNative / a.qty else 0.0),
         )
     }.sortedByDescending { it.value }
     return Portfolio(list, realized.roundToLong())
@@ -121,7 +149,7 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
 fun tradeAmount(qty: Double, price: Double): Long = (qty * price).roundToLong()
 
 /** 一檔的抓價結果（抓價完成後列給使用者看） */
-data class FetchResult(val symbol: String, val name: String, val market: String, val price: Double?) {
+data class FetchResult(val symbol: String, val name: String, val market: String, val price: Double?, val currency: String = "") {
     val ok: Boolean get() = price != null
 }
 
@@ -136,6 +164,15 @@ object Markets {
     )
 
     fun label(code: String): String = all.firstOrNull { it.first == code }?.second ?: ""
+
+    /** 這個市場的單價用什麼幣別記：台股是台幣（空白），美股與加密貨幣是美金，其他是當地幣別 */
+    fun currencyOf(code: String): String = when (code) {
+        "US", "CRYPTO" -> "USD"
+        "JP" -> "JPY"
+        "KR" -> "KRW"
+        "HK" -> "HKD"
+        else -> ""
+    }
 
     /** 代號欄的範例 */
     fun example(code: String): String = when (code) {
