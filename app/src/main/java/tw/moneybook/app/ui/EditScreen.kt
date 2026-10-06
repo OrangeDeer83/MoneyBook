@@ -284,6 +284,24 @@ fun EditScreen(
         else -> catId != null
     }
     val canSave = if (tplMode) targetOk else hasValue && targetOk
+    // 必填：按「完成」才檢查，照畫面由上到下只標第一個沒填好的（見 Need.kt）
+    val tries = rememberNeedTries()
+    val need = firstNeed(
+        when {
+            targetOk -> null
+            type == TxType.TRANSFER -> Need("target", if (accs.size < 2) "轉帳需要至少兩個帳戶，可以到「我的 → 帳戶管理」新增" else "請選擇兩個不同的帳戶")
+            else -> Need("target", "請選擇分類")
+        },
+        if (type == TxType.TRANSFER && plan.mode == FxMode.UNSUPPORTED) Need("target", "不同幣別的外幣帳戶之間不能直接轉帳，請先換回台幣，再買另一種外幣") else null,
+        if (tplMode) null else when {
+            (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) && keyVal > 0 && !hasValue ->
+                Need("other", if (plan.mode == FxMode.BUY) "請輸入收到的外幣金額" else "請輸入收到的台幣金額")
+            (plan.mode == FxMode.SPEND || plan.mode == FxMode.SAME) && keyVal > 0 && rate == null -> Need("rate", "請先設定匯率（點金額下面的字）")
+            !hasValue -> Need("amount", if (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) "請輸入付出的金額" else "請先輸入金額")
+            else -> null
+        },
+    )
+    val nv = NeedView(need, tries.count)
 
     fun draft() = TxnDraft(
         type = type, amount = amount,
@@ -315,16 +333,8 @@ fun EditScreen(
     fun doSave(): Boolean {
         // 快速連點時，換頁動畫還沒結束、畫面還能點，不能重複儲存
         if (saved) return true
-        if (!canSave) {
-            vm.toast(
-                when {
-                    plan.mode == FxMode.UNSUPPORTED -> "不同幣別的外幣帳戶之間不能直接轉帳，請先換回台幣"
-                    !tplMode && (plan.mode == FxMode.SPEND || plan.mode == FxMode.SAME) && keyVal > 0 && rate == null -> "請先設定匯率（點金額下面的字）"
-                    !tplMode && !hasValue -> if (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) "請輸入付出和收到的金額" else "請先輸入金額"
-                    type == TxType.TRANSFER -> "請選擇兩個不同的帳戶"
-                    else -> "請選擇分類"
-                }
-            )
+        if (need != null) {
+            tries.count++
             return false
         }
         if (tplMode) {
@@ -420,7 +430,7 @@ fun EditScreen(
         )
 
         // 分類或轉帳帳戶
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(Modifier.weight(1f).fillMaxWidth().needFrame(nv, "target", RoundedCornerShape(16.dp))) {
             if (type == TxType.TRANSFER) {
                 // 買賣外幣時多一列「收到」的輸入，各列縮小一點；螢幕還是放不下就可以往下捲
                 val tight = (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) && fxAcc != null
@@ -453,16 +463,18 @@ fun EditScreen(
                             Modifier.weight(1f),
                             number = true, decimal = buy && dec > 0,
                             prefix = if (buy) fxAcc.cur.symbol.trim() else "$",
+                            error = nv.on("other"),
                         )
                         if (rate != null) {
                             TextButton(onClick = { otherTouched = false; focus.clearFocus() }) { Text("依匯率算", style = MaterialTheme.typography.labelMedium) }
                         }
                         }
                     }
-                    if (plan.mode == FxMode.UNSUPPORTED) {
+                    nv.Message("other")
+                    if (plan.mode == FxMode.UNSUPPORTED && !nv.on("target")) {
                         Text("不同幣別的外幣帳戶之間不能直接轉帳，請先換回台幣，再買另一種外幣。", style = MaterialTheme.typography.bodySmall, color = cute.expense)
                     }
-                    if (accs.size < 2) {
+                    if (accs.size < 2 && !nv.on("target")) {
                         Text("轉帳需要至少兩個帳戶，可以到「我的 → 帳戶管理」新增。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                     }
                 }
@@ -535,6 +547,8 @@ fun EditScreen(
             }
         }
 
+        nv.Message("target")
+
         // 附加資訊
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -580,7 +594,10 @@ fun EditScreen(
 
         // 金額（貼在數字鍵盤正上方）
         Spacer(Modifier.height(8.dp))
-        CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+        CuteCard(
+            Modifier.fillMaxWidth().needFrame(nv, "amount", RoundedCornerShape(24.dp)).needFrame(nv, "rate", RoundedCornerShape(24.dp)),
+            padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        ) {
             if (pending || (cat == null && type != TxType.TRANSFER)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -640,12 +657,14 @@ fun EditScreen(
                 )
             }
         }
+        nv.Message("amount")
+        nv.Message("rate")
         Spacer(Modifier.height(8.dp))
 
         Keypad(
             onKey = { k -> expr = if (keyIsFx) Calc.pressFx(expr, k, dec) else Calc.press(expr, k) },
             doneLabel = if (pending) "=" else "完成",
-            doneEnabled = pending || canSave,
+            doneEnabled = true,
             onDone = {
                 if (pending) {
                     expr = if (keyVal > 0) (if (keyIsFx) fxExpr(keyVal, dec) else keyVal.toString()) else ""
@@ -695,18 +714,28 @@ fun EditScreen(
         )
         "tplname" -> {
             var text by remember { mutableStateOf(tplName.ifBlank { cat?.name ?: "" }) }
+            val nameTries = rememberNeedTries()
+            val nameNeed = firstNeed(if (text.isBlank()) Need("name", "請輸入常用記帳的名稱") else null)
+            val nameView = NeedView(nameNeed, nameTries.count)
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = { Text("常用記帳的名稱") },
                 text = {
-                    OutlinedTextField(text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true,
+                        isError = nameView.on("name"), supportingText = nameView.supporting("name"),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 },
-                confirmButton = { TextButton(onClick = { tplName = text.trim(); dialog = "" }) { Text("好") } },
+                confirmButton = { TextButton(onClick = { if (nameNeed != null) nameTries.count++ else { tplName = text.trim(); dialog = "" } }) { Text("好") } },
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
             )
         }
         "fxrate" -> if (fxAcc != null) {
             var text by remember { mutableStateOf(rate?.let { rateText(it) } ?: "") }
+            val rateTries = rememberNeedTries()
+            val rateNeed = firstNeed(if (text.toDoubleOrNull()?.let { it > 0.0 } != true) Need("rate", "請輸入匯率（要大於 0）") else null)
+            val rateView = NeedView(rateNeed, rateTries.count)
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = { Text("${fxAcc.currency} 匯率") },
@@ -715,6 +744,7 @@ fun EditScreen(
                         OutlinedTextField(
                             text, { v -> text = v.filter { c -> c.isDigit() || c == '.' }.take(12) },
                             label = { Text("1 ${fxAcc.currency} = 幾元台幣") }, prefix = { Text("$") }, singleLine = true,
+                            isError = rateView.on("rate"), supportingText = rateView.supporting("rate"),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -723,8 +753,7 @@ fun EditScreen(
                 },
                 confirmButton = {
                     TextButton(
-                        enabled = text.toDoubleOrNull()?.let { it > 0.0 } == true,
-                        onClick = { rateUser = text; rateUserCode = fxAcc.currency; dialog = "" },
+                        onClick = { if (rateNeed != null) rateTries.count++ else { rateUser = text; rateUserCode = fxAcc.currency; dialog = "" } },
                     ) { Text("好") }
                 },
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
@@ -857,6 +886,9 @@ fun EditScreen(
         }
         "tpl" -> {
             var text by remember { mutableStateOf(cat?.name ?: "") }
+            val saveTries = rememberNeedTries()
+            val saveNeed = firstNeed(if (text.isBlank()) Need("name", "請輸入常用記帳的名稱") else null)
+            val saveView = NeedView(saveNeed, saveTries.count)
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = { Text("存為常用記帳") },
@@ -866,12 +898,17 @@ fun EditScreen(
                             "會記住目前的分類、帳戶、金額、備註和標籤，下次在上方一點就帶入。金額留 0 代表每次自己輸入。",
                             style = MaterialTheme.typography.bodySmall, color = cute.sub,
                         )
-                        OutlinedTextField(text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            text, { text = it.take(12) }, label = { Text("名稱") }, singleLine = true,
+                            isError = saveView.on("name"), supportingText = saveView.supporting("name"),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (text.isNotBlank()) vm.addTemplate(text.trim(), draft())
+                        if (saveNeed != null) { saveTries.count++; return@TextButton }
+                        vm.addTemplate(text.trim(), draft())
                         dialog = ""
                     }) { Text("儲存") }
                 },

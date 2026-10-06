@@ -347,6 +347,9 @@ private fun RateDialog(
     val cute = LocalCute.current
     var text by remember { mutableStateOf(current?.let { rateText(it) } ?: "") }
     val value = text.toDoubleOrNull()?.takeIf { it > 0.0 }
+    val tries = rememberNeedTries()
+    val need = firstNeed(if (value == null) Need("rate", "請輸入匯率（要大於 0）") else null)
+    val nv = NeedView(need, tries.count)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("設定 $code 匯率") },
@@ -355,6 +358,7 @@ private fun RateDialog(
                 OutlinedTextField(
                     text, { s -> text = s.filter { c -> c.isDigit() || c == '.' }.take(12) },
                     label = { Text("1 $code = 幾元台幣") }, prefix = { Text("$") }, singleLine = true,
+                    isError = nv.on("rate"), supportingText = nv.supporting("rate"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -371,7 +375,7 @@ private fun RateDialog(
                 }
             }
         },
-        confirmButton = { TextButton(enabled = value != null, onClick = { onSave(value) }) { Text("儲存") } },
+        confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(value) }) { Text("儲存") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
@@ -385,6 +389,9 @@ private fun AdjustBalanceDialog(acc: Account, current: Long, isCard: Boolean, on
     // 只留數字（外幣可以有小數點），欠款（信用卡）可以在最前面加負號
     val target = parseFx(text, dec)
     fun money(v: Long) = acc.fmt(v)
+    val tries = rememberNeedTries()
+    val need = firstNeed(if (target == null) Need("target", "請輸入帳戶現在實際的餘額") else null)
+    val nv = NeedView(need, tries.count)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("更新餘額") },
@@ -394,6 +401,7 @@ private fun AdjustBalanceDialog(acc: Account, current: Long, isCard: Boolean, on
                 OutlinedTextField(
                     text, { text = it.filter { c -> c.isDigit() || c == '-' || (c == '.' && dec > 0) }.take(14) },
                     label = { Text("實際的餘額") }, singleLine = true,
+                    isError = nv.on("target"), supportingText = nv.supporting("target"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -409,7 +417,15 @@ private fun AdjustBalanceDialog(acc: Account, current: Long, isCard: Boolean, on
                 )
             }
         },
-        confirmButton = { TextButton(enabled = target != null && target != current, onClick = { target?.let(onConfirm) }) { Text("更新") } },
+        confirmButton = {
+            TextButton(onClick = {
+                when {
+                    need != null || target == null -> tries.count++
+                    target == current -> onDismiss()      // 和記錄的一樣，不用調整
+                    else -> onConfirm(target)
+                }
+            }) { Text("更新") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }

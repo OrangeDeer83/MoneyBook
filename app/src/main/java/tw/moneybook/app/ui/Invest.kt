@@ -224,6 +224,14 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             PriceDialog(
                 p = p,
                 onConfirm = { price -> vm.setPrice(p.symbol, price, currency = p.currency); dialog = "" },
+                onEdit = { dialog = "holding" },
+                onDismiss = { dialog = "" },
+            )
+        }
+        "holding" -> pricePos?.let { p ->
+            EditHoldingDialog(
+                p = p, others = pf.positions.filter { it.symbol != p.symbol },
+                onSave = { sym, name, market -> vm.editHolding(a.id, p.symbol, sym, name, market); dialog = "" },
                 onDismiss = { dialog = "" },
             )
         }
@@ -258,14 +266,6 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     }
 }
 
-/** 單價文字：外幣前面加幣別符號（US$500.00），台幣維持原樣（120.50） */
-private fun unitPrice(price: Double, currency: String): String =
-    if (currency.isEmpty()) priceText(price) else Currencies.of(currency).symbol + priceText(price)
-
-/** 手動改某檔的現價（記成今天的價格） */
-@Composable
-private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(priceText(p.price).replace(",", "")) }
 /** 抓價結果：沒抓到的列出來，抓到的列出價格（投資帳戶頁和帳戶總覽的「更新全部價格」共用） */
 @Composable
 fun FetchReportDialog(vm: MoneyViewModel) {
@@ -311,7 +311,18 @@ fun FetchReportDialog(vm: MoneyViewModel) {
     }
 }
 
+/** 單價文字：外幣前面加幣別符號（US$500.00），台幣維持原樣（120.50） */
+private fun unitPrice(price: Double, currency: String): String =
+    if (currency.isEmpty()) priceText(price) else Currencies.of(currency).symbol + priceText(price)
+
+/** 手動改某檔的現價（記成今天的價格） */
+@Composable
+private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onEdit: () -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(priceText(p.price).replace(",", "")) }
     val price = text.toDoubleOrNull()
+    val tries = rememberNeedTries()
+    val need = firstNeed(if (price == null || price <= 0.0) Need("price", "請輸入大於 0 的價格") else null)
+    val nv = NeedView(need, tries.count)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("更新現價") },
@@ -321,12 +332,61 @@ fun FetchReportDialog(vm: MoneyViewModel) {
                 OutlinedTextField(
                     text, { text = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
                     label = { Text(if (p.currency.isNotEmpty()) "今天的價格（${p.currency}）" else "今天的價格") }, singleLine = true,
+                    isError = nv.on("price"), supportingText = nv.supporting("price"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                TextButton(onClick = onEdit) { Text("打錯了？修改名稱／代號") }
             }
         },
-        confirmButton = { TextButton(enabled = price != null && price > 0.0, onClick = { price?.let(onConfirm) }) { Text("更新") } },
+        confirmButton = { TextButton(onClick = { if (need != null || price == null) tries.count++ else onConfirm(price) }) { Text("更新") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+/** 修改一檔持股的名稱、代號、市場（打錯了要改）：這個帳戶這檔的所有買賣一起改，買賣金額和損益不變 */
+@Composable
+private fun EditHoldingDialog(p: Position, others: List<Position>, onSave: (String, String, String) -> Unit, onDismiss: () -> Unit) {
+    val cute = LocalCute.current
+    var symbol by remember { mutableStateOf(p.symbol) }
+    var name by remember { mutableStateOf(p.name) }
+    var market by remember { mutableStateOf(p.market) }
+    val sym = symbol.trim().uppercase()
+    // 買進時單價的幣別已經記在每筆買賣裡，所以只能換成同幣別的市場（美股⇄加密貨幣，都是美金）
+    val markets = Markets.all.filter { Markets.currencyOf(it.first) == p.currency }
+    val merge = others.firstOrNull { it.symbol == sym }
+    val tries = rememberNeedTries()
+    val need = firstNeed(if (sym.isEmpty()) Need("symbol", "請輸入代號") else null)
+    val nv = NeedView(need, tries.count)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("修改持股") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (markets.size > 1) {
+                    Text("市場（決定怎麼抓價）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        markets.forEach { (code, label) -> CuteChip(label, market == code, { market = code }) }
+                    }
+                }
+                OutlinedTextField(
+                    symbol, { symbol = it.filter { c -> c.isLetterOrDigit() || c == '.' || c == '-' }.take(12) },
+                    label = { Text("代號") }, singleLine = true,
+                    isError = nv.on("symbol"), supportingText = nv.supporting("symbol"),
+                    modifier = Modifier.fillMaxWidth().needInView(nv, "symbol"),
+                )
+                OutlinedTextField(
+                    name, { name = it.take(16) }, label = { Text("名稱（選填）") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    if (merge != null) "這個帳戶已經有「${merge.symbol}」，改成同一個代號會把兩檔合併成一檔。"
+                    else "這個帳戶這一檔的所有買賣記錄都會一起改，買賣金額和損益不變；價格記錄跟著搬到新代號。",
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(sym, name, market) }) { Text("儲存") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
@@ -386,7 +446,16 @@ private fun TradeDialog(
     val feeTwdShown = if (cashFx) (feNative * rt).roundToLong() else fe
     val holdQty = held.firstOrNull { it.symbol == sym }?.qty ?: 0.0
     val oversell = !buy && q > holdQty + 1e-9
-    val ok = sym.isNotEmpty() && q > 0.0 && pr > 0.0 && !oversell && rt > 0.0
+    // 必填：照畫面由上到下，按「記錄」才亮紅框
+    val tries = rememberNeedTries()
+    val need = firstNeed(
+        if (sym.isEmpty()) Need("symbol", if (buy) "請輸入代號" else "請選擇或輸入要賣出的代號") else null,
+        if (q <= 0.0) Need("qty", "請輸入股數") else null,
+        if (oversell) Need("qty", "賣出的股數比持有的多（目前持有 ${qtyText(holdQty)}）") else null,
+        if (pr <= 0.0) Need("price", if (cur.isNotEmpty()) "請輸入單價（$cur）" else "請輸入單價") else null,
+        if (cur.isNotEmpty() && rt <= 0.0) Need("rate", "請輸入匯率（1 $cur = 幾元台幣）") else null,
+    )
+    val nv = NeedView(need, tries.count)
     val amountNative = q * pr
     val amount = tradeAmount(q, pr * rt)
 
@@ -413,7 +482,9 @@ private fun TradeDialog(
                 }
                 OutlinedTextField(
                     symbol, { symbol = it.filter { c -> c.isLetterOrDigit() || c == '.' || c == '-' }.take(12) },
-                    label = { Text("代號（${Markets.example(market)}）") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    label = { Text("代號（${Markets.example(market)}）") }, singleLine = true,
+                    isError = nv.on("symbol"), supportingText = nv.supporting("symbol"),
+                    modifier = Modifier.fillMaxWidth().needInView(nv, "symbol"),
                 )
                 OutlinedTextField(
                     name, { name = it.take(16) }, label = { Text("名稱（選填，自己看得懂就好，例如 元大50）") },
@@ -423,20 +494,23 @@ private fun TradeDialog(
                     OutlinedTextField(
                         qty, { qty = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
                         label = { Text("股數") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
+                        isError = nv.on("qty") || oversell, supportingText = nv.supporting("qty") ?: if (oversell) ({ Text("比持有的多") }) else null,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f).needInView(nv, "qty"),
                     )
                     OutlinedTextField(
                         price, { price = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
                         label = { Text(if (cur.isNotEmpty()) "單價（$cur）" else "單價") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
+                        isError = nv.on("price"), supportingText = nv.supporting("price"),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f).needInView(nv, "price"),
                     )
                 }
                 if (cur.isNotEmpty()) {
                     OutlinedTextField(
                         rateInput, { rateInput = it.filter { c -> c.isDigit() || c == '.' }.take(10); rateTouched = true },
                         label = { Text("匯率（1 $cur = 幾元台幣）") }, singleLine = true,
-                        supportingText = { Text(if (cashFx) "預設是「${cashAcc?.name}」的平均買進成本，可以自己改" else "複委託：預設是目前匯率，可以改成券商實際換的匯率") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+                        isError = nv.on("rate"),
+                        supportingText = nv.supporting("rate") ?: ({ Text(if (cashFx) "預設是「${cashAcc?.name}」的平均買進成本，可以自己改" else "複委託：預設是目前匯率，可以改成券商實際換的匯率") }),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().needInView(nv, "rate"),
                     )
                 }
                 OutlinedTextField(
@@ -454,8 +528,7 @@ private fun TradeDialog(
                 }
                 Text(
                     when {
-                        oversell -> "賣出的股數比持有的多（目前持有 ${qtyText(holdQty)}）"
-                        cur.isNotEmpty() && rt <= 0.0 -> "請輸入匯率（1 $cur = 幾元台幣）"
+                        cur.isNotEmpty() && rt <= 0.0 -> "輸入匯率後會算出台幣金額"
                         q > 0.0 && pr > 0.0 && cur.isNotEmpty() ->
                             "金額 ${formatFx(Math.round(amountNative * Math.pow(10.0, Currencies.of(cur).decimals.toDouble())), cur)}（約 ${formatMoney(amount)}）" +
                                 (if (feeTwdShown > 0) "＋手續費 ${formatMoney(feeTwdShown)}" else "") +
@@ -469,14 +542,14 @@ private fun TradeDialog(
                                 (if (cash != null) "。會同時記一筆轉帳，不算收入或支出（手續費除外）。" else "。只記買賣，不動其他帳戶餘額。")
                         else -> "輸入股數和單價"
                     },
-                    style = MaterialTheme.typography.bodySmall, color = if (oversell) cute.expense else cute.sub,
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
         },
         confirmButton = {
             TextButton(
-                enabled = ok,
                 onClick = {
+                    if (need != null) { tries.count++; return@TextButton }
                     vm.saveTrade(a.id, sym, name, day, buy, q, pr, fe, cash, market, cur, rt, feNative)
                     // 順便把這次的成交價當成現價，持股市值才不會是空的
                     vm.setPrice(sym, pr, day, cur)

@@ -282,6 +282,9 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
     var budget by remember { mutableStateOf(if ((book?.budget ?: 0L) > 0) book?.budget.toString() else "") }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
+    val tries = rememberNeedTries()
+    val need = firstNeed(if (name.isBlank()) Need("name", "請輸入帳本名稱") else null)
+    val nv = NeedView(need, tries.count)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (book == null) "新增帳本" else "編輯帳本") },
@@ -290,7 +293,10 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     EmojiButton(emoji) { pick = true }
                     Spacer(Modifier.width(10.dp))
-                    OutlinedTextField(name, { name = it.take(12) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(
+                        name, { name = it.take(12) }, label = { Text("名稱") }, singleLine = true,
+                        isError = nv.on("name"), supportingText = nv.supporting("name"), modifier = Modifier.weight(1f),
+                    )
                 }
                 OutlinedTextField(
                     budget, { budget = it.filter { c -> c.isDigit() }.take(10) },
@@ -304,7 +310,7 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank()) onSave(name.trim(), emoji, budget.toLongOrNull() ?: 0L) }) { Text("儲存") }
+            TextButton(onClick = { if (need != null) tries.count++ else onSave(name.trim(), emoji, budget.toLongOrNull() ?: 0L) }) { Text("儲存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
@@ -330,13 +336,13 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     val cute = LocalCute.current
     val bal = remember(d) { d.balances() }
     var adding by remember { mutableStateOf(false) }
+    var fetchAsk by remember { mutableStateOf(false) }
     // 編輯排序模式：右上角按鈕切換，開啟後每個帳戶右邊才出現拖曳把手
     var editing by remember { mutableStateOf(false) }
     val sorted = d.accounts.sortedBy { it.order }
     // 隱藏的帳戶預設不顯示（總資產本來就不含），底下有開關可以打開
     val showHidden = vm.accShowHidden
     val shown = sorted.filter { showHidden || !it.hidden }
-    var fetchAsk by remember { mutableStateOf(false) }
     val hiddenCount = sorted.count { it.hidden }
     LazyColumn(
         state = vm.accListState,
@@ -394,12 +400,6 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(type.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    if (collapsed) {
-                        Text("${group.size} 個帳戶", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                        Spacer(Modifier.width(10.dp))
-                    }
-                    Text(formatMoney(sub), style = MaterialTheme.typography.labelLarge, color = if (sub < 0) cute.expense else cute.sub)
-                }
                     // 所有投資帳戶的持股一次抓價（進單一投資帳戶按「抓最新價格」只抓那個帳戶的）
                     if (type == AccountType.INVEST && !editing && d.trades.isNotEmpty()) {
                         CuteChip(
@@ -408,6 +408,12 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
                         )
                         Spacer(Modifier.width(8.dp))
                     }
+                    if (collapsed) {
+                        Text("${group.size} 個帳戶", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Text(formatMoney(sub), style = MaterialTheme.typography.labelLarge, color = if (sub < 0) cute.expense else cute.sub)
+                }
             }
             if (collapsed) continue
             item(key = "group-${type.name}") {
@@ -463,12 +469,6 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
             )
         }
     }
-    if (adding) {
-        AccountDialog(
-            acc = null,
-            cards = d.accounts.filter { it.type == AccountType.CARD },
-            onSave = { na -> vm.saveAccount(null, na); adding = false },
-            onDelete = null,
     FetchReportDialog(vm)
     if (fetchAsk) {
         AlertDialog(
@@ -486,6 +486,12 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
             dismissButton = { TextButton(onClick = { fetchAsk = false }) { Text("不要") } },
         )
     }
+    if (adding) {
+        AccountDialog(
+            acc = null,
+            cards = d.accounts.filter { it.type == AccountType.CARD },
+            onSave = { na -> vm.saveAccount(null, na); adding = false },
+            onDelete = null,
             onDismiss = { adding = false },
         )
     }
@@ -541,6 +547,9 @@ fun AccountDialog(
     }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
+    val tries = rememberNeedTries()
+    val need = firstNeed(if (name.isBlank()) Need("name", "請輸入帳戶名稱") else null)
+    val nv = NeedView(need, tries.count)
     // 按「離開共用」這類操作要馬上反映在可以選的卡上，所以各卡的關係用「畫面上現在的狀態」算，不是存檔裡的
     val vCards = cards.map { if (it.id == acc?.id) it.copy(sharedLimitOf = sharedOf) else it }
     fun groupMembers(o: Account) = vCards.filter { it.sharedLimitOf == o.id && it.id != o.id }
@@ -607,7 +616,9 @@ fun AccountDialog(
                             if (useBadge && (badge.isBlank() || badge == name.take(2))) badge = v.take(2)
                             name = v.take(12)
                         },
-                        label = { Text("名稱") }, singleLine = true, modifier = Modifier.weight(1f),
+                        label = { Text("名稱") }, singleLine = true,
+                        isError = nv.on("name"), supportingText = nv.supporting("name"),
+                        modifier = Modifier.weight(1f).needInView(nv, "name"),
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -820,7 +831,7 @@ fun AccountDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (name.isNotBlank() && (type != AccountType.FOREIGN || currency.isNotEmpty())) { onSave(build()); onShares(shareUpdates()) } }) { Text("儲存") }
+            TextButton(onClick = { if (need != null) tries.count++ else { onSave(build()); onShares(shareUpdates()) } }) { Text("儲存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
@@ -925,6 +936,9 @@ private fun CategoryDialog(
     var color by remember { mutableStateOf(cat?.color ?: parent?.color ?: 0) }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
+    val tries = rememberNeedTries()
+    val need = firstNeed(if (name.isBlank()) Need("name", "請輸入分類名稱") else null)
+    val nv = NeedView(need, tries.count)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -944,7 +958,10 @@ private fun CategoryDialog(
                         contentAlignment = Alignment.Center,
                     ) { IconGlyph(emoji, 26.sp) }
                     Spacer(Modifier.width(10.dp))
-                    OutlinedTextField(name, { name = it.take(10) }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(
+                        name, { name = it.take(10) }, label = { Text("名稱") }, singleLine = true,
+                        isError = nv.on("name"), supportingText = nv.supporting("name"), modifier = Modifier.weight(1f),
+                    )
                 }
                 if (parent == null) {
                     Text("顏色", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
@@ -963,7 +980,7 @@ private fun CategoryDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { if (name.isNotBlank()) onSave(name.trim(), emoji, color) }) { Text("儲存") } },
+        confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(name.trim(), emoji, color) }) { Text("儲存") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
     if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false })

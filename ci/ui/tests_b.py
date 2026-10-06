@@ -391,7 +391,11 @@ def t_zero_receive():
     d.hide_ime()
     ns = d.shot("金額清空")
     btn = next((n for n in ns if n.text.startswith("確認收款")), None)
-    d.check("確認收款按鈕存在且不可按", btn is not None and f.is_disabled(ns, btn), btn and btn.text)
+    d.check("確認收款按鈕存在（不灰掉）", btn is not None and not f.is_disabled(ns, btn), btn and btn.text)
+    d.tap(btn)
+    d.time.sleep(1)
+    ns = d.shot("按確認收款後")
+    d.check("金額欄下方提示「請輸入這次收到的金額」，沒有寫入收款", d.has(ns, "請輸入這次收到的金額") and d.has(ns, "這次收到多少"), [n.text for n in ns if n.text][:20])
 
 
 def go_person(who):

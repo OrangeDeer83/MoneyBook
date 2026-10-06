@@ -150,6 +150,7 @@ def t_zero():
     d.time.sleep(1.5)
     ns = d.shot("金額為 0 按完成後")
     d.check("仍停在記一筆（沒有儲存）", d.has(ns, "備註（選填）"))
+    d.check("金額下方顯示提示「請先輸入金額」", d.has(ns, "請先輸入金額"), [n.text for n in ns if n.text][:20])
 
 
 @case(A, "計算機運算")

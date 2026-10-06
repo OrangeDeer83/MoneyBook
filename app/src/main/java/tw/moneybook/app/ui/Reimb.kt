@@ -1,6 +1,7 @@
 package tw.moneybook.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -92,6 +93,8 @@ internal fun CompactField(
     number: Boolean = false,
     prefix: String = "",
     decimal: Boolean = false,
+    /** 必填沒填好：亮紅框 */
+    error: Boolean = false,
 ) {
     val cute = LocalCute.current
     BasicTextField(
@@ -104,7 +107,9 @@ internal fun CompactField(
         modifier = modifier,
         decorationBox = { inner ->
             Row(
-                Modifier.clip(RoundedCornerShape(14.dp)).background(cute.soft).padding(horizontal = 12.dp, vertical = 12.dp),
+                Modifier.clip(RoundedCornerShape(14.dp)).background(cute.soft)
+                    .then(if (error) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(14.dp)) else Modifier)
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (prefix.isNotEmpty()) {
@@ -568,6 +573,10 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     }
     val outcomes = allocateReceipt(claims.map { ClaimInput(it.key, it.txn, it.item.remaining) }, parsed, ::claimCur, overrideAmounts)
     val sumCredit = outcomes.sumOf { it.credit }
+    // 必填：什麼都沒收到不能確認；標出第一個還沒填金額的那一種幣別
+    val tries = rememberNeedTries()
+    val need = if (sumCredit > 0L) null else Need("line${parsed.indexOfFirst { it.amount <= 0L }.coerceAtLeast(0)}", "請輸入這次收到的金額")
+    val nv = NeedView(need, tries.count)
     val needChaseIdx = claims.indices.filter { outcomes[it].short && chase[claims[it].key] == null }
 
     fun submit() {
@@ -634,9 +643,11 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                         Spacer(Modifier.height(6.dp))
                         CompactField(
                             l.text, { v -> l.text = if (cur.isNotEmpty()) fxInput(v, dec) else v.filter { c -> c.isDigit() }.take(9); overrides.clear() },
-                            "金額", Modifier.fillMaxWidth(), number = true, decimal = cur.isNotEmpty() && dec > 0,
+                            "金額", Modifier.fillMaxWidth().needInView(nv, "line$li"), number = true, decimal = cur.isNotEmpty() && dec > 0,
                             prefix = accOf(l)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: "$",
+                            error = nv.on("line$li"),
                         )
+                        nv.Message("line$li")
                         Spacer(Modifier.height(8.dp))
                         Text("存進哪個帳戶", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         Spacer(Modifier.height(4.dp))
@@ -727,8 +738,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
             Box(Modifier.fillMaxWidth().background(cute.card).padding(horizontal = 16.dp, vertical = 10.dp)) {
                 val shown = parsed.filter { it.amount > 0L }.joinToString("＋") { unitText(it.currency, it.amount) }
                 Button(
-                    onClick = { if (needChaseIdx.isNotEmpty()) askChase = true else submit() },
-                    enabled = sumCredit > 0L,
+                    onClick = { if (need != null) tries.count++ else if (needChaseIdx.isNotEmpty()) askChase = true else submit() },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("確認收款 " + shown.ifEmpty { formatMoney(0L) }) }
             }
@@ -882,6 +892,10 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
         var timeMin by remember { mutableStateOf(pay.time) }
         var pickDate by remember { mutableStateOf(false) }
         var pickTime by remember { mutableStateOf(false) }
+        val payTries = rememberNeedTries()
+        val payAmt = if (editFx != null) parseFx(amt, editDec) ?: 0L else amt.toLongOrNull() ?: 0L
+        val payNeed = firstNeed(if (payAmt <= 0L) Need("amt", "請輸入這次收到的金額") else null)
+        val payView = NeedView(payNeed, payTries.count)
         AlertDialog(
             onDismissRequest = { editing = null },
             title = { Text("修改收款") },
@@ -890,7 +904,9 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                     CompactField(
                         amt, { v -> amt = if (editFx != null) fxInput(v, editDec) else v.filter { ch -> ch.isDigit() }.take(9) },
                         "金額", Modifier.fillMaxWidth(), number = true, decimal = editFx != null && editDec > 0, prefix = editFx?.cur?.symbol?.trim() ?: "$",
+                        error = payView.on("amt"),
                     )
+                    payView.Message("amt")
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { switchAccount(a) }) }
                         fxOptions.forEach { a -> CuteChip(accLabel(a), accId == a.id, { switchAccount(a) }) }
@@ -906,6 +922,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (payNeed != null) { payTries.count++; return@TextButton }
                     val newPay = if (editFx != null) {
                         val fxv = parseFx(amt, editDec) ?: 0L
                         ReimbPay(day, accId, c.txn.fxToTwdAt(fxv), timeMin, fxv)
