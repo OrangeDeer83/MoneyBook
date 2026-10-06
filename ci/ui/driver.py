@@ -255,7 +255,8 @@ def type_text(s):
 
 
 def edits():
-    return sorted([n for n in nodes() if n.cls.endswith("EditText")], key=lambda n: (n.cy, n.cx))
+    # 同一列的輸入框上緣一樣高；有提示文字的框會比較高（中心點跟著變），所以用上緣分列
+    return sorted([n for n in nodes() if n.cls.endswith("EditText")], key=lambda n: (n.y1 // 40, n.cx))
 
 
 def select_all_delete():
@@ -270,7 +271,7 @@ def fill(n, s):
         tap(n)
         select_all_delete()
         type_text(s)
-        row = [e for e in edits() if abs(e.cy - n.cy) < 60 and abs(e.cx - n.cx) < 200]
+        row = [e for e in edits() if abs(e.y1 - n.y1) < 60 and abs(e.cx - n.cx) < 200]
         if row and any(e.text == s for e in row):
             return
         n = row[0] if row else n

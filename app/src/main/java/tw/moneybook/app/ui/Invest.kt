@@ -451,7 +451,7 @@ private fun TradeDialog(
     val need = firstNeed(
         if (sym.isEmpty()) Need("symbol", if (buy) "請輸入代號" else "請選擇或輸入要賣出的代號") else null,
         if (q <= 0.0) Need("qty", "請輸入股數") else null,
-        if (oversell) Need("qty", "賣出的股數比持有的多（目前持有 ${qtyText(holdQty)}）") else null,
+        if (oversell) Need("qty", "超過持有的 ${qtyText(holdQty)} 股") else null,
         if (pr <= 0.0) Need("price", if (cur.isNotEmpty()) "請輸入單價（$cur）" else "請輸入單價") else null,
         if (cur.isNotEmpty() && rt <= 0.0) Need("rate", "請輸入匯率（1 $cur = 幾元台幣）") else null,
     )
@@ -494,7 +494,7 @@ private fun TradeDialog(
                     OutlinedTextField(
                         qty, { qty = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
                         label = { Text("股數") }, singleLine = true,
-                        isError = nv.on("qty") || oversell, supportingText = nv.supporting("qty") ?: if (oversell) ({ Text("比持有的多") }) else null,
+                        isError = nv.on("qty") || oversell, supportingText = nv.supporting("qty") ?: if (oversell) ({ Text("超過持有的 ${qtyText(holdQty)} 股") }) else null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f).needInView(nv, "qty"),
                     )
                     OutlinedTextField(
