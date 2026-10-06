@@ -466,7 +466,7 @@ fun EditScreen(
                             error = nv.on("other"),
                         )
                         if (rate != null) {
-                            TextButton(onClick = { otherTouched = false; focus.clearFocus() }) { Text("依匯率算", style = MaterialTheme.typography.labelMedium) }
+                            SoftButton("依匯率算", { otherTouched = false; focus.clearFocus() }, compact = true)
                         }
                         }
                     }
@@ -793,7 +793,8 @@ fun EditScreen(
                                 keyboardActions = KeyboardActions(onDone = { addTag() }),
                                 modifier = Modifier.weight(1f),
                             )
-                            TextButton(onClick = { addTag() }, enabled = input.isNotBlank()) { Text("新增") }
+                            Spacer(Modifier.width(8.dp))
+                            SoftButton("新增", { if (input.isNotBlank()) addTag() }, compact = true)
                         }
                         if (known.isNotEmpty()) {
                             Text("用過的標籤", style = MaterialTheme.typography.labelMedium, color = cute.sub)

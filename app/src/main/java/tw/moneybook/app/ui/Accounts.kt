@@ -178,9 +178,9 @@ fun AccountDetailScreen(
                                 color = if (balance < 0) cute.expense else cute.ink,
                             )
                         }
-                        Column(horizontalAlignment = Alignment.End) {
-                            TextButton(onClick = { editing = true }) { Text("編輯") }
-                            TextButton(onClick = { adjusting = true }) { Text("更新餘額") }
+                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SoftButton("編輯", { editing = true }, compact = true)
+                            SoftButton("更新餘額", { adjusting = true }, compact = true)
                         }
                     }
                     if (a.isForeign) {
@@ -198,14 +198,19 @@ fun AccountDetailScreen(
                                 if (rate != null) "目前匯率 ${rateText(rate)}（${if (manual) "手動設定" else "最近一次買賣"}）" else "目前匯率：未設定",
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.weight(1f),
                             )
-                            TextButton(onClick = { rateDialog = true }) { Text("設定匯率") }
-                            TextButton(onClick = {
-                                when {
-                                    vm.ratesFetching -> {}
-                                    d.prefs.priceFetch -> vm.refreshRates()
-                                    else -> fetchAsk = true
-                                }
-                            }) { Text(if (vm.ratesFetching) "更新中…" else "上網更新") }
+                            SoftButton("設定匯率", { rateDialog = true }, compact = true)
+                            Spacer(Modifier.width(6.dp))
+                            SoftButton(
+                                if (vm.ratesFetching) "更新中…" else "上網更新",
+                                {
+                                    when {
+                                        vm.ratesFetching -> {}
+                                        d.prefs.priceFetch -> vm.refreshRates()
+                                        else -> fetchAsk = true
+                                    }
+                                },
+                                compact = true,
+                            )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             androidx.compose.material3.Button(onClick = { onFxTrade(a.id, true) }) { Text("買進 ${a.currency}") }
@@ -367,7 +372,7 @@ private fun RateDialog(
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
                 if (manual) {
-                    TextButton(onClick = { onSave(null) }) { Text("清除手動匯率（改用最近一次買賣的匯率）") }
+                    SoftButton("清除手動匯率（改用最近一次買賣的匯率）", { onSave(null) }, Modifier.fillMaxWidth())
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("允許上網更新匯率與股價", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))

@@ -312,6 +312,28 @@ fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -
     )
 }
 
+/**
+ * 淡底色圓角塊按鈕（取代一行純文字的按鈕，看得出可以點）：
+ * danger＝淡紅底紅字（刪除這類動作），平常是淡棕底主色字；compact 是比較小的版本，放在卡片角落、列表列裡。
+ */
+@Composable
+fun SoftButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, danger: Boolean = false, compact: Boolean = false) {
+    val cute = LocalCute.current
+    val fg = if (danger) cute.expense else MaterialTheme.colorScheme.primary
+    val bg = if (danger) cute.expense.copy(alpha = 0.14f) else cute.soft
+    val shape = RoundedCornerShape(if (compact) 12.dp else 14.dp)
+    Box(
+        modifier.clip(shape).background(bg).clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(horizontal = if (compact) 12.dp else 16.dp, vertical = if (compact) 7.dp else 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text, color = fg, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
+            style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
 /** 簡單的確認對話框 */
 @Composable
 fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {

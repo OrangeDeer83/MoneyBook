@@ -198,7 +198,8 @@ fun BudgetDialog(vm: MoneyViewModel, month: java.time.YearMonth, onDismiss: () -
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("${k.replace("-", " 年 ")} 月", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                             Text(formatMoney(v), style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = { vm.setBudget(-1L, java.time.YearMonth.parse(k)) }) { Text("清除") }
+                            Spacer(Modifier.width(8.dp))
+                            SoftButton("清除", { vm.setBudget(-1L, java.time.YearMonth.parse(k)) }, compact = true)
                         }
                     }
                 }
@@ -251,7 +252,7 @@ fun BooksScreen(vm: MoneyViewModel, onBack: () -> Unit) {
                         if (b.id == d.currentBook.id) {
                             Text("使用中", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                         } else {
-                            TextButton(onClick = { vm.switchBook(b.id) }) { Text("切換") }
+                            SoftButton("切換", { vm.switchBook(b.id) }, compact = true)
                         }
                     }
                 }
@@ -305,7 +306,7 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (onDelete != null) {
-                    TextButton(onClick = { confirmDel = true }) { Text("刪除這本帳本", color = LocalCute.current.expense) }
+                    SoftButton("刪除這本帳本", { confirmDel = true }, Modifier.fillMaxWidth(), danger = true)
                 }
             }
         },
@@ -360,9 +361,10 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
         // 隱藏帳戶的開關放在最上方，比較好按
         if (hiddenCount > 0) {
             item {
-                TextButton(onClick = { vm.accShowHidden = !showHidden }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (showHidden) "收起已隱藏的帳戶" else "顯示已隱藏的帳戶（$hiddenCount）")
-                }
+                SoftButton(
+                    if (showHidden) "收起已隱藏的帳戶" else "顯示已隱藏的帳戶（$hiddenCount）",
+                    { vm.accShowHidden = !showHidden }, Modifier.fillMaxWidth(),
+                )
             }
         }
         item {
@@ -668,7 +670,7 @@ fun AccountDialog(
                         style = MaterialTheme.typography.labelSmall, color = cute.sub,
                     )
                 } else {
-                    TextButton(onClick = { pick = true }) { Text("換一個表情符號") }
+                    SoftButton("換一個表情符號", { pick = true }, Modifier.fillMaxWidth())
                 }
                 // 已經存在的帳戶不能在台幣和外幣之間改類型（記錄的金額單位不一樣）
                 val types = when {
@@ -825,7 +827,7 @@ fun AccountDialog(
                     }
                 }
                 if (onDelete != null) {
-                    TextButton(onClick = { confirmDel = true }) { Text("刪除帳戶", color = cute.expense) }
+                    SoftButton("刪除帳戶", { confirmDel = true }, Modifier.fillMaxWidth(), danger = true)
                 }
             }
         },
@@ -975,7 +977,7 @@ private fun CategoryDialog(
                     }
                 }
                 if (onDelete != null) {
-                    TextButton(onClick = { confirmDel = true }) { Text("刪除分類", color = LocalCute.current.expense) }
+                    SoftButton("刪除分類", { confirmDel = true }, Modifier.fillMaxWidth(), danger = true)
                 }
             }
         },
