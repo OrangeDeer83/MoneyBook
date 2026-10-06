@@ -220,4 +220,42 @@ class InvestTest {
         assertEquals(10_000L, tradeAmount(100.0, 100.0))
         assertEquals(333L, tradeAmount(3.0, 111.1))
     }
+
+    // ── 修改持股的名稱／代號
+
+    @Test
+    fun renameHoldingChangesNameAndSymbolOfAllTradesInThatAccount() {
+        val d = data(listOf(buy(1, 100, 10.0, 100.0, sym = "00500"), sell(2, 101, 4.0, 110.0, sym = "00500")))
+            .renameHolding(1L, "00500", "0050", "元大台灣50", "TW")
+        assertTrue(d.trades.all { it.symbol == "0050" && it.name == "元大台灣50" && it.market == "TW" })
+        val pos = d.portfolio(1L).positions.single()
+        assertEquals("0050", pos.symbol)
+        assertEquals(6.0, pos.qty, 1e-9)
+    }
+
+    @Test
+    fun renameHoldingLeavesOtherAccountsAndOtherSymbolsAlone() {
+        val other = Trade(3, 2L, "00500", "別的帳戶", 100, true, 5.0, 100.0)
+        val keep = buy(4, 100, 1.0, 50.0, sym = "2330")
+        val d = data(listOf(buy(1, 100, 10.0, 100.0, sym = "00500"), other, keep)).renameHolding(1L, "00500", "0050", "", "")
+        assertEquals("00500", d.trades.first { it.id == 3L }.symbol)
+        assertEquals("2330", d.trades.first { it.id == 4L }.symbol)
+    }
+
+    @Test
+    fun renameHoldingMovesPricesUnlessTheOldSymbolIsStillUsedElsewhere() {
+        val prices = listOf(PriceSnap("00500", 100, 120.0))
+        val moved = data(listOf(buy(1, 100, 10.0, 100.0, sym = "00500")), prices).renameHolding(1L, "00500", "0050", "", "")
+        assertEquals(listOf("0050"), moved.prices.map { it.symbol })
+        val shared = data(listOf(buy(1, 100, 10.0, 100.0, sym = "00500"), Trade(3, 2L, "00500", "", 100, true, 5.0, 100.0)), prices)
+            .renameHolding(1L, "00500", "0050", "", "")
+        assertEquals(listOf("00500"), shared.prices.map { it.symbol })
+    }
+
+    @Test
+    fun renameHoldingIgnoresBlankSymbolAndUppercasesTheNewOne() {
+        val base = data(listOf(buy(1, 100, 10.0, 100.0, sym = "AAPL")))
+        assertEquals(base, base.renameHolding(1L, "AAPL", "  ", "x", "US"))
+        assertEquals("AAPL", base.renameHolding(1L, "AAPL", " aapl ", "", "US").trades.single().symbol)
+    }
 }

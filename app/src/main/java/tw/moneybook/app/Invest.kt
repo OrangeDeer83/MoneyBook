@@ -145,6 +145,19 @@ fun AppData.portfolio(accountId: Long? = null): Portfolio {
     return Portfolio(list, realized.roundToLong())
 }
 
+/**
+ * 修改某個帳戶裡一檔持股的代號、名稱、市場（打錯了要改）：這個帳戶這個代號的所有買賣都跟著改。
+ * 代號改了，而且別的帳戶沒有在用舊代號時，舊代號的價格記錄一起搬到新代號（價格不用重填）。新代號空白就不改。
+ */
+fun AppData.renameHolding(accountId: Long, symbol: String, newSymbol: String, newName: String, newMarket: String): AppData {
+    val ns = newSymbol.trim().uppercase()
+    if (ns.isEmpty()) return this
+    val nt = trades.map { if (it.accountId == accountId && it.symbol == symbol) it.copy(symbol = ns, name = newName.trim(), market = newMarket) else it }
+    val oldInUse = nt.any { it.symbol == symbol }
+    val np = if (ns == symbol || oldInUse) prices else prices.map { if (it.symbol == symbol) it.copy(symbol = ns) else it }
+    return copy(trades = nt, prices = np)
+}
+
 /** 買賣金額（不含手續費），四捨五入到元 */
 fun tradeAmount(qty: Double, price: Double): Long = (qty * price).roundToLong()
 

@@ -321,6 +321,14 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         toast("已記錄${if (buy) "買進" else "賣出"} $sym")
     }
 
+    /** 修改一檔持股的代號、名稱、市場（見 renameHolding）；改錯了再改回來就好 */
+    fun editHolding(accountId: Long, symbol: String, newSymbol: String, newName: String, newMarket: String) {
+        val after = data.renameHolding(accountId, symbol, newSymbol, newName, newMarket)
+        if (after == data) return
+        commit(after)
+        toast("已修改持股")
+    }
+
     /** 刪除一筆買賣（連動的轉帳一起刪），可以復原 */
     fun deleteTrade(id: Long) {
         val d = data
