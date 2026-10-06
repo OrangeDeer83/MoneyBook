@@ -29,7 +29,8 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           else
-            echo "::warning::沒有簽章金鑰，測試版會用臨時金鑰，無法覆蓋安裝舊的測試版"
+            echo "::error::沒有簽章金鑰（KEYSTORE_BASE64），不產生測試版：臨時金鑰簽的 APK 無法覆蓋安裝舊的測試版"
+            exit 1
           fi
 
       - uses: actions/setup-java@v4
@@ -48,6 +49,10 @@ jobs:
           chmod +x gradlew
           set -o pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee build.log
+
+      # 簽章一定要是專案固定的那把（ci/expected-cert-sha256.txt），不然這份 APK 蓋不上手機裡已經裝的測試版
+      - name: Verify signing certificate
+        run: python3 ci/verify_apk_cert.py app/build/outputs/apk/debug/app-debug.apk
 
       # 單元測試：純邏輯（持股計算、舊資料轉換、存檔相容…），失敗就不產生 APK
       - name: Unit tests

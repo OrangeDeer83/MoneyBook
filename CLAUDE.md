@@ -50,6 +50,7 @@
   - `ci/` 或只改測試的 commit 不會觸發 Test Build，要找「最後一個動到 `app/` 的 commit」那次 Test Build。
   - **不要**拿畫面測試（UI Test）裡的 `app-debug.apk` 改名傳給使用者。
 - **簽章**：Test Build 用固定金鑰（repo secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`）簽章，每次才能互相覆蓋安裝。沒有金鑰時會用臨時金鑰，這種 APK 裝上去之後，之後的測試版都蓋不上去。畫面測試流程 10/6 起也改用同一把金鑰，但仍然不傳給使用者。
+  - **自動把關（10/6 起）**：Test Build、畫面測試、正式版三條流程編完 APK 都會跑 `ci/verify_apk_cert.py`，把 APK 的簽章憑證 SHA-256 跟 `ci/expected-cert-sha256.txt` 比對，不一致（例如沒拿到 Secrets 用了臨時金鑰）流程就失敗、不產出 APK；Test Build 與畫面測試沒有 `KEYSTORE_BASE64` 也會直接失敗。**換金鑰才需要改 `ci/expected-cert-sha256.txt`，而且換金鑰＝所有人要解除安裝重裝，千萬不要隨便換。**
 - **版本號（versionCode）**取自 `GITHUB_RUN_NUMBER`，**每條流程各算各的**（Test Build 與 UI Test 數字不同）。手機不接受用較小的 versionCode 覆蓋較大的，所以不同流程的 APK 混著給，會報「未安裝應用程式」。
 - 確認簽章是否一致：比對 APK 簽章區塊裡憑證的 SHA-256（Test Build 的指紋開頭是 `6a4a33ec`）。
 - 使用者說「未安裝應用程式」時：先問他手機上「記帳本 測試」的版本號（設定 → 應用程式，結尾是 commit 前 7 碼），判斷是簽章、版本號，還是別的原因。

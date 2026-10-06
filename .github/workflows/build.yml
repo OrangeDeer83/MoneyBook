@@ -58,6 +58,10 @@ jobs:
           set -o pipefail
           ./gradlew assembleRelease --console=plain 2>&1 | tee build.log
 
+      # 簽章一定要是專案固定的那把（ci/expected-cert-sha256.txt），不然這份 APK 蓋不上手機裡已經裝的測試版
+      - name: Verify signing certificate
+        run: python3 ci/verify_apk_cert.py app/build/outputs/apk/release/app-release.apk
+
       - name: Report compile errors
         if: failure()
         run: |
