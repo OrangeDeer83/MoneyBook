@@ -33,6 +33,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import tw.moneybook.app.Currencies
+import tw.moneybook.app.avgCost
+import tw.moneybook.app.formatFx
+import tw.moneybook.app.rateOf
+import tw.moneybook.app.rateText
+import kotlin.math.roundToLong
 import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
 import tw.moneybook.app.isForeign
@@ -146,9 +152,12 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                         }
                     }
                     Text(
-                        "${qtyText(p.qty)} 股・均價 ${priceText(if (p.qty > 0) p.cost / p.qty else 0.0)}・現價 ${priceText(p.price)}（${dayLabel(p.priceDay)}）",
+                        "${qtyText(p.qty)} 股・均價 ${unitPrice(p.avgPrice, p.currency)}・現價 ${unitPrice(p.price, p.currency)}（${dayLabel(p.priceDay)}）",
                         style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 2,
                     )
+                    if (p.currency.isNotEmpty()) {
+                        Text("單價是 ${p.currency}，市值、成本、損益換成台幣算（匯率 ${rateText(p.rate)}）", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 2)
+                    }
                     if (p.symbol in vm.priceFailed) {
                         Text("抓不到價格，目前用的是舊價格；請確認市場與代號，或點這一列手動輸入", style = MaterialTheme.typography.labelSmall, color = cute.expense)
                     }
@@ -190,11 +199,13 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                         Column(Modifier.weight(1f)) {
                             Text(if (t.name.isNotBlank()) "${t.name} ${t.symbol}" else t.symbol, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                             Text(
-                                "${dayLabel(t.day)}・${qtyText(t.qty)} 股 @ ${priceText(t.price)}" + if (t.fee > 0) "・手續費 ${formatMoney(t.fee)}" else "",
+                                "${dayLabel(t.day)}・${qtyText(t.qty)} 股 @ ${unitPrice(t.price, t.currency)}" +
+                                    (if (t.currency.isNotEmpty() && t.rate > 0.0) "・匯率 ${rateText(t.rate)}" else "") +
+                                    if (t.fee > 0) "・手續費 ${formatMoney(t.fee)}" else "",
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
                             )
                         }
-                        Text(formatMoney(tradeAmount(t.qty, t.price)), fontWeight = FontWeight.SemiBold)
+                        Text(formatMoney(tradeAmount(t.qty, t.price * (if (t.currency.isNotEmpty() && t.rate > 0.0) t.rate else 1.0))), fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -232,7 +243,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                                     if (r.name.isNotBlank()) "${r.name} ${r.symbol}" else r.symbol,
                                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
                                 )
-                                Text(priceText(r.price ?: 0.0), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                                Text(unitPrice(r.price ?: 0.0, r.currency), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
                             }
                         }
                     }
@@ -250,7 +261,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
         "price" -> pricePos?.let { p ->
             PriceDialog(
                 p = p,
-                onConfirm = { price -> vm.setPrice(p.symbol, price); dialog = "" },
+                onConfirm = { price -> vm.setPrice(p.symbol, price, currency = p.currency); dialog = "" },
                 onDismiss = { dialog = "" },
             )
         }
@@ -285,6 +296,10 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     }
 }
 
+/** 單價文字：外幣前面加幣別符號（US$500.00），台幣維持原樣（120.50） */
+private fun unitPrice(price: Double, currency: String): String =
+    if (currency.isEmpty()) priceText(price) else Currencies.of(currency).symbol + priceText(price)
+
 /** 手動改某檔的現價（記成今天的價格） */
 @Composable
 private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onDismiss: () -> Unit) {
@@ -298,7 +313,7 @@ private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onDismiss: () 
                 Text(if (p.name.isNotBlank()) "${p.name} ${p.symbol}" else p.symbol, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(
                     text, { text = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
-                    label = { Text("今天的價格") }, singleLine = true,
+                    label = { Text(if (p.currency.isNotEmpty()) "今天的價格（${p.currency}）" else "今天的價格") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -331,18 +346,42 @@ private fun TradeDialog(
     var fee by remember { mutableStateOf("") }
     var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
     var datePick by remember { mutableStateOf(false) }
-    val cashAccs = d.visibleAccounts.filter { it.id != a.id && it.type != AccountType.INVEST && !it.isForeign }
+    // 單價用哪個幣別記：美股是美金、日股是日圓…，台股是台幣（空白）
+    val cur = Markets.currencyOf(market)
+    // 可以付款的帳戶：台幣帳戶，加上「幣別跟這檔一樣」的外幣帳戶（例如第一證券的美金）
+    val cashAccs = d.visibleAccounts.filter { it.id != a.id && it.type != AccountType.INVEST && (!it.isForeign || (cur.isNotEmpty() && it.currency == cur)) }
     // null＝不連動，只記買賣
-    var cash by remember { mutableStateOf(cashAccs.firstOrNull()?.id) }
+    var cash by remember { mutableStateOf(cashAccs.firstOrNull { !it.isForeign }?.id ?: cashAccs.firstOrNull()?.id) }
+    // 換了市場，原本選的外幣帳戶幣別對不上就改回台幣帳戶
+    LaunchedEffect(cur) {
+        val c = cash?.let { d.accMap[it] }
+        if (c != null && c.isForeign && c.currency != cur) cash = cashAccs.firstOrNull { !it.isForeign }?.id
+    }
+    val cashAcc = cash?.let { d.accMap[it] }
+    val cashFx = cur.isNotEmpty() && cashAcc != null && cashAcc.isForeign && cashAcc.currency == cur
+    // 匯率：用外幣帳戶付款預設用那個帳戶的平均買進成本（換美金時實際花的台幣），複委託預設用目前匯率；可以自己改
+    var rateInput by remember { mutableStateOf("") }
+    var rateTouched by remember { mutableStateOf(false) }
+    LaunchedEffect(cur, cash) {
+        if (!rateTouched) {
+            val r = if (cur.isEmpty()) null else (if (cashFx) d.avgCost(cashAcc!!) else null) ?: d.rateOf(cur)
+            rateInput = r?.let { rateText(it) } ?: ""
+        }
+    }
 
     val sym = symbol.trim().uppercase()
     val q = qty.toDoubleOrNull() ?: 0.0
     val pr = price.toDoubleOrNull() ?: 0.0
-    val fe = fee.toLongOrNull() ?: 0L
+    val rt = if (cur.isEmpty()) 1.0 else rateInput.toDoubleOrNull() ?: 0.0
+    // 手續費：用外幣帳戶付款／收款時用外幣記，其他是台幣
+    val feNative = if (cashFx) fee.toDoubleOrNull() ?: 0.0 else 0.0
+    val fe = if (cashFx) 0L else fee.toLongOrNull() ?: 0L
+    val feeTwdShown = if (cashFx) (feNative * rt).roundToLong() else fe
     val holdQty = held.firstOrNull { it.symbol == sym }?.qty ?: 0.0
     val oversell = !buy && q > holdQty + 1e-9
-    val ok = sym.isNotEmpty() && q > 0.0 && pr > 0.0 && !oversell
-    val amount = tradeAmount(q, pr)
+    val ok = sym.isNotEmpty() && q > 0.0 && pr > 0.0 && !oversell && rt > 0.0
+    val amountNative = q * pr
+    val amount = tradeAmount(q, pr * rt)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -381,26 +420,43 @@ private fun TradeDialog(
                     )
                     OutlinedTextField(
                         price, { price = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
-                        label = { Text("單價") }, singleLine = true,
+                        label = { Text(if (cur.isNotEmpty()) "單價（$cur）" else "單價") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
                     )
                 }
-                if (market != "TW") {
-                    Text("目前記錄的金額都是台幣：單價、手續費請先換算成台幣。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                if (cur.isNotEmpty()) {
+                    OutlinedTextField(
+                        rateInput, { rateInput = it.filter { c -> c.isDigit() || c == '.' }.take(10); rateTouched = true },
+                        label = { Text("匯率（1 $cur = 幾元台幣）") }, singleLine = true,
+                        supportingText = { Text(if (cashFx) "預設是「${cashAcc?.name}」的平均買進成本，可以自己改" else "複委託：預設是目前匯率，可以改成券商實際換的匯率") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+                    )
                 }
                 OutlinedTextField(
-                    fee, { fee = it.filter { c -> c.isDigit() }.take(9) },
-                    label = { Text(if (buy) "手續費（選填）" else "手續費與證交稅（選填）") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
+                    fee, { fee = if (cashFx) it.filter { c -> c.isDigit() || c == '.' }.take(10) else it.filter { c -> c.isDigit() }.take(9) },
+                    label = {
+                        val what = if (buy) "手續費（選填" else "手續費與證交稅（選填"
+                        Text(what + (if (cashFx) "，$cur）" else if (cur.isNotEmpty()) "，台幣）" else "）"))
+                    }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = if (cashFx) KeyboardType.Decimal else KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
                 )
                 Text(if (buy) "從哪個帳戶付款" else "賣出的錢轉到哪個帳戶", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    cashAccs.forEach { c -> CuteChip(c.name, cash == c.id, { cash = c.id }) }
-                    CuteChip("不連動", cash == null, { cash = null })
+                    cashAccs.forEach { c -> CuteChip(c.name + if (c.isForeign) "（${c.currency}）" else "", cash == c.id, { cash = c.id; rateTouched = false }) }
+                    CuteChip("不連動", cash == null, { cash = null; rateTouched = false })
                 }
                 Text(
                     when {
                         oversell -> "賣出的股數比持有的多（目前持有 ${qtyText(holdQty)}）"
+                        cur.isNotEmpty() && rt <= 0.0 -> "請輸入匯率（1 $cur = 幾元台幣）"
+                        q > 0.0 && pr > 0.0 && cur.isNotEmpty() ->
+                            "金額 ${formatFx(Math.round(amountNative * Math.pow(10.0, Currencies.of(cur).decimals.toDouble())), cur)}（約 ${formatMoney(amount)}）" +
+                                (if (feeTwdShown > 0) "＋手續費 ${formatMoney(feeTwdShown)}" else "") +
+                                (when {
+                                    cashFx -> "。會從「${cashAcc?.name}」${if (buy) "扣掉" else "收進"}美金（含手續費），不算收入或支出。"
+                                    cash != null -> "。會同時記一筆台幣轉帳，不算收入或支出（手續費除外）。"
+                                    else -> "。只記買賣，不動其他帳戶餘額。"
+                                })
                         q > 0.0 && pr > 0.0 ->
                             "金額 ${formatMoney(amount)}" + (if (fe > 0) "＋手續費 ${formatMoney(fe)}" else "") +
                                 (if (cash != null) "。會同時記一筆轉帳，不算收入或支出（手續費除外）。" else "。只記買賣，不動其他帳戶餘額。")
@@ -414,9 +470,9 @@ private fun TradeDialog(
             TextButton(
                 enabled = ok,
                 onClick = {
-                    vm.saveTrade(a.id, sym, name, day, buy, q, pr, fe, cash, market)
+                    vm.saveTrade(a.id, sym, name, day, buy, q, pr, fe, cash, market, cur, rt, feNative)
                     // 順便把這次的成交價當成現價，持股市值才不會是空的
-                    vm.setPrice(sym, pr, day)
+                    vm.setPrice(sym, pr, day, cur)
                     onDismiss()
                 },
             ) { Text("記錄") }

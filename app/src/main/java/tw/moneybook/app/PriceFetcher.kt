@@ -36,6 +36,23 @@ object PriceFetcher {
         }
     }
 
+    /** 原幣價格（不換算成台幣）：價格、日期，和 Yahoo 回報的幣別 */
+    data class NativeQuote(val price: Double, val day: Long, val currency: String)
+
+    /** 抓某個代號的最新價格，保留原幣（美股就是美金）；抓不到回傳 null */
+    suspend fun fetchNative(symbol: String, market: String = ""): NativeQuote? = withContext(Dispatchers.IO) {
+        for (s in Markets.candidates(symbol, market)) {
+            val m = meta(s) ?: continue
+            val price = m.optDouble("regularMarketPrice", Double.NaN)
+            if (price.isNaN() || price <= 0.0) continue
+            val t = m.optLong("regularMarketTime", 0L)
+            val day = if (t > 0L) Instant.ofEpochSecond(t).atZone(ZoneId.of("Asia/Taipei")).toLocalDate().toEpochDay()
+            else java.time.LocalDate.now().toEpochDay()
+            return@withContext NativeQuote(price, day, m.optString("currency", "").uppercase())
+        }
+        null
+    }
+
     /** 抓外幣換台幣的目前匯率（1 單位外幣 = 幾元台幣，例如 USD → 31.5）；抓不到回傳 null。只送出幣別代碼 */
     suspend fun fetchRate(code: String): Double? = withContext(Dispatchers.IO) {
         val p = meta("${code.trim().uppercase()}TWD=X")?.optDouble("regularMarketPrice", Double.NaN) ?: return@withContext null

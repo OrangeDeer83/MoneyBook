@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlin.math.roundToLong
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -262,27 +263,54 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     fun saveTrade(
         accountId: Long, symbol: String, name: String, day: Long,
         buy: Boolean, qty: Double, price: Double, fee: Long, cashAccountId: Long?, market: String = "",
+        /** 單價的幣別（空白＝台幣）與匯率（1 單位外幣 = 幾元台幣）；用外幣記時成本與損益用這個匯率換成台幣 */
+        currency: String = "", rate: Double = 0.0,
+        /** 用「同幣別的外幣帳戶」付款／收款時，手續費用外幣記（fee 不用填）；其他情況手續費是台幣 fee */
+        feeNative: Double = 0.0,
     ) {
         val d = data
         val sym = symbol.trim().uppercase()
         if (d.accMap[accountId] == null || sym.isEmpty() || qty <= 0.0 || price <= 0.0) return
+        val fxTrade = currency.isNotEmpty() && rate > 0.0
+        val r = if (fxTrade) rate else 1.0
+        val cashAcc = cashAccountId?.let { d.accMap[it] }
+        // 用同幣別的外幣帳戶（例如第一證券的美金）付款或收款
+        val cashFx = fxTrade && cashAcc != null && cashAcc.isForeign && cashAcc.currency == currency
+        val dec = Currencies.of(currency).decimals
+        val feeTwd = if (cashFx) (feeNative * r).roundToLong() else fee
         var next = d.nextId
-        val amount = tradeAmount(qty, price)
-        val cashAmount = if (buy) amount else (amount - fee).coerceAtLeast(0L)
+        val amount = tradeAmount(qty, price * r)
         var linked: Txn? = null
-        if (cashAccountId != null && cashAccountId != accountId && d.accMap[cashAccountId] != null && cashAmount > 0L) {
-            linked = Txn(
-                id = next++, bookId = d.currentBook.id, type = TxType.TRANSFER, amount = cashAmount,
-                categoryId = null,
-                accountId = if (buy) cashAccountId else accountId,
-                toAccountId = if (buy) accountId else cashAccountId,
-                day = day,
-                note = "${if (buy) "買進" else "賣出"} $sym ${qtyText(qty)} @ ${priceText(price)}",
-                tags = emptyList(),
-                fee = if (buy) fee else 0L,
-            )
+        if (cashAccountId != null && cashAccountId != accountId && cashAcc != null) {
+            val note = "${if (buy) "買進" else "賣出"} $sym ${qtyText(qty)} @ ${if (fxTrade) Currencies.of(currency).symbol else ""}${priceText(price)}"
+            if (cashFx) {
+                // 外幣帳戶實際增減的外幣金額（買進含手續費、賣出扣掉手續費）；台幣那邊用同一個匯率換算
+                val nativeTotal = (qty * price + if (buy) feeNative else -feeNative).coerceAtLeast(0.0)
+                val fxMinor = java.math.BigDecimal(nativeTotal).setScale(dec, java.math.RoundingMode.HALF_UP).movePointRight(dec).toLong()
+                if (fxMinor > 0L) {
+                    linked = Txn(
+                        id = next++, bookId = d.currentBook.id, type = TxType.TRANSFER, amount = fxToTwd(fxMinor, dec, r),
+                        categoryId = null,
+                        accountId = if (buy) cashAccountId else accountId,
+                        toAccountId = if (buy) accountId else cashAccountId,
+                        day = day, note = note, tags = emptyList(), fxAmount = fxMinor,
+                    )
+                }
+            } else {
+                val cashAmount = if (buy) amount else (amount - feeTwd).coerceAtLeast(0L)
+                if (cashAmount > 0L && !cashAcc.isForeign) {
+                    linked = Txn(
+                        id = next++, bookId = d.currentBook.id, type = TxType.TRANSFER, amount = cashAmount,
+                        categoryId = null,
+                        accountId = if (buy) cashAccountId else accountId,
+                        toAccountId = if (buy) accountId else cashAccountId,
+                        day = day, note = note, tags = emptyList(),
+                        fee = if (buy) feeTwd else 0L,
+                    )
+                }
+            }
         }
-        val trade = Trade(next++, accountId, sym, name.trim(), day, buy, qty, price, fee, linked?.id, market)
+        val trade = Trade(next++, accountId, sym, name.trim(), day, buy, qty, price, feeTwd, linked?.id, market, if (fxTrade) currency else "", if (fxTrade) rate else 0.0)
         commit(
             d.copy(
                 txns = if (linked != null) sortTxns(d.txns + linked) else d.txns,
@@ -313,9 +341,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 手動輸入某個代號今天的價格（同一天同代號只留最後一筆） */
-    fun setPrice(symbol: String, price: Double, day: Long = LocalDate.now().toEpochDay()) {
+    fun setPrice(symbol: String, price: Double, day: Long = LocalDate.now().toEpochDay(), currency: String = "") {
         if (price <= 0.0) return
-        update { d -> d.copy(prices = d.prices.filterNot { it.symbol == symbol && it.day == day } + PriceSnap(symbol, day, price)) }
+        update { d -> d.copy(prices = d.prices.filterNot { it.symbol == symbol && it.day == day } + PriceSnap(symbol, day, price, currency)) }
     }
 
     var fetching by mutableStateOf(false)
@@ -375,18 +403,36 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             // 如果記成交易日，會比使用者今天記的持股還舊而被當成舊價格丟掉，看起來像沒更新
             val fetchDay = LocalDate.now().toEpochDay()
             for (p in positions) {
-                val q = try { PriceFetcher.fetch(p.symbol, p.market) } catch (_: Exception) { null }
-                if (q != null) got.add(PriceSnap(p.symbol, fetchDay, q.price))
-                results.add(FetchResult(p.symbol, p.name, p.market, q?.price))
+                if (p.currency.isNotEmpty()) {
+                    // 外幣單價的持股（美股）：保留原幣價格，市值用匯率換算
+                    val q = try { PriceFetcher.fetchNative(p.symbol, p.market) } catch (_: Exception) { null }
+                    val ok = q != null && q.currency.equals(p.currency, ignoreCase = true)
+                    if (ok) got.add(PriceSnap(p.symbol, fetchDay, q!!.price, p.currency))
+                    results.add(FetchResult(p.symbol, p.name, p.market, if (ok) q!!.price else null, p.currency))
+                } else {
+                    val q = try { PriceFetcher.fetch(p.symbol, p.market) } catch (_: Exception) { null }
+                    if (q != null) got.add(PriceSnap(p.symbol, fetchDay, q.price))
+                    results.add(FetchResult(p.symbol, p.name, p.market, q?.price))
+                }
+            }
+            // 外幣持股順便更新匯率，市值才跟得上
+            val newRates = ArrayList<FxRate>()
+            for (c in positions.map { it.currency }.filter { it.isNotEmpty() }.distinct()) {
+                val rt = try { PriceFetcher.fetchRate(c) } catch (_: Exception) { null }
+                if (rt != null) newRates.add(FxRate(c, rt, fetchDay))
             }
             val fail = results.count { !it.ok }
             priceFailed = results.filter { !it.ok }.map { it.symbol }.toSet()
             fetching = false
             val today = LocalDate.now()
-            if (got.isNotEmpty()) {
+            if (got.isNotEmpty() || newRates.isNotEmpty()) {
                 update { d ->
                     val kept = d.prices.filterNot { p -> got.any { it.symbol == p.symbol && it.day == p.day } }
-                    d.copy(prices = pruneMonthly(kept + got, today), prefs = d.prefs.copy(priceFetchDay = today.toEpochDay()))
+                    d.copy(
+                        prices = pruneMonthly(kept + got, today),
+                        rates = d.rates.filter { r -> newRates.none { it.code == r.code } } + newRates,
+                        prefs = d.prefs.copy(priceFetchDay = today.toEpochDay()),
+                    )
                 }
             }
             // 有沒抓到的一定要列出是哪幾檔；全部成功時，自動抓價就不打擾
