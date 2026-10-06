@@ -179,12 +179,12 @@ fun ReimbPay.flowFor(a: Account): Long = if (a.isForeign) fxAmount else amount
 /** 這筆消費是用哪個外幣帳戶付的（不是外幣消費回傳 null） */
 fun AppData.fxAccountOf(t: Txn): Account? = t.accountId?.let { accMap[it] }?.takeIf { it.isForeign && t.fxAmount > 0L }
 
+/** v × num ÷ den，四捨五入（用 BigDecimal，大金額也不會溢位）；den 是 0 回傳 0 */
+fun scaleRound(v: Long, num: Long, den: Long): Long =
+    if (den == 0L) 0L else BigDecimal(v).multiply(BigDecimal(num)).divide(BigDecimal(den), 0, RoundingMode.HALF_UP).toLong()
+
 /** 用這筆消費當時的匯率（台幣金額 ÷ 外幣金額），把台幣換成外幣（最小單位）；不是外幣消費回傳 0 */
-fun Txn.twdToFxAt(twd: Long): Long =
-    if (fxAmount <= 0L || amount <= 0L) 0L
-    else BigDecimal(twd).multiply(BigDecimal(fxAmount)).divide(BigDecimal(amount), 0, RoundingMode.HALF_UP).toLong()
+fun Txn.twdToFxAt(twd: Long): Long = if (fxAmount <= 0L || amount <= 0L) 0L else scaleRound(twd, fxAmount, amount)
 
 /** 用這筆消費當時的匯率，把外幣（最小單位）換成台幣；不是外幣消費回傳 0 */
-fun Txn.fxToTwdAt(fx: Long): Long =
-    if (fxAmount <= 0L || amount <= 0L) 0L
-    else BigDecimal(fx).multiply(BigDecimal(amount)).divide(BigDecimal(fxAmount), 0, RoundingMode.HALF_UP).toLong()
+fun Txn.fxToTwdAt(fx: Long): Long = if (fxAmount <= 0L || amount <= 0L) 0L else scaleRound(fx, amount, fxAmount)

@@ -669,6 +669,8 @@ fun EditScreen(
             initFull = reimbFull,
             initJson = reimbJson,
             initWho = reimbWho,
+            fxCur = if (plan.mode == FxMode.SPEND) fxAcc?.currency ?: "" else "",
+            fxActual = if (plan.mode == FxMode.SPEND) fxMinor else 0L,
             names = d.reimbNames(),
             onDone = { on2, full2, json2, who2 ->
                 reimbOn = on2

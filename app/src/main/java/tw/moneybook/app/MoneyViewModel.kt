@@ -47,7 +47,7 @@ data class TxnDraft(
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
-class ReimbReceipt(val txnId: Long, val index: Int, val amount: Long, val chase: Boolean, val fx: Long = 0L)
+class ReimbReceipt(val txnId: Long, val index: Int, val amount: Long, val chase: Boolean, val fx: Long = 0L, val accountId: Long? = null)
 
 /** 報銷總額不能超過原價 + 手續費；沒有收款紀錄又是 0 元的對象直接拿掉 */
 private fun capItems(t: Txn, items: List<ReimbItem>): List<ReimbItem> {
@@ -416,7 +416,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     // ───────── 報銷 ─────────
 
-    /** 收到報銷款：每一筆收款對應一個報銷對象；收齊自動結案，沒收齊時看 chase 決定繼續追或結案不追 */
+    /**
+     * 收到報銷款：每一筆收款對應一個報銷對象；收齊自動結案，沒收齊時看 chase 決定繼續追或結案不追。
+     * 同一個對象可以一次收好幾種幣別（好幾筆 ReimbReceipt），全部記完再判斷收齊沒有；
+     * ReimbReceipt.accountId 沒填就用 accountId。
+     */
     fun receiveReimb(list: List<ReimbReceipt>, accountId: Long?, day: Long, time: Int = -1) {
         update { d ->
             d.copy(txns = d.txns.map { t ->
@@ -424,17 +428,18 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 if (mine.isEmpty()) t
                 else {
                     val items = t.items.toMutableList()
-                    for (r in mine) {
-                        val cur = items.getOrNull(r.index) ?: continue
+                    for ((idx, rs) in mine.groupBy { it.index }) {
+                        val cur = items.getOrNull(idx) ?: continue
                         if (cur.closed) continue
-                        val pays = if (r.amount > 0L) cur.pays + ReimbPay(day, accountId, r.amount, time, r.fx) else cur.pays
-                        items[r.index] = cur.copy(pays = pays, closed = pays.sumOf { it.amount } >= cur.amount || !r.chase)
+                        val add = rs.filter { it.amount > 0L }.map { ReimbPay(day, it.accountId ?: accountId, it.amount, time, it.fx) }
+                        val pays = cur.pays + add
+                        items[idx] = cur.copy(pays = pays, closed = pays.sumOf { it.amount } >= cur.amount || !rs.first().chase)
                     }
                     t.withItems(items)
                 }
             })
         }
-        toast("已收到 ${list.count { it.amount > 0L }} 筆報銷，共 ${formatMoney(list.sumOf { it.amount })}")
+        toast("已收到 ${list.filter { it.amount > 0L }.map { it.txnId to it.index }.distinct().size} 筆報銷，共 ${formatMoney(list.sumOf { it.amount })}")
     }
 
     /** 改動某個對象的收款紀錄後，重新判斷這個對象是否收齊 */
