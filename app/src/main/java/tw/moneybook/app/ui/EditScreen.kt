@@ -446,48 +446,48 @@ fun EditScreen(
         // 分類或轉帳帳戶
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (type == TxType.TRANSFER) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AccountPick("從", accId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶") { dialog = "from" }
+                // 買賣外幣時多一列「收到」的輸入，各列縮小一點；螢幕還是放不下就可以往下捲
+                val tight = (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) && fxAcc != null
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(if (tight) 6.dp else 10.dp)) {
+                    AccountPick("從", accId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶", compact = tight) { dialog = "from" }
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:down", 22.sp) }
+                        CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:down", if (tight) 18.sp else 22.sp) }
                     }
-                    AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶") { dialog = "to" }
-                    if ((plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) && fxAcc != null) {
+                    AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶", compact = tight) { dialog = "to" }
+                    if (tight && fxAcc != null) {
                         val buy = plan.mode == FxMode.BUY
-                        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                otherText,
-                                { v ->
-                                    otherTouched = true
-                                    otherText = if (buy) {
-                                        var dot = false
-                                        val sb = StringBuilder()
-                                        for (c in v) when {
-                                            c.isDigit() -> sb.append(c)
-                                            c == '.' && !dot && dec > 0 -> { dot = true; sb.append(c) }
-                                        }
-                                        val t = sb.toString()
-                                        val at = t.indexOf('.')
-                                        (if (at >= 0 && t.length - at - 1 > dec) t.take(at + 1 + dec) else t).take(14)
-                                    } else v.filter { c -> c.isDigit() }.take(10)
+                        CompactField(
+                            otherText,
+                            { v ->
+                                otherTouched = true
+                                otherText = if (buy) {
+                                    var dot = false
+                                    val sb = StringBuilder()
+                                    for (c in v) when {
+                                        c.isDigit() -> sb.append(c)
+                                        c == '.' && !dot && dec > 0 -> { dot = true; sb.append(c) }
+                                    }
+                                    val t = sb.toString()
+                                    val at = t.indexOf('.')
+                                    (if (at >= 0 && t.length - at - 1 > dec) t.take(at + 1 + dec) else t).take(14)
+                                } else v.filter { c -> c.isDigit() }.take(10)
+                            },
+                            if (buy) "收到的外幣（${fxAcc.currency}）" else "收到的台幣",
+                            Modifier.fillMaxWidth(),
+                            number = true, decimal = buy && dec > 0,
+                            prefix = if (buy) fxAcc.cur.symbol.trim() else "$",
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                when {
+                                    implied != null -> "成交匯率 ${rateText(implied)}"
+                                    rate != null -> "目前匯率 ${rateText(rate)}"
+                                    else -> "還沒有匯率，請直接輸入收到的金額"
                                 },
-                                label = { Text(if (buy) "收到的外幣（${fxAcc.currency}）" else "收到的台幣") },
-                                prefix = { Text(if (buy) fxAcc.cur.symbol.trim() else "$") },
-                                supportingText = {
-                                    Text(
-                                        when {
-                                            implied != null -> "成交匯率 ${rateText(implied)}"
-                                            rate != null -> "目前匯率 ${rateText(rate)}"
-                                            else -> "還沒有匯率，請直接輸入收到的金額"
-                                        }
-                                    )
-                                },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = if (buy && dec > 0) KeyboardType.Decimal else KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f).padding(start = 4.dp),
                             )
                             if (rate != null) {
-                                TextButton(onClick = { otherTouched = false; focus.clearFocus() }, modifier = Modifier.padding(top = 6.dp)) { Text("依目前匯率算") }
+                                TextButton(onClick = { otherTouched = false; focus.clearFocus() }) { Text("依目前匯率算", style = MaterialTheme.typography.labelMedium) }
                             }
                         }
                     }
@@ -981,7 +981,7 @@ fun EditScreen(
 }
 
 @Composable
-private fun AccountPick(label: String, value: String, onClick: () -> Unit) {
+private fun AccountPick(label: String, value: String, compact: Boolean = false, onClick: () -> Unit) {
     val cute = LocalCute.current
     val shape = RoundedCornerShape(20.dp)
     Row(
@@ -989,7 +989,7 @@ private fun AccountPick(label: String, value: String, onClick: () -> Unit) {
             // 深色模式下卡片和背景幾乎同色，加一圈邊框才看得出是可以點的
             .then(if (cute.dark) Modifier.border(1.dp, cute.sub.copy(alpha = 0.5f), shape) else Modifier)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = if (compact) 10.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, color = cute.sub, modifier = Modifier.width(48.dp))
