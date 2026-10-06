@@ -477,8 +477,7 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
             text = {
                 Text(
                     "記帳本平常完全不連網。開啟後，按「更新全部價格」或進投資帳戶按「抓最新價格」時，" +
-                        "才會把持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。
-之後可以隨時在投資帳戶的持股頁下方關閉。",
+                        "才會把持股的代號傳給 Yahoo Finance 查價格，不會傳送任何記帳資料。\n之後可以隨時在投資帳戶的持股頁下方關閉。",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
