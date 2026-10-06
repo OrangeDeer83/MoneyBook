@@ -44,6 +44,18 @@
 - 本機有 Android SDK 的話：`./gradlew assembleDebug`（debug 版用系統預設 debug key，不能覆蓋安裝正式版）
 - 本機正式版需要 `keystore.properties`，見 `docs/signing.md`
 
+## 給使用者測試版 APK 的規則（很重要，裝不上去會害使用者資料遺失）
+
+- **只能給 Test Build 產出的 APK**（artifact 名稱 `MoneyBook-<版本>-dev-<月日-時分>-<sha7>`，用 `gh run download <Test Build 的 run id> -R OrangeDeer83/MoneyBook -n <artifact 名稱>`）。檔名上的 commit 讓使用者對得上版本。
+  - `ci/` 或只改測試的 commit 不會觸發 Test Build，要找「最後一個動到 `app/` 的 commit」那次 Test Build。
+  - **不要**拿畫面測試（UI Test）裡的 `app-debug.apk` 改名傳給使用者。
+- **簽章**：Test Build 用固定金鑰（repo secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`）簽章，每次才能互相覆蓋安裝。沒有金鑰時會用臨時金鑰，這種 APK 裝上去之後，之後的測試版都蓋不上去。畫面測試流程 10/6 起也改用同一把金鑰，但仍然不傳給使用者。
+- **版本號（versionCode）**取自 `GITHUB_RUN_NUMBER`，**每條流程各算各的**（Test Build 與 UI Test 數字不同）。手機不接受用較小的 versionCode 覆蓋較大的，所以不同流程的 APK 混著給，會報「未安裝應用程式」。
+- 確認簽章是否一致：比對 APK 簽章區塊裡憑證的 SHA-256（Test Build 的指紋開頭是 `6a4a33ec`）。
+- 使用者說「未安裝應用程式」時：先問他手機上「記帳本 測試」的版本號（設定 → 應用程式，結尾是 commit 前 7 碼），判斷是簽章、版本號，還是別的原因。
+- **「記帳本 測試」的資料只存在手機裡，解除安裝會全部消失**：要他解除安裝重裝之前，一定先請他在 App 內「備份與匯入匯出」匯出一份**今天的**新備份並確認檔案存在（不要用舊備份還原）。
+- 傳 APK 用 `SendUserFile`，同時說明這是哪個 commit、包含什麼。
+
 ## 重要規則
 
 - **絕對不要 commit 簽章金鑰或密碼**（*.jks、*.keystore、keystore.properties 已在 .gitignore）
