@@ -162,12 +162,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                     Spacer(Modifier.width(8.dp))
                     Text(formatMoney(p.value), fontWeight = FontWeight.SemiBold)
                 }
-                // 第二行：股數、均價 → 現價
-                Text(
-                    "${qtyText(p.qty)} 股・均價 ${unitPrice(p.avgPrice, p.currency)} → 現價 ${unitPrice(p.price, p.currency)}",
-                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
-                )
-                // 第三行：價格日期（不是今天才標）與損益
+                // 第二行：損益緊貼在市值下面（價格日期不是今天才標在左邊）
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (p.priceDay != today) {
                         Text("價格 ${LocalDate.ofEpochDay(p.priceDay).let { "${it.monthValue}/${it.dayOfMonth}" }}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
@@ -179,6 +174,11 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                         color = if (p.gain >= 0L) cute.income else cute.expense,
                     )
                 }
+                // 第三行：股數、均價 → 現價（整排寬度，不會換行）
+                Text(
+                    "${qtyText(p.qty)} 股・均價 ${unitPrice(p.avgPrice, p.currency)} → 現價 ${unitPrice(p.price, p.currency)}",
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                )
                 if (p.symbol in vm.priceFailed) {
                     Text("抓不到價格，目前用的是舊價格；請確認市場與代號，或點這一列手動輸入", style = MaterialTheme.typography.labelSmall, color = cute.expense)
                 }
