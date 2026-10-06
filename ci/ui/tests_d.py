@@ -1881,7 +1881,7 @@ def t_edit_holding():
     ns = d.shot("改完之後")
     d.check("持股列顯示「Renamed 0051」", d.has(ns, "Renamed 0051"), [n.text for n in ns if n.text][:30])
     d.check("買賣記錄也跟著改", sum(1 for n in ns if "Renamed 0051" in n.text) >= 2, [n.text for n in ns if "0051" in n.text])
-    d.check("持股市值、成本沒變（NT$10,000、NT$10,020）", d.has(ns, "NT$10,000", True) and d.has(ns, "NT$10,020", True), [n.text for n in ns if n.text.startswith("$")][:10])
+    d.check("持股市值、成本沒變（$10,000、$10,020）", d.has(ns, "$10,000", True) and d.has(ns, "$10,020", True), [n.text for n in ns if n.text.startswith("$")][:10])
     d.tap_text("賣出", exact=True)
     d.wait_text("賣出", timeout=10)
     d.time.sleep(1)
