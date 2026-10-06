@@ -1957,3 +1957,29 @@ def t_ntd_prefix():
     d.time.sleep(1)
     ns = d.shot("沒有外幣：明細首頁")
     d.check("沒有外幣資料：維持「$」，不出現 NT$", any(n.text.startswith("$") for n in ns) and not any("NT$" in n.text for n in ns), [n.text for n in ns if "$" in n.text][:10])
+
+
+@case(D, "徽章預設：將來銀行，名稱有空格的標籤要完整顯示", visual=True)
+def t_badge_next_bank():
+    d.fresh(f.base_seed())
+    open_account("測試銀行")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    d.tap_text("文字徽章", exact=True)
+    d.time.sleep(0.8)
+    ns = d.nodes()
+    lab = d.first(ns, "常見銀行", True)
+    w = max([n.x2 for n in ns] + [1])
+    y = lab.cy + 110 if lab else 900
+    for _ in range(5):
+        if d.has(d.nodes(), "將來銀行", True):
+            break
+        d.swipe(int(w * 0.8), y, int(w * 0.2), y)
+        d.time.sleep(0.6)
+    ns = d.shot("銀行那排滑到最後（要看到 LINE Bank 與將來銀行，名稱完整）")
+    d.check("銀行那排有「將來銀行」與「LINE Bank」", d.has(ns, "將來銀行", True) and d.has(ns, "LINE Bank", True), [n.text for n in ns if n.text][:40])
+    d.tap_text("將來銀行", exact=True)
+    d.time.sleep(0.8)
+    texts = [e.text for e in d.edits()]
+    d.check("選了將來銀行：徽章文字變成「將來」，帳戶名稱不變", "將來" in texts and "測試銀行" in texts, texts)
+
