@@ -121,6 +121,8 @@ fun EditScreen(
     tplId: Long? = null,
     presetDay: Long? = null,
     presetFrom: Long? = null,
+    /** 預設記在哪個帳戶（從帳戶明細按記一筆） */
+    presetAcc: Long? = null,
     onClose: () -> Unit,
 ) {
     val d = vm.data
@@ -154,6 +156,7 @@ fun EditScreen(
             orig?.accountId
                 ?: tpl?.accountId
                 ?: presetFrom
+                ?: presetAcc?.takeIf { id -> accs.any { it.id == id } }
                 ?: (if (presetTo != null) accs.firstOrNull { it.id != presetTo && it.type != tw.moneybook.app.AccountType.CARD && !it.isForeign }?.id else null)
                 ?: accs.firstOrNull()?.id
         )

@@ -1983,3 +1983,31 @@ def t_badge_next_bank():
     texts = [e.text for e in d.edits()]
     d.check("選了將來銀行：徽章文字變成「將來」，帳戶名稱不變", "將來" in texts and "測試銀行" in texts, texts)
 
+
+@case(D, "帳戶明細右下角可以記一筆，帳戶自動帶入", visual=True)
+def t_account_add():
+    d.fresh(empty_seed().json())
+    open_account("測試銀行")
+    ns = d.shot("帳戶明細（右下角有 + 記一筆）")
+    d.check("帳戶明細右下角有「記一筆」按鈕", d.has(ns, "記一筆", True))
+    d.tap_text("記一筆", exact=True)
+    d.wait_text("備註（選填）", timeout=10)
+    d.time.sleep(0.8)
+    ns = d.shot("從帳戶明細按記一筆")
+    d.check("記一筆畫面的帳戶是「測試銀行」（自動帶入），不是第一個帳戶「現金」", d.has(ns, "測試銀行") and not d.has(ns, "現金", True), [n.text for n in ns if n.text][:20])
+    f.keypad("50")
+    f.save_edit_to_account()
+    ns = d.shot("存完回到帳戶明細")
+    d.check("回到測試銀行明細，餘額 $49,950", d.has(ns, "$49,950", True), [n.text for n in ns if n.text.startswith("$")][:6])
+
+
+@case(D, "外幣帳戶明細記一筆：自動帶入外幣帳戶，計算機是外幣", visual=True)
+def t_account_add_fx():
+    d.fresh(usd_seed())
+    open_account("美元帳戶")
+    d.tap_text("記一筆", exact=True)
+    d.wait_text("備註（選填）", timeout=10)
+    d.time.sleep(0.8)
+    ns = d.shot("外幣帳戶按記一筆")
+    d.check("帳戶是「美元帳戶」，金額顯示 US$", d.has(ns, "美元帳戶") and d.has(ns, "US$0"), [n.text for n in ns if n.text][:20])
+

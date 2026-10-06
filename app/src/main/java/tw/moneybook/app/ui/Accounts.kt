@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -127,6 +128,8 @@ fun AccountDetailScreen(
     vm: MoneyViewModel,
     accountId: Long,
     onEdit: (Long) -> Unit,
+    /** 在這個帳戶記一筆（帳戶自動帶入） */
+    onAdd: (Long) -> Unit = {},
     onPayCard: (Long, Long?) -> Unit,
     /** 買賣外幣：帳戶 id、true = 買進（台幣轉進來）、false = 賣出（轉回台幣） */
     onFxTrade: (Long, Boolean) -> Unit = { _, _ -> },
@@ -164,7 +167,9 @@ fun AccountDetailScreen(
     val outflow = -flows.filter { it < 0 }.sum()
 
     SubPage(a.name, onBack) {
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Box(Modifier.fillMaxSize()) {
+        // 底下多留空間，最後一筆不會被右下角的 + 蓋住
+        LazyColumn(contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 CuteCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -295,6 +300,27 @@ fun AccountDetailScreen(
                 }
             }
         }
+        // 右下角：在這個帳戶記一筆（帳戶自動帶入）
+        Box(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 20.dp, bottom = 20.dp)
+                .size(58.dp)
+                .shadow(8.dp, RoundedCornerShape(20.dp), clip = false)
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable(role = androidx.compose.ui.semantics.Role.Button) { onAdd(a.id) }
+                .semantics { contentDescription = "記一筆" },
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Filled.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(32.dp),
+            )
+        }
+      }
     }
     if (adjusting) {
         AdjustBalanceDialog(

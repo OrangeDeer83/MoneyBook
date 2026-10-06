@@ -39,6 +39,15 @@ def save_edit():
     d.wait(lambda n: n.text in ("明細", "帳戶", "統計", "我的") and n.cy > 2000, 15, "回到主畫面")
 
 
+def save_edit_to_account():
+    """從帳戶明細進入的記一筆，按完成後會回到帳戶明細（不是主畫面）"""
+    ns = d.nodes()
+    c = [n for n in ns if n.text == "完成"]
+    d.tap(max(c, key=lambda n: n.cy))
+    d.wait_text("更新餘額", timeout=15)
+    d.time.sleep(1)
+
+
 def _tap_tab(name):
     ns = d.nodes()
     h = max([n.y2 for n in ns] + [1])          # 螢幕高度（縮小螢幕的用例也能用）
