@@ -462,7 +462,7 @@ fun EditScreen(
                             if (buy) "收到的外幣（${fxAcc.currency}）" else "收到的台幣",
                             Modifier.weight(1f),
                             number = true, decimal = buy && dec > 0,
-                            prefix = if (buy) fxAcc.cur.symbol.trim() else "$",
+                            prefix = if (buy) fxAcc.cur.symbol.trim() else tw.moneybook.app.Money.twd,
                             error = nv.on("other"),
                         )
                         if (rate != null) {
@@ -608,7 +608,7 @@ fun EditScreen(
                 }
             }
             Text(
-                (if (keyIsFx && fxAcc != null) fxAcc.cur.symbol.trim() else "$") + (if (expr.isEmpty()) "0" else Calc.pretty(expr)),
+                (if (keyIsFx && fxAcc != null) fxAcc.cur.symbol.trim() else tw.moneybook.app.Money.twd) + (if (expr.isEmpty()) "0" else Calc.pretty(expr)),
                 style = MaterialTheme.typography.displaySmall,
                 color = when (type) {
                     TxType.EXPENSE -> cute.expense
@@ -743,7 +743,7 @@ fun EditScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             text, { v -> text = v.filter { c -> c.isDigit() || c == '.' }.take(12) },
-                            label = { Text("1 ${fxAcc.currency} = 幾元台幣") }, prefix = { Text("$") }, singleLine = true,
+                            label = { Text("1 ${fxAcc.currency} = 幾元台幣") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                             isError = rateView.on("rate"), supportingText = rateView.supporting("rate"),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth(),
@@ -832,14 +832,14 @@ fun EditScreen(
                         )
                         OutlinedTextField(
                             feeText, { feeText = it.filter { c -> c.isDigit() }.take(8) },
-                            label = { Text("手續費") }, prefix = { Text("$") }, singleLine = true,
+                            label = { Text("手續費") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.fillMaxWidth(),
                         )
                         if (type == TxType.EXPENSE) {
                             OutlinedTextField(
                                 discText, { discText = it.filter { c -> c.isDigit() }.take(8) },
-                                label = { Text("優惠／折扣") }, prefix = { Text("$") }, singleLine = true,
+                                label = { Text("優惠／折扣") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
                             )

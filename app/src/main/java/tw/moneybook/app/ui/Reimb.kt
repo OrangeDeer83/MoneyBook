@@ -300,7 +300,7 @@ fun ReimbEditPage(
                                     CompactField(
                                         r.amt, { v -> r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
                                         "金額", Modifier.width(if (fxOn) 132.dp else 112.dp), number = true, decimal = fxOn && fdec > 0,
-                                        prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else "$",
+                                        prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else tw.moneybook.app.Money.twd,
                                     )
                                     Text(
                                         "✕", color = cute.sub, style = MaterialTheme.typography.titleMedium,
@@ -644,7 +644,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                         CompactField(
                             l.text, { v -> l.text = if (cur.isNotEmpty()) fxInput(v, dec) else v.filter { c -> c.isDigit() }.take(9); overrides.clear() },
                             "金額", Modifier.fillMaxWidth().needInView(nv, "line$li"), number = true, decimal = cur.isNotEmpty() && dec > 0,
-                            prefix = accOf(l)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: "$",
+                            prefix = accOf(l)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
                             error = nv.on("line$li"),
                         )
                         nv.Message("line$li")
@@ -710,7 +710,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                                         overrides[c.key] ?: (if (cur0.isNotEmpty()) fxExpr(part0?.units ?: 0L, decOf(l0)) else (part0?.units ?: 0L).toString()),
                                         { v -> overrides[c.key] = if (cur0.isNotEmpty()) fxInput(v, decOf(l0)) else v.filter { ch -> ch.isDigit() }.take(9) },
                                         "收", Modifier.width(120.dp), number = true, decimal = cur0.isNotEmpty() && decOf(l0) > 0,
-                                        prefix = accOf(l0)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: "$",
+                                        prefix = accOf(l0)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
                                     )
                                 }
                             }
@@ -903,7 +903,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     CompactField(
                         amt, { v -> amt = if (editFx != null) fxInput(v, editDec) else v.filter { ch -> ch.isDigit() }.take(9) },
-                        "金額", Modifier.fillMaxWidth(), number = true, decimal = editFx != null && editDec > 0, prefix = editFx?.cur?.symbol?.trim() ?: "$",
+                        "金額", Modifier.fillMaxWidth(), number = true, decimal = editFx != null && editDec > 0, prefix = editFx?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
                         error = payView.on("amt"),
                     )
                     payView.Message("amt")

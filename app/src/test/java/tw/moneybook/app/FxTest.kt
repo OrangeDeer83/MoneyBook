@@ -272,4 +272,27 @@ class FxTest {
         assertTrue(old.accounts.all { !it.isForeign })
         assertEquals(0L, old.txns.single().fxAmount)
     }
+
+    @Test
+    fun twdAmountsGetNtPrefixOnlyWhenForeignDataExists() {
+        try {
+            val plain = Defaults.create()
+            Money.sync(plain)
+            assertEquals("$1,234", formatMoney(1234))
+            assertEquals("-$5", formatMoney(-5))
+            // 有外幣帳戶
+            Money.sync(plain.copy(accounts = plain.accounts + usd))
+            assertEquals("NT$1,234", formatMoney(1234))
+            assertEquals("-NT$5", formatMoney(-5))
+            // 沒有外幣帳戶、但有外幣計價的買賣
+            val trade = Trade(1, 1L, "VOO", "", day, true, 1.0, 500.0, 0L, null, "US", "USD", 31.5)
+            Money.sync(plain.copy(trades = listOf(trade)))
+            assertEquals("NT$99", formatMoney(99))
+            // 只有台幣的買賣不算
+            Money.sync(plain.copy(trades = listOf(trade.copy(currency = "", rate = 0.0))))
+            assertEquals("$99", formatMoney(99))
+        } finally {
+            Money.twd = "$"
+        }
+    }
 }

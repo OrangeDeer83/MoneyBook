@@ -434,7 +434,20 @@ fun parseTime(s: String): Int {
 private val moneyFmt: NumberFormat = NumberFormat.getIntegerInstance()
 
 fun formatMoney(v: Long): String =
-    (if (v < 0) "-$" else "$") + moneyFmt.format(kotlin.math.abs(v))
+    (if (v < 0) "-" else "") + Money.twd + moneyFmt.format(kotlin.math.abs(v))
+
+/**
+ * 台幣金額前面的符號：平常是「$」；資料裡有外幣帳戶或外幣計價的持股時改成「NT$」，
+ * 才跟 US$、¥ 之類的外幣金額分得清楚（每次資料變動時由 MoneyViewModel 更新）。
+ */
+object Money {
+    @Volatile
+    var twd: String = "$"
+
+    fun sync(d: AppData) {
+        twd = if (d.accounts.any { it.type == AccountType.FOREIGN } || d.trades.any { it.currency.isNotEmpty() }) "NT$" else "$"
+    }
+}
 
 /** 日曆格子用的短格式 */
 fun formatShort(v: Long): String = when {

@@ -313,7 +313,8 @@ fun FetchReportDialog(vm: MoneyViewModel) {
 
 /** 單價文字：外幣前面加幣別符號（US$500.00），台幣維持原樣（120.50） */
 private fun unitPrice(price: Double, currency: String): String =
-    if (currency.isEmpty()) priceText(price) else Currencies.of(currency).symbol + priceText(price)
+    if (currency.isEmpty()) (if (tw.moneybook.app.Money.twd == "$") "" else tw.moneybook.app.Money.twd) + priceText(price)
+    else Currencies.of(currency).symbol + priceText(price)
 
 /** 手動改某檔的現價（記成今天的價格） */
 @Composable
@@ -393,7 +394,6 @@ private fun EditHoldingDialog(
                     name, { name = it.take(16) }, label = { Text("名稱（選填）") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
-                Text(
                 if (curChanged && newCur.isNotEmpty()) {
                     OutlinedTextField(
                         rateInput, { rateInput = it.filter { c -> c.isDigit() || c == '.' }.take(10); rateTouched = true },
@@ -410,6 +410,7 @@ private fun EditHoldingDialog(
                         style = MaterialTheme.typography.bodySmall, color = cute.sub,
                     )
                 }
+                Text(
                     if (merge != null) "這個帳戶已經有「${merge.symbol}」，改成同一個代號會把兩檔合併成一檔。"
                     else "這個帳戶這一檔的所有買賣記錄都會一起改；價格記錄跟著搬到新代號。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,

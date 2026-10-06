@@ -328,7 +328,7 @@ fun SavingsLine(labels: List<String>, cumulative: List<Long>, monthly: List<Long
 }
 
 private fun formatMoneyShort(v: Long): String =
-    (if (v < 0) "-$" else "$") + tw.moneybook.app.formatShort(kotlin.math.abs(v))
+    (if (v < 0) "-" else "") + tw.moneybook.app.Money.twd + tw.moneybook.app.formatShort(kotlin.math.abs(v))
 
 /** 橫向比例條 */
 @Composable

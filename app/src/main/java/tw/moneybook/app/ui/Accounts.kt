@@ -357,7 +357,7 @@ private fun RateDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     text, { s -> text = s.filter { c -> c.isDigit() || c == '.' }.take(12) },
-                    label = { Text("1 $code = 幾元台幣") }, prefix = { Text("$") }, singleLine = true,
+                    label = { Text("1 $code = 幾元台幣") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                     isError = nv.on("rate"), supportingText = nv.supporting("rate"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),

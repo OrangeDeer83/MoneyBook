@@ -35,6 +35,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import tw.moneybook.app.AppData
 import tw.moneybook.app.MainActivity
+import tw.moneybook.app.Money
 import tw.moneybook.app.Store
 import tw.moneybook.app.TxType
 import tw.moneybook.app.expenseSum
@@ -53,7 +54,7 @@ import java.time.temporal.ChronoUnit
 // ───────────────────────── 共用 ─────────────────────────
 
 /** 小工具直接讀手機上的存檔（跟 App 同一份，沒有網路） */
-private fun loadData(context: Context): AppData = Store(context.filesDir).load()
+private fun loadData(context: Context): AppData = Store(context.filesDir).load().also { Money.sync(it) }
 
 /** 小工具用的配色：跟著 App 選的配色，深色模式跟著系統 */
 private class WTheme(p: Pal) {

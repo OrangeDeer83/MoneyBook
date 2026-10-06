@@ -73,7 +73,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = Store(app.filesDir)
 
-    var data by mutableStateOf(store.load())
+    var data by mutableStateOf(store.load().also { Money.sync(it) })
         private set
     var month by mutableStateOf(YearMonth.now())
 
@@ -133,6 +133,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     private val appContext = app.applicationContext
 
     private fun commit(d: AppData) {
+        Money.sync(d)
         data = d
         try {
             store.save(d)
