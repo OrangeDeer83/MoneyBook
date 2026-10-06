@@ -1777,7 +1777,7 @@ def t_us_stock_in_usd():
     d.check("持股列：10 股・均價 US$500.00・現價 US$500.00（每股用美金）", any("10 股" in n.text and "均價 US$500.00" in n.text and "現價 US$500.00" in n.text for n in ns), [n.text for n in ns if "均價" in n.text])
     d.check("持股市值 NT$157,500（台幣）", d.has(ns, "NT$157,500", True), [n.text for n in ns if n.text.startswith("$")][:8])
     d.check("說明單價是 USD、市值成本用台幣", any("單價是 USD" in n.text for n in ns))
-    d.check("買賣記錄顯示 @ US$500.00・匯率 31.5", any("@ US$500.00" in n.text and "匯率 31.5" in n.text for n in ns), [n.text for n in ns if "@" in n.text])
+    d.check("買賣記錄顯示 @ US$500.00・匯率 31.5", any("@ US$500.00" in n.text for n in ns) and any("匯率 31.5" in n.text for n in ns), [n.text for n in ns if "@" in n.text])
 
 
 @case(D, "用美金帳戶買美股：美金餘額扣掉（含手續費），台幣成本照匯率換算")
@@ -1936,7 +1936,7 @@ def t_edit_holding_market():
     ns = d.shot("改完之後")
     d.check("持股列：均價 US$100.00・現價 US$100.00", any("均價 US$100.00" in n.text and "現價 US$100.00" in n.text for n in ns), [n.text for n in ns if "均價" in n.text])
     d.check("市值 NT$300,000、成本 NT$300,020（100 股 × 100 × 匯率 30＋手續費 20）", d.has(ns, "NT$300,000", True) and d.has(ns, "NT$300,020", True), [n.text for n in ns if "$" in n.text][:12])
-    d.check("買賣記錄顯示 @ US$100.00・匯率 30", any("@ US$100.00" in n.text and "匯率 30" in n.text for n in ns), [n.text for n in ns if "@" in n.text])
+    d.check("買賣記錄顯示 @ US$100.00・匯率 30", any("@ US$100.00" in n.text for n in ns) and any("匯率 30" in n.text for n in ns), [n.text for n in ns if "@" in n.text])
 
 
 @case(D, "有外幣資料時台幣金額標 NT$，沒有外幣就維持 $", visual=True)

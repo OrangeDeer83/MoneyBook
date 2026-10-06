@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -83,15 +84,12 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         CuteCard(Modifier.fillMaxWidth()) {
-            Text("持股市值", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-            Text(formatMoney(pf.value), style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(6.dp))
-            Row {
+            Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text("成本", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                    Text(formatMoney(pf.cost), style = MaterialTheme.typography.titleMedium)
+                    Text("持股市值", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    Text(formatMoney(pf.value), style = MaterialTheme.typography.headlineSmall)
                 }
-                Column(Modifier.weight(1f)) {
+                Column(horizontalAlignment = Alignment.End) {
                     Text("未實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     Text(
                         gainText(pf.gain, if (pf.cost > 0L) pf.gain.toDouble() / pf.cost else null),
@@ -99,14 +97,22 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                         color = if (pf.gain >= 0L) cute.income else cute.expense,
                     )
                 }
-                Column(Modifier.weight(1f)) {
-                    Text("已實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                    Text(
-                        gainText(pf.realized, null),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (pf.realized >= 0L) cute.income else cute.expense,
-                    )
-                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
+            Spacer(Modifier.height(6.dp))
+            // 成本與已實現損益：次要資訊，一行小字
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("成本", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Spacer(Modifier.width(6.dp))
+                Text(formatMoney(pf.cost), style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.weight(1f))
+                Text("已實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    gainText(pf.realized, null), style = MaterialTheme.typography.bodyMedium,
+                    color = if (pf.realized >= 0L) cute.income else cute.expense,
+                )
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -131,47 +137,59 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
         if (pf.positions.isEmpty()) {
             Text("還沒有持股，按「買進」記錄第一筆。", style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.padding(horizontal = 4.dp))
         }
+        val today = LocalDate.now().toEpochDay()
         pf.positions.forEach { p ->
-            Row(
+            Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card)
                     .clickable { pricePos = p; dialog = "price" }.padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (p.name.isNotBlank()) "${p.name} ${p.symbol}" else p.symbol,
-                            style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.weight(1f, fill = false),
-                        )
-                        if (p.market.isNotBlank()) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                Markets.label(p.market), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
-                            )
-                        }
-                    }
+                // 第一行：名稱、市場標籤，右邊是台幣市值
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "${qtyText(p.qty)} 股・均價 ${unitPrice(p.avgPrice, p.currency)}・現價 ${unitPrice(p.price, p.currency)}（${dayLabel(p.priceDay)}）",
-                        style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 2,
+                        if (p.name.isNotBlank()) "${p.name} ${p.symbol}" else p.symbol,
+                        style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (p.currency.isNotEmpty()) {
-                        Text("單價是 ${p.currency}，市值、成本、損益換成台幣算（匯率 ${rateText(p.rate)}）", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 2)
+                    if (p.market.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            Markets.label(p.market), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
+                        )
                     }
-                    if (p.symbol in vm.priceFailed) {
-                        Text("抓不到價格，目前用的是舊價格；請確認市場與代號，或點這一列手動輸入", style = MaterialTheme.typography.labelSmall, color = cute.expense)
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.End) {
+                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
                     Text(formatMoney(p.value), fontWeight = FontWeight.SemiBold)
+                }
+                // 第二行：股數、均價 → 現價
+                Text(
+                    "${qtyText(p.qty)} 股・均價 ${unitPrice(p.avgPrice, p.currency)} → 現價 ${unitPrice(p.price, p.currency)}",
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                )
+                // 第三行：價格日期（不是今天才標）與損益
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (p.priceDay != today) {
+                        Text("價格 ${LocalDate.ofEpochDay(p.priceDay).let { "${it.monthValue}/${it.dayOfMonth}" }}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    }
+                    Spacer(Modifier.weight(1f))
                     Text(
                         gainText(p.gain, if (p.cost > 0L) p.gainPct else null),
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         color = if (p.gain >= 0L) cute.income else cute.expense,
                     )
                 }
+                if (p.symbol in vm.priceFailed) {
+                    Text("抓不到價格，目前用的是舊價格；請確認市場與代號，或點這一列手動輸入", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+                }
             }
+        }
+        // 外幣單價的說明只寫一次
+        val fxCodes = pf.positions.map { it.currency }.filter { it.isNotEmpty() }.distinct()
+        if (fxCodes.isNotEmpty()) {
+            Text(
+                "單價是 ${fxCodes.joinToString("、")}；市值、成本、損益用目前匯率換成台幣（" +
+                    fxCodes.joinToString("、") { c -> "$c ${rateText(pf.positions.first { it.currency == c }.rate)}" } + "）。",
+                style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(horizontal = 4.dp),
+            )
         }
 
         if (pf.positions.isNotEmpty() && d.prefs.priceFetch) {
@@ -198,11 +216,13 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(if (t.name.isNotBlank()) "${t.name} ${t.symbol}" else t.symbol, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                            Text("${qtyText(t.qty)} 股 @ ${unitPrice(t.price, t.currency)}", style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1)
+                            // 日期、匯率、手續費放第二行小字
                             Text(
-                                "${dayLabel(t.day)}・${qtyText(t.qty)} 股 @ ${unitPrice(t.price, t.currency)}" +
+                                dayLabel(t.day) +
                                     (if (t.currency.isNotEmpty() && t.rate > 0.0) "・匯率 ${rateText(t.rate)}" else "") +
                                     if (t.fee > 0) "・手續費 ${formatMoney(t.fee)}" else "",
-                                style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
+                                style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
                             )
                         }
                         Text(formatMoney(tradeAmount(t.qty, t.price * (if (t.currency.isNotEmpty() && t.rate > 0.0) t.rate else 1.0))), fontWeight = FontWeight.SemiBold)
