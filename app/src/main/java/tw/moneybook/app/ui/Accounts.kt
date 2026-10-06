@@ -589,12 +589,13 @@ fun PresetRow(presets: List<tw.moneybook.app.BadgePreset>, onPick: (tw.moneybook
     ) {
         presets.forEach { p ->
             Column(
-                Modifier.width(60.dp).clip(RoundedCornerShape(12.dp)).clickable { onPick(p) }.padding(vertical = 4.dp),
+                Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { onPick(p) }.padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 AccountIcon(Account(0L, p.name, "", AccountType.BANK, 0L, 0, badge = p.badge, badgeFrom = p.from, badgeTo = p.to), 40.dp)
-                Text(p.name, style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+                // 名稱有空格的（LINE Bank、Apple Pay…）會換成兩行，不能只留第一個字；固定兩行高讓每一格一樣高
+                Text(p.name, style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 2, minLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
     }

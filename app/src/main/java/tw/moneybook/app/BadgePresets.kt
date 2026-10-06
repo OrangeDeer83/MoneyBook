@@ -8,7 +8,7 @@ data class BadgePreset(val name: String, val badge: String, val from: Long, val 
  * 沒有用官方 Logo（有商標，也要附圖檔），只用簡稱加品牌識別色的雙色漸層。
  * 顏色依各家識別色換算，是近似值，不是官方標準色：
  *  - 有查到識別色描述的：國泰（綠）、中信（紅＋綠）、玉山（藍綠）、台新（金黃）、富邦（藍＋綠，#0095B8）、
- *    永豐（正紅）、臺銀（酒紅，#AB005F）、街口（紅，#C9191D）、LINE（綠）
+ *    永豐（正紅）、臺銀（酒紅，#AB005F）、街口（紅，#C9191D）、LINE（綠）、將來（黃＋灰）
  *  - 其他是憑印象配的，之後可以隨時改這張表（只影響新選的徽章，已存的帳戶不受影響）
  */
 object BadgePresets {
@@ -30,6 +30,7 @@ object BadgePresets {
         BadgePreset("土地", "土銀", 0xFF5BB06CL, 0xFF2D7A3FL),
         BadgePreset("凱基", "凱基", 0xFF4F89D6L, 0xFF224F9AL),
         BadgePreset("LINE Bank", "LB", 0xFF4FD07CL, 0xFF1E9A4AL),
+        BadgePreset("將來銀行", "將來", 0xFFF2B600L, 0xFF666666L),
         BadgePreset("樂天", "樂天", 0xFFD95D66L, 0xFF98262FL),
     )
 
