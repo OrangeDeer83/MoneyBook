@@ -145,18 +145,20 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             ) {
                 // 第一行：名稱、市場標籤，右邊是台幣市值
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (p.name.isNotBlank()) "${p.name} ${p.symbol}" else p.symbol,
-                        style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (p.market.isNotBlank()) {
-                        Spacer(Modifier.width(6.dp))
+                    // 左邊（名稱＋標籤）吃掉剩下的寬度，市值固定貼右邊
+                    Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            Markets.label(p.market), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
+                            if (p.name.isNotBlank()) "${p.name} ${p.symbol}" else p.symbol,
+                            style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.weight(1f, fill = false),
                         )
+                        if (p.market.isNotBlank()) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                Markets.label(p.market), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
+                            )
+                        }
                     }
-                    Spacer(Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
                     Text(formatMoney(p.value), fontWeight = FontWeight.SemiBold)
                 }
