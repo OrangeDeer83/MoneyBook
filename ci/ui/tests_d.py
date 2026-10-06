@@ -1971,7 +1971,7 @@ def t_badge_next_bank():
     lab = d.first(ns, "常見銀行", True)
     w = max([n.x2 for n in ns] + [1])
     y = lab.cy + 110 if lab else 900
-    for _ in range(5):
+    for _ in range(14):
         if d.has(d.nodes(), "將來銀行", True):
             break
         d.swipe(int(w * 0.8), y, int(w * 0.2), y)
