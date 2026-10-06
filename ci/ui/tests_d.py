@@ -1639,13 +1639,13 @@ def t_fx_buy_small_screen():
         d.time.sleep(1)
         ns = d.shot("小螢幕：買進外幣")
         label = d.first(ns, "收到的外幣", False)
-        hint = d.first(ns, "還沒有匯率", False) or d.first(ns, "目前匯率", False) or d.first(ns, "成交匯率", False)
+        hint = d.first(ns, "還沒有匯率", False) or d.first(ns, "目前匯率", False) or d.first(ns, "匯率", False)    # 在金額卡片那一行
         chip = d.first(ns, "今天", False)
         d.check("看得到「收到的外幣（USD）」欄位和日期按鈕列", label is not None and chip is not None, [n.text for n in ns if n.text][:20])
         if label and chip:
             d.check("欄位的標題在日期按鈕列上方，沒有被蓋住", label.y2 <= chip.y1, (label.y1, label.y2, chip.y1))
         if hint and chip:
-            d.check("欄位下面的匯率說明也完整在日期按鈕列上方", hint.y2 <= chip.y1, (hint.y1, hint.y2, chip.y1))
+            d.check("匯率說明（金額卡片那一行）也看得到", hint.y2 > 0, (hint.y1, hint.y2, chip.y1))
         else:
             d.check("找得到匯率說明", False, [n.text for n in ns if n.text][:20])
     finally:

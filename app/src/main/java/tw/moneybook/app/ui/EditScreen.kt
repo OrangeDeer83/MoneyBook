@@ -456,6 +456,7 @@ fun EditScreen(
                     AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶", compact = tight) { dialog = "to" }
                     if (tight && fxAcc != null) {
                         val buy = plan.mode == FxMode.BUY
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         CompactField(
                             otherText,
                             { v ->
@@ -473,22 +474,13 @@ fun EditScreen(
                                 } else v.filter { c -> c.isDigit() }.take(10)
                             },
                             if (buy) "收到的外幣（${fxAcc.currency}）" else "收到的台幣",
-                            Modifier.fillMaxWidth(),
+                            Modifier.weight(1f),
                             number = true, decimal = buy && dec > 0,
                             prefix = if (buy) fxAcc.cur.symbol.trim() else "$",
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                when {
-                                    implied != null -> "成交匯率 ${rateText(implied)}"
-                                    rate != null -> "目前匯率 ${rateText(rate)}"
-                                    else -> "還沒有匯率，請直接輸入收到的金額"
-                                },
-                                style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f).padding(start = 4.dp),
-                            )
-                            if (rate != null) {
-                                TextButton(onClick = { otherTouched = false; focus.clearFocus() }) { Text("依目前匯率算", style = MaterialTheme.typography.labelMedium) }
-                            }
+                        if (rate != null) {
+                            TextButton(onClick = { otherTouched = false; focus.clearFocus() }) { Text("依匯率算", style = MaterialTheme.typography.labelMedium) }
+                        }
                         }
                     }
                     if (plan.mode == FxMode.UNSUPPORTED) {
@@ -644,11 +636,11 @@ fun EditScreen(
                     modifier = Modifier.fillMaxWidth().clickable { dialog = "fxrate" }.padding(vertical = 2.dp),
                 )
                 FxMode.BUY -> if (fxAcc != null) Text(
-                    "付出 ${formatMoney(keyVal)}　收到 ${formatFx(fxMinor, fxAcc.currency)}" + (implied?.let { "　匯率 ${rateText(it)}" } ?: ""),
+                    "付出 ${formatMoney(keyVal)}　收到 ${formatFx(fxMinor, fxAcc.currency)}" + (implied?.let { "　匯率 ${rateText(it)}" } ?: rate?.let { "　目前匯率 ${rateText(it)}" } ?: "　還沒有匯率，請輸入收到的金額"),
                     style = MaterialTheme.typography.labelMedium, color = cute.sub, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth(),
                 )
                 FxMode.SELL -> if (fxAcc != null) Text(
-                    "賣出 ${formatFx(keyVal, fxAcc.currency)}　收到 ${formatMoney(amount)}" + (implied?.let { "　匯率 ${rateText(it)}" } ?: ""),
+                    "賣出 ${formatFx(keyVal, fxAcc.currency)}　收到 ${formatMoney(amount)}" + (implied?.let { "　匯率 ${rateText(it)}" } ?: rate?.let { "　目前匯率 ${rateText(it)}" } ?: "　還沒有匯率，請輸入收到的金額"),
                     style = MaterialTheme.typography.labelMedium, color = cute.sub, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth(),
                 )
                 else -> {}
