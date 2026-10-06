@@ -17,6 +17,11 @@ def open_add():
     d.wait_text("備註（選填）", timeout=15)
 
 
+def edit_open(timeout=15):
+    """等「編輯既有記錄／常用記帳」的畫面出現：只有編輯才有右上角的刪除鈕（沒有「正在編輯」提示條了）"""
+    d.wait(lambda n: n.desc == "刪除", timeout, "編輯畫面（刪除鈕）")
+
+
 def keypad(digits):
     for ch in digits:
         ns = d.nodes()

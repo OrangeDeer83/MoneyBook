@@ -762,7 +762,7 @@ def t_txn_time():
     # 畫面上有兩個 -$100：上面「結餘」卡片，和下面的明細列；要點明細列（比較下面那個）
     row = max([n for n in d.nodes() if n.text == "-$100"], key=lambda n: n.cy)
     d.tap(row)
-    d.wait_text("正在編輯", exact=False, timeout=15)
+    f.edit_open()
     ns = d.shot("編輯這一筆")
     d.check("編輯時時間按鈕顯示 09:30（有存下來）", d.has(ns, "09:30", True))
     d.tap(d.first(d.nodes(), "關閉"))
@@ -778,7 +778,7 @@ def t_txn_time_unset():
     d.wait(lambda n: n.text == "-$85", 10, "舊記錄")
     row = max([n for n in d.nodes() if n.text == "-$85"], key=lambda n: n.cy)   # 明細列，不是上面的結餘卡片
     d.tap(row)
-    d.wait_text("正在編輯", exact=False, timeout=15)
+    f.edit_open()
     ns = d.shot("編輯舊記錄")
     d.check("時間按鈕顯示「未設定時間」", d.has(ns, "未設定時間", True))
 
@@ -1471,7 +1471,7 @@ def t_fx_edit_existing():
     open_account("美元帳戶")
     # 先編輯買進那一筆（台幣 31,500 → US$1,000.00）
     d.tap(d.wait(lambda n: n.text == "+US$1,000.00", 10, "買進那一筆"))
-    d.wait_text("正在編輯", exact=False, timeout=15)
+    f.edit_open()
     ns = d.shot("編輯買進那一筆")
     d.check("付出金額 $31500 放回計算機", d.has(ns, "$31500", True), [n.text for n in ns if n.text.startswith("$")][:6])
     d.check("收到的外幣放回輸入框 1000", edit_with_text("1000") is not None, [n.text for n in d.edits()])
@@ -1480,7 +1480,7 @@ def t_fx_edit_existing():
     d.check("美元帳戶餘額還是 US$987.50", d.has(ns, "US$987.50", True), [n.text for n in ns if "US$" in n.text])
     # 再編輯外幣消費那一筆
     d.tap(d.wait(lambda n: n.text == "-US$12.50", 10, "消費那一筆"))
-    d.wait_text("正在編輯", exact=False, timeout=15)
+    f.edit_open()
     ns = d.shot("編輯外幣消費")
     d.check("金額放回 US$12.5，換算 ≈ $394", d.has(ns, "US$12.5", True) and any("≈ $394" in n.text for n in ns), [n.text for n in ns if "US$" in n.text or "≈" in n.text])
     save_to_detail()

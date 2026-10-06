@@ -214,7 +214,7 @@ def t_tags():
 def t_edit_discard():
     d.fresh(home_seed())
     d.tap(d.first(d.nodes(), "-$120", True))
-    d.wait_text("正在編輯", exact=False, timeout=15)
+    f.edit_open()
     d.shot("進入編輯")
     f.keypad("9")
     d.shot("改了金額")
@@ -279,35 +279,25 @@ def t_toast_timeout():
     d.check("提示已自動消失", not d.has(ns, "復原", True))
 
 
-# ───────── 編輯提示條
-@case(A, "編輯時顯示「正在編輯」提示條")
+# ───────── 編輯畫面（不再有「正在編輯」提示條）
+@case(A, "編輯既有帳目時直接進編輯畫面，沒有「正在編輯」提示條")
 def t_banner():
     d.fresh(home_seed())
-    # 有子分類
-    d.tap(d.first(d.nodes(), "-$120", True))
-    d.wait_text("正在編輯", exact=False, timeout=15)
-    ns = d.shot("有子分類的帳目")
-    b = next((n for n in ns if "餐飲 › 午餐" in n.text and n.cy < 600), None)
-    d.check("提示條顯示「餐飲 › 午餐」", b is not None, [n.text for n in ns if n.cy < 600])
-    d.tap(d.first(d.nodes(), "關閉"))
-    d.time.sleep(1.5)
-    # 不細分
-    d.tap(d.first(d.nodes(), "-$85", True))
-    d.wait_text("正在編輯", exact=False, timeout=15)
-    ns = d.shot("不細分的帳目")
-    b = next((n for n in ns if n.cy < 600 and "餐飲" in n.text and "›" not in n.text and "選填" not in n.text), None)
-    d.check("提示條只顯示大分類「餐飲」", b is not None, [n.text for n in ns if n.cy < 600])
-    d.tap(d.first(d.nodes(), "關閉"))
-    d.time.sleep(1.5)
-    # 轉帳
+    for label, why in (("-$120", "有子分類的帳目"), ("-$85", "不細分的帳目")):
+        d.tap(d.first(d.nodes(), label, True))
+        f.edit_open()
+        ns = d.shot(why)
+        d.check(f"{why}：沒有「正在編輯」提示條", not d.has(ns, "正在編輯"))
+        d.check(f"{why}：金額放回計算機（$" + label[2:] + "）", d.has(ns, "$" + label[2:], True), [n.text for n in ns if n.text.startswith("$")][:5])
+        d.tap(d.first(d.nodes(), "關閉"))
+        d.time.sleep(1.5)
     row = d.first(d.nodes(), "$500", True)   # 轉帳那一列的金額（不是頂端「收入 $50,000」）
     d.check("找得到轉帳那一列", row is not None)
     if row:
         d.tap(row)
-        d.wait_text("正在編輯", exact=False, timeout=15)
+        f.edit_open()
         ns = d.shot("轉帳")
-        b = next((n for n in ns if "轉帳" in n.text and n.cy < 600 and "正在編輯" not in n.text and n.cx > 300 and n.text != "轉帳"), None)
-        d.check("提示條顯示轉帳資訊", d.has(ns, "正在編輯", False))
+        d.check("轉帳：沒有提示條，上方是支出／收入／轉帳切換", not d.has(ns, "正在編輯") and d.has(ns, "轉帳", True))
 
 
 @case(A, "新增一筆時不顯示提示條")
@@ -325,17 +315,18 @@ def t_banner_tpl():
     d.time.sleep(1)
     d.shot("常用記帳清單", contrast=True)
     d.tap_text("Tpl A", exact=False)
-    d.wait_text("正在編輯", exact=False, timeout=15)
+    f.edit_open()
     ns = d.shot("編輯常用記帳")
-    d.check("提示條含常用記帳名稱 Tpl A", any("Tpl A" in n.text and n.cy < 600 for n in ns))
+    d.check("常用記帳的名稱 Tpl A 顯示在「名稱：Tpl A」按鈕上", any("名稱：Tpl A" in n.text for n in ns), [n.text for n in ns if "名稱" in n.text])
+    d.check("沒有「正在編輯」提示條", not d.has(ns, "正在編輯"))
 
 
-@case(A, "提示條在深色與淺色模式皆可讀", visual=True)
+@case(A, "編輯畫面在深色與淺色模式皆可讀", visual=True)
 def t_banner_dark():
     for dark, name in ((1, "淺色"), (2, "深色")):
         d.fresh(f.base_seed(dark=dark))
         d.tap(d.first(d.nodes(), "-$120", True))
-        d.wait_text("正在編輯", exact=False, timeout=15)
+        f.edit_open()
         d.shot(f"{name}模式的編輯畫面", contrast=True)
 
 
@@ -435,7 +426,7 @@ def t_scroll_keep():
         pick = rows[0]
         y0, label = pick.cy, pick.text
         d.tap(pick)
-        d.wait_text("正在編輯", exact=False, timeout=15)
+        f.edit_open()
         d.tap(d.first(d.nodes(), "關閉"))
         d.time.sleep(1.5)
         ns = d.shot("返回後的首頁")
