@@ -43,7 +43,12 @@ def disabled(ns, label):
 def acc_tab():
     to_main()
     f.tab("帳戶")
-    d.wait_text("總資產", timeout=15)
+    # 帳戶分頁會記得上次捲到哪：如果「總資產」不在畫面上，先捲回最上面
+    try:
+        d.wait_text("總資產", timeout=4)
+    except TimeoutError:
+        d.scroll_up(3)
+        d.wait_text("總資產", timeout=15)
     d.time.sleep(0.8)
 
 
