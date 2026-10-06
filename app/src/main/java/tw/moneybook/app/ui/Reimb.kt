@@ -137,11 +137,24 @@ private fun claimsOf(txns: List<Txn>): List<Claim> =
     txns.filter { it.type == TxType.EXPENSE && it.reimb != 0 }
         .flatMap { t -> t.items.mapIndexed { i, item -> Claim(t, i, item) } }
 
+/** 分類的完整路徑：子分類前面帶上大分類（餐飲 › 午餐），沒分類是「未分類」 */
+private fun catPath(d: AppData, t: Txn): String {
+    val c = t.categoryId?.let { d.catMap[it] } ?: return "未分類"
+    val top = d.topOf(c)
+    return if (top.id == c.id) c.name else "${top.name} › ${c.name}"
+}
+
+/** 備註的第一行（太長就截斷）；沒有備註回傳空字串 */
+private fun billNote(t: Txn): String {
+    val line = t.note.trim().lineSequence().firstOrNull()?.trim().orEmpty()
+    return if (line.length > 24) line.take(24) + "…" else line
+}
+
+/** 這筆是什麼：有備註就用備註（最能看出實際的項目），沒有就用分類路徑，後面接日期 */
 private fun billLabel(d: AppData, t: Txn): String {
-    val c = t.categoryId?.let { d.catMap[it] }
     val date = LocalDate.ofEpochDay(t.day)
     val md = if (date.year == LocalDate.now().year) "${date.monthValue}/${date.dayOfMonth}" else "${date.year}/${date.monthValue}/${date.dayOfMonth}"
-    return (c?.name ?: "未分類") + " " + md
+    return billNote(t).ifEmpty { catPath(d, t) } + " " + md
 }
 
 private fun daysSince(day: Long): Long = ChronoUnit.DAYS.between(LocalDate.ofEpochDay(day), LocalDate.now()).coerceAtLeast(0L)
@@ -689,11 +702,14 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                     CuteCard(Modifier.fillMaxWidth()) {
                         if (single && !eligible0) {
                             Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
+                            if (billNote(c.txn).isNotEmpty()) Text(catPath(d, c.txn), style = MaterialTheme.typography.labelSmall, color = cute.sub)
                             Text("還剩 ${formatMoney(c.item.remaining)}・不是用 $cur0 付的，要改選台幣帳戶才能收", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge)
+                                    // 有備註時，分類路徑另外一行（備註看實際項目，分類看歸在哪）
+                                    if (billNote(c.txn).isNotEmpty()) Text(catPath(d, c.txn), style = MaterialTheme.typography.labelSmall, color = cute.sub)
                                     Text(
                                         "還剩 ${formatMoney(c.item.remaining)}" + (if (single && cur0.isNotEmpty()) "（${formatFx(remU0, cur0)}）" else ""),
                                         style = MaterialTheme.typography.labelMedium, color = cute.sub,

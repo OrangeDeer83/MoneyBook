@@ -577,3 +577,17 @@ def t_trend():
     d.tap_text("趨勢", exact=True)
     d.time.sleep(2)
     d.shot("趨勢")
+
+
+@case(B, "收款頁看得出實際項目：有備註顯示備註，分類顯示完整路徑", visual=True)
+def t_receive_shows_item():
+    s = S.with_reimb(f.today())
+    s.expense(0, 300, S.C_LUNCH, note="team lunch", reimb=1, reimb_amount=300, items=[S.reimb_item("Amy", 300)])
+    s.expense(-1, 150, S.C_LUNCH, reimb=1, reimb_amount=150, items=[S.reimb_item("Amy", 150)])
+    d.fresh(s.json())
+    receive_page("Amy")
+    ns = d.shot("Amy 的收款頁")
+    d.check("有備註的那筆顯示備註「team lunch」", any(n.text.startswith("team lunch") for n in ns), [n.text for n in ns if n.text][:30])
+    d.check("備註下面另一行是分類路徑「餐飲 › 午餐」", d.has(ns, "餐飲 › 午餐", True), [n.text for n in ns if n.text][:30])
+    d.check("沒有備註的那筆直接顯示「餐飲 › 午餐 日期」", any(n.text.startswith("餐飲 › 午餐 ") for n in ns), [n.text for n in ns if n.text][:30])
+
