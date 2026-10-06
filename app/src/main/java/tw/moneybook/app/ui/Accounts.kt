@@ -178,11 +178,10 @@ fun AccountDetailScreen(
                                 color = if (balance < 0) cute.expense else cute.ink,
                             )
                         }
-                        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SoftButton("編輯", { editing = true }, compact = true)
-                            SoftButton("更新餘額", { adjusting = true }, compact = true)
-                        }
+                        SoftIconButton("vec:pencil", "編輯", { editing = true })
                     }
+                    Spacer(Modifier.height(10.dp))
+                    SoftButton("更新餘額", { adjusting = true }, Modifier.fillMaxWidth())
                     if (a.isForeign) {
                         val rate = d.rateOf(a.currency)
                         val manual = d.rates.any { it.code == a.currency }

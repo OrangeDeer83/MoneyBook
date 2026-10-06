@@ -337,7 +337,7 @@ private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onEdit: () -> 
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                SoftButton("打錯了？修改名稱／代號／市場", onEdit, Modifier.fillMaxWidth())
+                SoftButton("編輯", onEdit, Modifier.fillMaxWidth())
             }
         },
         confirmButton = { TextButton(onClick = { if (need != null || price == null) tries.count++ else onConfirm(price) }) { Text("更新") } },

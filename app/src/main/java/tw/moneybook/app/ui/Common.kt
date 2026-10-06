@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import tw.moneybook.app.Defaults
@@ -331,6 +333,20 @@ fun SoftButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
             text, color = fg, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
             style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
         )
+    }
+}
+
+/** 淡底色圓角塊的圖示按鈕（例如帳戶明細右上角的鉛筆）；desc 是無障礙說明，也是畫面測試找得到的名字 */
+@Composable
+fun SoftIconButton(icon: String, desc: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val cute = LocalCute.current
+    Box(
+        modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(cute.soft)
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .semantics { contentDescription = desc },
+        contentAlignment = Alignment.Center,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph(icon, 20.sp) }
     }
 }
 
