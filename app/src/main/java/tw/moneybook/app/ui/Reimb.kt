@@ -654,7 +654,8 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                         chase.clear()
                         lines.add(RLine(unusedChoice.id, ""))
                     })
-                } else if (fxChoices.isNotEmpty() && !multi && curOf(lines[0]).isEmpty()) {
+                }
+                if (fxChoices.isNotEmpty() && !multi && curOf(lines[0]).isEmpty()) {
                     Text("有幾筆是用外幣付的，對方還外幣的話，選外幣帳戶收。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
