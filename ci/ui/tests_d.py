@@ -28,7 +28,9 @@ def value_below(ns, label):
 def to_main():
     """在帳戶明細等子頁時先返回，直到看得到底部分頁"""
     for _ in range(3):
-        if [n for n in d.nodes() if n.text == "明細" and n.cy > 2000]:
+        ns = d.nodes()
+        h = max([n.y2 for n in ns] + [1])          # 螢幕高度（縮小螢幕的用例也能用）
+        if [n for n in ns if n.text == "明細" and n.cy > 0.83 * h]:
             return
         d.tap_back()
 
