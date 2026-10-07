@@ -61,6 +61,7 @@ import tw.moneybook.app.ReimbCodec
 import tw.moneybook.app.ReimbItem
 import tw.moneybook.app.ReimbPay
 import tw.moneybook.app.ClaimInput
+import tw.moneybook.app.ClaimOutcome
 import tw.moneybook.app.ReceiptLine
 import tw.moneybook.app.allocateReceipt
 import tw.moneybook.app.Account
