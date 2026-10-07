@@ -573,6 +573,12 @@ fun EditScreen(
                 val a = accId?.let { d.accMap[it] }
                 CuteChip(a?.let { accLabel(it) } ?: "帳戶", false, { dialog = "from" }, icon = "vec:wallet")
             }
+            if (billEff != null) {
+                CuteChip(
+                    "入帳 " + (if (billEff.year != LocalDate.now().year) "${billEff.year}/" else "") + "${billEff.monthValue}月",
+                    billSet != 0, { dialog = "bill" }, icon = "vec:calendar",
+                )
+            }
             CuteChip(if (tags.isEmpty()) "新增標籤" else tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" }, icon = "vec:tag")
             val feeLabel = when {
                 fee > 0 && effDiscount > 0 -> "手續費・優惠"
@@ -580,12 +586,6 @@ fun EditScreen(
                 effDiscount > 0 -> "優惠 ${formatMoney(effDiscount)}"
                 type == TxType.EXPENSE -> "手續費／優惠"
                 else -> "手續費"
-            }
-            if (billEff != null) {
-                CuteChip(
-                    "入帳 " + (if (billEff.year != LocalDate.now().year) "${billEff.year}/" else "") + "${billEff.monthValue}月",
-                    billSet != 0, { dialog = "bill" }, icon = "vec:calendar",
-                )
             }
             if (!fromFx) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "vec:coin")
             if (type == TxType.EXPENSE && !tplMode) {
