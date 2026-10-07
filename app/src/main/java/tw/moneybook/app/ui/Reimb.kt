@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
@@ -632,6 +633,13 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     val chase = remember { mutableStateMapOf<String, Boolean>() }
     var askChase by remember { mutableStateOf(false) }
     val multi = lines.size > 1
+    // 勾選這次對方「已經給了」的帳（預設全部勾選）：只分配到勾選的，最上面統計勾選的合計
+    val selected = remember { mutableStateMapOf<String, Boolean>() }
+    fun isOn(c: Claim) = selected[c.key] != false
+    val active = claims.filter { isOn(it) }
+    val selTotal = active.sumOf { it.item.remaining }
+    // 使用者自己改過收到的金額，就不再隨勾選自動更新
+    var amountTouched by remember { mutableStateOf(false) }
 
     fun accOf(l: RLine): Account? = l.accId?.let { d.accMap[it] }
     fun curOf(l: RLine): String = accOf(l)?.takeIf { it.isForeign }?.currency ?: ""
@@ -640,8 +648,8 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     fun claimCur(t: Txn): String = d.fxAccountOf(t)?.currency ?: ""
     fun unitText(cur: String, u: Long) = if (cur.isNotEmpty()) formatFx(u, cur) else formatMoney(u)
     fun defaultText(a: Account?): String =
-        if (a != null && a.isForeign) fxExpr(claims.filter { claimCur(it.txn) == a.currency }.sumOf { it.txn.twdToFxAt(it.item.remaining) }, a.cur.decimals)
-        else totalRemaining.toString()
+        if (a != null && a.isForeign) fxExpr(active.filter { claimCur(it.txn) == a.currency }.sumOf { it.txn.twdToFxAt(it.item.remaining) }, a.cur.decimals)
+        else selTotal.toString()
 
     val parsed = lines.map { ReceiptLine(it.accId, curOf(it), parseLine(it)) }
     // 只有一種幣別時才開放逐筆改金額；多種幣別一起收時由系統自動分配
@@ -649,11 +657,24 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
         val l = lines[0]
         overrides.mapNotNull { (k, v) -> (if (curOf(l).isNotEmpty()) parseFx(v, decOf(l)) else v.toLongOrNull())?.let { k to it } }.toMap()
     }
-    val outcomes = allocateReceipt(claims.map { ClaimInput(it.key, it.txn, it.item.remaining) }, parsed, ::claimCur, overrideAmounts)
+    val activeOut = allocateReceipt(active.map { ClaimInput(it.key, it.txn, it.item.remaining) }, parsed, ::claimCur, overrideAmounts)
+    // 沒勾選的帳這次不收：給一個空的結果，位置和 claims 對齊
+    val outcomes = claims.map { c -> activeOut.firstOrNull { it.key == c.key } ?: ClaimOutcome(c.key, c.item.remaining, emptyList()) }
     val sumCredit = outcomes.sumOf { it.credit }
+    // 勾選變了，收到的金額預設跟著變成勾選的合計（逐筆改的金額和追款選擇都重來）
+    val selKey = active.joinToString(",") { it.key }
+    LaunchedEffect(selKey) {
+        overrides.clear()
+        chase.clear()
+        if (!multi && !amountTouched) lines[0].text = defaultText(accOf(lines[0]))
+    }
     // 必填：什麼都沒收到不能確認；標出第一個還沒填金額的那一種幣別
     val tries = rememberNeedTries()
-    val need = if (sumCredit > 0L) null else Need("line${parsed.indexOfFirst { it.amount <= 0L }.coerceAtLeast(0)}", "請輸入這次收到的金額")
+    val need = when {
+        sumCredit > 0L -> null
+        active.isEmpty() -> Need("line0", "請先勾選對方已經給的帳")
+        else -> Need("line${parsed.indexOfFirst { it.amount <= 0L }.coerceAtLeast(0)}", "請輸入這次收到的金額")
+    }
     val nv = NeedView(need, tries.count)
     val needChaseIdx = claims.indices.filter { outcomes[it].short && chase[claims[it].key] == null }
 
@@ -682,6 +703,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
         overrides.clear()
         chase.clear()
         l.text = if (multi) "" else defaultText(a)
+        amountTouched = false
     }
 
     SubPage("收款・${ownerLabel(who)}", onBack) {
@@ -699,6 +721,22 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                     if (!multi && curOf(l0).isNotEmpty()) {
                         val tot = claims.filter { claimCur(it.txn) == curOf(l0) }.sumOf { it.txn.twdToFxAt(it.item.remaining) }
                         Text("其中可以用 ${curOf(l0)} 收的：${formatFx(tot, curOf(l0))}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("這次勾選 ${active.size} 筆，合計", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        Text(formatMoney(selTotal), style = MaterialTheme.typography.titleLarge, color = cute.income)
+                    }
+                    if (!multi && curOf(l0).isNotEmpty()) {
+                        val selFx = active.filter { claimCur(it.txn) == curOf(l0) }.sumOf { it.txn.twdToFxAt(it.item.remaining) }
+                        Text("可以用 ${curOf(l0)} 收的：${formatFx(selFx, curOf(l0))}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SoftButton("全選", { claims.forEach { selected[it.key] = true } }, compact = true)
+                        SoftButton("全不選", { claims.forEach { selected[it.key] = false } }, compact = true)
                     }
                 }
                 lines.forEachIndexed { li, l ->
@@ -720,7 +758,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                         }
                         Spacer(Modifier.height(6.dp))
                         CompactField(
-                            l.text, { v -> l.text = if (cur.isNotEmpty()) fxInput(v, dec) else v.filter { c -> c.isDigit() }.take(9); overrides.clear() },
+                            l.text, { v -> amountTouched = true; l.text = if (cur.isNotEmpty()) fxInput(v, dec) else v.filter { c -> c.isDigit() }.take(9); overrides.clear() },
                             "金額", Modifier.fillMaxWidth().needInView(nv, "line$li"), number = true, decimal = cur.isNotEmpty() && dec > 0,
                             prefix = accOf(l)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
                             error = nv.on("line$li"),
@@ -753,7 +791,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                 }
 
                 Text(
-                    if (multi) "分配到這幾筆（外幣先沖同幣別的帳，台幣再沖剩下的，由舊到新）" else "分配到這幾筆（由舊到新自動分配，可以直接改金額）",
+                    if (multi) "勾選對方這次已經給的帳（外幣先沖同幣別的帳，台幣再沖剩下的，由舊到新）" else "勾選對方這次已經給的帳（由舊到新自動分配，可以直接改金額）",
                     style = MaterialTheme.typography.labelLarge, color = cute.sub,
                 )
                 claims.forEachIndexed { i, c ->
@@ -764,7 +802,10 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                     val eligible0 = cur0.isEmpty() || claimCur(c.txn) == cur0
                     val part0 = o.parts.firstOrNull { it.line == 0 }
                     val remU0 = if (cur0.isEmpty()) c.item.remaining else if (eligible0) c.txn.twdToFxAt(c.item.remaining) else 0L
-                    CuteCard(Modifier.fillMaxWidth()) {
+                    CuteCard(Modifier.fillMaxWidth().alpha(if (isOn(c)) 1f else 0.55f)) {
+                      Row(verticalAlignment = Alignment.Top) {
+                        androidx.compose.material3.Checkbox(checked = isOn(c), onCheckedChange = { selected[c.key] = it })
+                        Column(Modifier.weight(1f)) {
                         if (single && !eligible0) {
                             Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
                             if (billNote(c.txn).isNotEmpty()) Text(catPath(d, c.txn), style = MaterialTheme.typography.labelSmall, color = cute.sub)
@@ -786,7 +827,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                                         )
                                     }
                                 }
-                                if (single) {
+                                if (single && isOn(c)) {
                                     CompactField(
                                         overrides[c.key] ?: (if (cur0.isNotEmpty()) fxExpr(part0?.units ?: 0L, decOf(l0)) else (part0?.units ?: 0L).toString()),
                                         { v -> overrides[c.key] = if (cur0.isNotEmpty()) fxInput(v, decOf(l0)) else v.filter { ch -> ch.isDigit() }.take(9) },
@@ -806,9 +847,11 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                                 }
                             }
                         }
+                        }
+                      }
                     }
                 }
-                val over = sumCredit - totalRemaining
+                val over = sumCredit - selTotal
                 if (over > 0L) {
                     Text("多收 ${formatMoney(over)}，多的部分會算成報銷回饋收入。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                 }

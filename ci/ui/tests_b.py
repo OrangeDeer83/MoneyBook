@@ -697,3 +697,42 @@ def t_tab_toggle_view():
     ns = d.shot("又點一次")
     d.check("變回列表", d.has(ns, "切換成日曆", True))
 
+
+@case(B, "收款時勾選對方這次已經給的帳，最上面統計合計", visual=True)
+def t_receive_select():
+    d.fresh(S.with_reimb(f.today()).json())
+    receive_page("Ming")
+    ns = d.shot("Ming 的收款頁（預設全選）")
+    d.check("最上面：這次勾選 2 筆，合計 $1,500", d.has(ns, "這次勾選 2 筆，合計") and d.has(ns, "$1,500", True), [n.text for n in ns if n.text][:30])
+    d.check("收到金額預設是勾選的合計 1500", "1500" in [e.text for e in d.edits()], [e.text for e in d.edits()])
+    boxes = sorted([n for n in ns if n.checkable], key=lambda n: n.cy)
+    d.check("每一筆帳前面有勾選框（兩筆，預設都勾）", len(boxes) == 2 and all(b.checked for b in boxes), [(b.cy, b.checked) for b in boxes])
+    d.tap(boxes[0])          # 取消勾選最舊的那一筆（r1，$1,000）
+    d.time.sleep(1)
+    ns = d.shot("取消勾選最舊的一筆")
+    d.check("合計變成 1 筆 $500", d.has(ns, "這次勾選 1 筆，合計") and d.has(ns, "$500", True), [n.text for n in ns if n.text][:30])
+    d.check("收到金額跟著變成 500", "500" in [e.text for e in d.edits()], [e.text for e in d.edits()])
+    d.tap_text("確認收款", exact=False)
+    d.time.sleep(1.5)
+    to_reimb_home()
+    ns = d.shot("收完之後的報銷總覽")
+    d.check("Ming 還欠 $1,000（沒勾選的那一筆）", d.has(ns, "Ming", True) and d.has(ns, "$1,000", True), [n.text for n in ns if n.text.startswith("$") or n.text == "Ming"])
+
+
+@case(B, "收款勾選：全不選不能確認，全選回復", visual=True)
+def t_receive_select_none():
+    d.fresh(S.with_reimb(f.today()).json())
+    receive_page("Ming")
+    d.tap_text("全不選", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("全不選")
+    d.check("合計 0 筆", d.has(ns, "這次勾選 0 筆，合計"), [n.text for n in ns if "勾選" in n.text])
+    d.tap_text("確認收款", exact=False)
+    d.time.sleep(1)
+    ns = d.shot("全不選按確認收款")
+    d.check("提示「請先勾選對方已經給的帳」，還在收款頁", d.has(ns, "請先勾選對方已經給的帳") and d.has(ns, "這次收到多少"), [n.text for n in ns if n.text][:20])
+    d.tap_text("全選", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("全選")
+    d.check("全選回來：2 筆合計 $1,500", d.has(ns, "這次勾選 2 筆，合計") and d.has(ns, "$1,500", True))
+
