@@ -713,8 +713,8 @@ def t_receive_select():
     d.check("合計變成 1 筆 $500", d.has(ns, "這次勾選 1 筆，合計") and d.has(ns, "$500", True), [n.text for n in ns if n.text][:30])
     d.check("收到金額跟著變成 500", "500" in [e.text for e in d.edits()], [e.text for e in d.edits()])
     d.tap_text("確認收款", exact=False)
-    d.time.sleep(1.5)
-    to_reimb_home()
+    d.wait_text("還沒收到的報銷款", timeout=15)      # 收完回到報銷總覽
+    d.time.sleep(1)
     ns = d.shot("收完之後的報銷總覽")
     d.check("Ming 還欠 $1,000（沒勾選的那一筆）", d.has(ns, "Ming", True) and d.has(ns, "$1,000", True), [n.text for n in ns if n.text.startswith("$") or n.text == "Ming"])
 
