@@ -81,5 +81,14 @@ class BillMonthTest {
         assertEquals(500L, d.cardBillSpendingAfter(card, YearMonth.of(2026, 11)))
         assertEquals(0L, d.cardBillSpendingAfter(card, YearMonth.of(2026, 12)))
     }
+
+    @Test
+    fun accountDetailShowsAManuallyBilledTxnInItsBillMonth() {
+        val moved = spend(1, 2026, 10, 24, 500, bill = 202611)
+        assertEquals(YearMonth.of(2026, 11), moved.accountMonthFor(card))
+        assertEquals(YearMonth.of(2026, 10), spend(2, 2026, 10, 24, 500).accountMonthFor(card))                 // 沒指定：看消費日期
+        assertEquals(YearMonth.of(2026, 10), moved.accountMonthFor(card.copy(type = AccountType.BANK)))         // 不是信用卡：不受影響
+        assertEquals(YearMonth.of(2026, 10), moved.accountMonthFor(card.copy(id = 9)))                            // 不是這張卡的記錄
+    }
 }
 

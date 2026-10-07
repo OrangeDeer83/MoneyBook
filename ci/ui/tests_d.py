@@ -2078,7 +2078,12 @@ def t_card_bill_month():
     d.check(f"按鈕變成指定的 {nm} 月", chip is not None and f"{nm}月" in chip.text, chip and chip.text)
     f.save_edit()
     open_account("測試信用卡")
-    ns = d.shot("信用卡明細")
-    d.check(f"明細列標出「入帳 {nm} 月」", any(f"入帳 {nm} 月" in n.text for n in ns), [n.text for n in ns if "入帳" in n.text])
+    ns = d.shot("信用卡明細（本月）")
+    d.check("指定入帳到之後的帳單：這個月的明細不再顯示這一筆", not any(f"入帳 {nm} 月" in n.text for n in ns), [n.text for n in ns if "入帳" in n.text])
     d.check("帳單卡：本期累積不含這筆，另外一行寫「之後的帳單 $100」", any(n.text.startswith("之後的帳單 $100") for n in ns), [n.text for n in ns if "帳單" in n.text])
-
+    steps = (ny * 12 + nm - 1) - (t.year * 12 + t.month - 1)
+    for _ in range(steps):
+        d.tap(next(n for n in d.nodes() if n.desc == "下個月"))
+        d.time.sleep(0.8)
+    ns = d.shot(f"切到 {nm} 月")
+    d.check(f"{nm} 月的明細出現這一筆，標「入帳 {nm} 月」", any(f"入帳 {nm} 月" in n.text for n in ns), [n.text for n in ns if n.text][:20])

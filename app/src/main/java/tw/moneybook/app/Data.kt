@@ -396,6 +396,13 @@ fun autoBillMonth(statementDay: Int, date: LocalDate): YearMonth {
     return if (date.dayOfMonth <= statementDay.coerceIn(1, ym.lengthOfMonth())) ym else ym.plusMonths(1)
 }
 
+/**
+ * 這筆在帳戶 a 的明細裡算在哪個月：信用卡手動指定了入帳月份的，算在那個月（例如 10/24 刷的、指定入帳 11 月，
+ * 就在 11 月的明細裡出現，10 月不顯示）；其他一律是消費日期所在的月份。首頁的明細與統計仍然看消費日期。
+ */
+fun Txn.accountMonthFor(a: Account): YearMonth =
+    if (a.type == AccountType.CARD && accountId == a.id) billMonthFromCode(billMonth) ?: month else month
+
 /** 這筆在信用卡 a 算進哪一期帳單：有手動設定的用手動的，沒有就依日期自動；卡沒設結帳日回傳 null */
 fun Txn.billMonthFor(a: Account): YearMonth? {
     if (a.statementDay !in 1..31) return null

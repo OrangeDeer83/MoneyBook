@@ -70,6 +70,7 @@ import tw.moneybook.app.avgCost
 import tw.moneybook.app.rateText
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
+import tw.moneybook.app.accountMonthFor
 import tw.moneybook.app.cardBillSpending
 import tw.moneybook.app.cardBillSpendingAfter
 import tw.moneybook.app.cardCycle
@@ -157,7 +158,8 @@ fun AccountDetailScreen(
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     // 這個帳戶相關的記錄（所有帳本）
     val all = d.txns.filter { it.accountId == a.id || it.toAccountId == a.id || it.items.any { i -> i.pays.any { pay -> pay.accountId == a.id } } }
-    val monthList = all.inMonth(month)
+    // 信用卡指定入帳到下個月的，在下個月的明細顯示（見 accountMonthFor）
+    val monthList = all.filter { it.accountMonthFor(a) == month }
     // 這個帳戶這個月收到的報銷款（每一筆收款各算一筆）
     val reimbIn = d.txns.flatMap { t ->
         // idx：這一筆記錄所有報銷收款的編號，要和 runningBalances 的 key 對得上
