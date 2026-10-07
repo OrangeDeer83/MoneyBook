@@ -39,6 +39,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -62,6 +63,8 @@ import tw.moneybook.app.ClaimInput
 import tw.moneybook.app.ReceiptLine
 import tw.moneybook.app.allocateReceipt
 import tw.moneybook.app.Account
+import tw.moneybook.app.SplitResult
+import tw.moneybook.app.splitAmounts
 import tw.moneybook.app.cur
 import tw.moneybook.app.formatFx
 import tw.moneybook.app.Currencies
@@ -165,6 +168,9 @@ private fun daysSince(day: Long): Long = ChronoUnit.DAYS.between(LocalDate.ofEpo
 internal class ReimbRow(val locked: ReimbItem?, who: String, amt: String) {
     var who by mutableStateOf(who)
     var amt by mutableStateOf(amt)
+
+    /** 「平分剩下的」模式下，這一列的金額由系統自動算（使用者手動改過就變固定） */
+    var auto by mutableStateOf(false)
 }
 
 @Composable
@@ -224,17 +230,42 @@ fun ReimbEditPage(
         if (blank != null) blank.who = name else rows.add(ReimbRow(null, name, ""))
     }
 
-    fun splitEvenly() {
+    var splitMenu by remember { mutableStateOf(false) }
+    // 「平分剩下的」模式：沒填金額的人由系統自動分剩下的（含自己），手動改過金額的人就固定
+    var restMode by remember { mutableStateOf(false) }
+    val lockedSum = rows.sumOf { it.locked?.effective ?: 0L }
+
+    /** 把 poolTwd 分給 targets 這幾列；外幣消費時用外幣金額分、小數位照幣別 */
+    fun fillRows(targets: List<ReimbRow>, includeSelf: Boolean, poolTwd: Long) {
+        if (fxOn) {
+            val res = splitAmounts(includeSelf, fxOf(poolTwd), targets.size)
+            targets.forEachIndexed { i, r -> r.amt = fxExpr(res.amounts[i], fdec) }
+        } else {
+            val res = splitAmounts(includeSelf, poolTwd, targets.size)
+            targets.forEachIndexed { i, r -> r.amt = res.amounts[i].toString() }
+        }
+    }
+
+    fun splitAll(includeSelf: Boolean) {
         val editable = rows.filter { it.locked == null }
         if (editable.isEmpty()) return
-        val pool = (actual - rows.sumOf { it.locked?.effective ?: 0L }).coerceAtLeast(0L)
-        val n = editable.size
-        if (fxOn) {
-            // 外幣：把外幣金額平均分（小數位照幣別），餘數給第一個人
-            val fpool = fxOf(pool)
-            editable.forEachIndexed { i, r -> r.amt = fxExpr(fpool / n + if (i == 0) fpool % n else 0L, fdec) }
-        } else {
-            editable.forEachIndexed { i, r -> r.amt = (pool / n + if (i == 0) pool % n else 0L).toString() }
+        restMode = false
+        editable.forEach { it.auto = false }
+        fillRows(editable, includeSelf, (actual - lockedSum).coerceAtLeast(0L))
+    }
+
+    fun startRest() {
+        rows.filter { it.locked == null }.forEach { it.auto = rowTwd(it) <= 0L }
+        restMode = true
+    }
+
+    // 平分剩下的：固定金額的人不動，自動那幾列每次都依「剩下的」重算
+    val restAuto = if (restMode) rows.filter { it.locked == null && it.auto } else emptyList()
+    val restFixed = rows.filter { it.locked == null && !it.auto }.sumOf { rowTwd(it) }
+    val restPool = (actual - lockedSum - restFixed).coerceAtLeast(0L)
+    LaunchedEffect(restMode, restAuto.size, restPool) {
+        if (restMode) {
+            if (restAuto.isEmpty()) restMode = false else fillRows(restAuto, true, restPool)
         }
     }
 
@@ -311,7 +342,7 @@ fun ReimbEditPage(
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     CompactField(r.who, { r.who = it.take(12) }, "對象（選填）", Modifier.weight(1f))
                                     CompactField(
-                                        r.amt, { v -> r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
+                                        r.amt, { v -> r.auto = false; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
                                         "金額", Modifier.width(if (fxOn) 132.dp else 112.dp), number = true, decimal = fxOn && fdec > 0,
                                         prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else tw.moneybook.app.Money.twd,
                                     )
@@ -323,12 +354,18 @@ fun ReimbEditPage(
                                 if (fxOn && rowTwd(r) > 0L) {
                                     Text("≈ ${formatMoney(rowTwd(r))}", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp))
                                 }
+                                if (restMode && r.auto) {
+                                    Text(
+                                        "自動：剩下 ${if (fxOn) formatFx(fxOf(restPool), fxCur) else formatMoney(restPool)} ÷ ${restAuto.size + 1} 人（含我）",
+                                        style = MaterialTheme.typography.labelSmall, color = cute.income, modifier = Modifier.padding(start = 4.dp),
+                                    )
+                                }
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             CuteChip("＋ 新增對象", false, { rows.add(ReimbRow(null, "", "")) })
                             val n = rows.count { it.locked == null }
-                            if (n > 1) CuteChip("平均分給 $n 人", false, { splitEvenly() })
+                            if (n >= 1) CuteChip("平分 ▾", restMode, { splitMenu = true })
                         }
                         val used = rows.map { it.who.trim() }.toSet()
                         val suggest = names.filter { it !in used }.take(8)
@@ -373,6 +410,56 @@ fun ReimbEditPage(
                 Spacer(Modifier.height(16.dp))
             }
         }
+        if (splitMenu) {
+            val editable = rows.filter { it.locked == null }
+            val nE = editable.size
+            fun fmt(v: Long) = if (fxOn) formatFx(v, fxCur) else formatMoney(v)
+            val poolAll = (actual - lockedSum).coerceAtLeast(0L)
+            fun resAll(self: Boolean): SplitResult = splitAmounts(self, if (fxOn) fxOf(poolAll) else poolAll, nE)
+            val a1 = resAll(false)
+            val a2 = resAll(true)
+            val blanks = editable.count { rowTwd(it) <= 0L }
+            val fixedCnt = nE - blanks
+            val restOk = blanks >= 1 && fixedCnt >= 1
+            val restPoolNow = (actual - lockedSum - editable.sumOf { rowTwd(it) }).coerceAtLeast(0L)
+            AlertDialog(
+                onDismissRequest = { splitMenu = false },
+                title = { Text("平分") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SplitOption(
+                            "平分給 $nE 人", "我只是幫忙付，不含我自己",
+                            "每人 ${fmt(a1.amounts.firstOrNull() ?: 0L)}", true,
+                        ) { splitAll(false); splitMenu = false }
+                        SplitOption(
+                            "平分給 ${nE + 1} 人（含我）", "我也分一份，除不盡的零頭算我自己",
+                            "每人 ${fmt(a2.amounts.firstOrNull() ?: 0L)}・我 ${fmt(a2.self)}", true,
+                        ) { splitAll(true); splitMenu = false }
+                        SplitOption(
+                            "平分剩下的（含我）", "先填有指定金額的人，沒填的人和我平分剩下的",
+                            if (restOk) "剩 ${formatMoney(restPoolNow)} ÷ ${blanks + 1} 人" else if (fixedCnt == 0) "先填至少一人的金額" else "每個人都填了金額",
+                            restOk,
+                        ) { startRest(); splitMenu = false }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { splitMenu = false }) { Text("取消") } },
+            )
+        }
+    }
+}
+
+/** 平分選單的一個選項：標題、說明、算好的結果；不能選時變淡 */
+@Composable
+private fun SplitOption(title: String, desc: String, result: String, enabled: Boolean, onClick: () -> Unit) {
+    val cute = LocalCute.current
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft)
+            .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge, color = if (enabled) cute.ink else cute.sub)
+        Text(desc, style = MaterialTheme.typography.labelSmall, color = cute.sub)
+        Text(result, style = MaterialTheme.typography.labelMedium, color = if (enabled) cute.income else cute.sub)
     }
 }
 

@@ -591,3 +591,75 @@ def t_receive_shows_item():
     d.check("備註下面另一行是分類路徑「餐飲 › 午餐」", d.has(ns, "餐飲 › 午餐", True), [n.text for n in ns if n.text][:30])
     d.check("沒有備註的那筆直接顯示「餐飲 › 午餐 日期」", any(n.text.startswith("餐飲 › 午餐 ") for n in ns), [n.text for n in ns if n.text][:30])
 
+
+def split_page_with_three():
+    """實付 600，分給多人：Amy、Bob、Cat 三個人，金額都空白"""
+    d.fresh(S.Seed(f.today()).json())
+    f.open_add()
+    f.keypad("600")
+    open_edit_reimb_switch_on(multi=True)
+    d.time.sleep(0.8)
+    d.clear(d.edits()[1])
+    d.hide_ime()
+    d.fill(d.edits()[0], "Amy")
+    d.hide_ime()
+    for who in ("Bob", "Cat"):
+        d.tap_text("新增對象", exact=False)
+        d.time.sleep(0.6)
+        ed = d.edits()
+        d.fill(ed[-2], who)
+        d.hide_ime()
+
+
+def amounts():
+    return [e.text for i, e in enumerate(d.edits()) if i % 2 == 1]
+
+
+@case(B, "報銷平分：平分給幾人、含自己，兩種分法", visual=True)
+def t_split_modes():
+    split_page_with_three()
+    d.tap_text("平分", exact=False)
+    d.time.sleep(0.8)
+    ns = d.shot("平分選單")
+    d.check("選項一：平分給 3 人（不含我），每人 $200", d.has(ns, "平分給 3 人") and d.has(ns, "每人 $200", True), [n.text for n in ns if n.text][:30])
+    d.check("選項二：平分給 4 人（含我），每人 $150・我 $150", d.has(ns, "平分給 4 人（含我）") and d.has(ns, "每人 $150・我 $150", True))
+    d.check("選項三還不能選：先填至少一人的金額", d.has(ns, "先填至少一人的金額"))
+    d.tap_text("平分給 3 人", exact=False)
+    d.time.sleep(1)
+    ns = d.shot("平分給 3 人之後")
+    d.check("三個人各 200", amounts() == ["200", "200", "200"], amounts())
+    d.check("可報銷 $600、自己負擔 $0", d.has(ns, "$600", True) and d.has(ns, "$0", True))
+    d.tap_text("平分", exact=False)
+    d.time.sleep(0.8)
+    d.tap_text("平分給 4 人（含我）", exact=False)
+    d.time.sleep(1)
+    ns = d.shot("平分給 4 人（含我）之後")
+    d.check("三個人各 150", amounts() == ["150", "150", "150"], amounts())
+    d.check("可報銷 $450、自己負擔 $150", d.has(ns, "$450", True) and d.has(ns, "$150", True), [n.text for n in ns if n.text.startswith("$")])
+
+
+@case(B, "報銷平分：平分剩下的（含自己），固定金額的人不動", visual=True)
+def t_split_rest():
+    split_page_with_three()
+    d.fill(d.edits()[1], "300")
+    d.hide_ime()
+    d.tap_text("平分", exact=False)
+    d.time.sleep(0.8)
+    ns = d.shot("Amy 填 300 後的平分選單")
+    d.check("選項三可以選：剩 $300 ÷ 3 人", d.has(ns, "剩 $300 ÷ 3 人"), [n.text for n in ns if n.text][:30])
+    d.tap_text("平分剩下的", exact=False)
+    d.time.sleep(1.2)
+    ns = d.shot("平分剩下的之後")
+    d.check("Amy 固定 300，Bob、Cat 各 100", amounts() == ["300", "100", "100"], amounts())
+    d.check("自動那兩列有提示：自動：剩下 $300 ÷ 3 人（含我）", sum(1 for n in ns if "自動：剩下 $300 ÷ 3 人（含我）" in n.text) == 2, [n.text for n in ns if "自動" in n.text])
+    d.fill(d.edits()[1], "400")
+    d.hide_ime()
+    d.time.sleep(1.2)
+    ns = d.shot("Amy 改成 400")
+    d.check("Amy 改成 400 後，Bob、Cat 跟著重算成各 66", amounts() == ["400", "66", "66"], amounts())
+    d.fill(d.edits()[3], "50")
+    d.hide_ime()
+    d.time.sleep(1.2)
+    ns = d.shot("手動把 Bob 改成 50")
+    d.check("手動改過的 Bob 固定 50，剩下的 150 由 Cat 和我平分，Cat 變 75", amounts() == ["400", "50", "75"], amounts())
+
