@@ -73,5 +73,13 @@ class BillMonthTest {
         assertEquals(2, n)
         assertEquals(listOf(202611, 0), back.txns.sortedByDescending { it.day }.map { it.billMonth })
     }
+
+    @Test
+    fun laterBillsAreSummedSeparately() {
+        val d = data(spend(1, 2026, 10, 10, 300), spend(2, 2026, 10, 24, 500, bill = 202612), spend(3, 2026, 10, 25, 200, bill = 202611))
+        assertEquals(700L, d.cardBillSpendingAfter(card, YearMonth.of(2026, 10)))
+        assertEquals(500L, d.cardBillSpendingAfter(card, YearMonth.of(2026, 11)))
+        assertEquals(0L, d.cardBillSpendingAfter(card, YearMonth.of(2026, 12)))
+    }
 }
 

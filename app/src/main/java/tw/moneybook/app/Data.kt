@@ -416,6 +416,21 @@ fun AppData.cardBillSpending(a: Account, bill: YearMonth): Long {
     return sum
 }
 
+/** 某信用卡「比 bill 更晚」的帳單金額合計（手動指定入帳到之後幾期的）：同樣消費、轉出算正的，退款算負的 */
+fun AppData.cardBillSpendingAfter(a: Account, bill: YearMonth): Long {
+    var sum = 0L
+    for (t in txns) {
+        val m = if (t.accountId == a.id) t.billMonthFor(a) else null
+        if (m == null || !m.isAfter(bill)) continue
+        when (t.type) {
+            TxType.EXPENSE -> sum += t.paid
+            TxType.INCOME -> sum -= t.paid
+            TxType.TRANSFER -> sum += t.amount + t.fee
+        }
+    }
+    return sum
+}
+
 /** 某帳戶在一段期間的淨流出（刷卡消費 − 退款／繳款以外的流入不算） */
 fun AppData.cardSpending(accId: Long, from: LocalDate, to: LocalDate): Long {
     val a = from.toEpochDay()

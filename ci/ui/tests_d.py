@@ -2080,4 +2080,5 @@ def t_card_bill_month():
     open_account("測試信用卡")
     ns = d.shot("信用卡明細")
     d.check(f"明細列標出「入帳 {nm} 月」", any(f"入帳 {nm} 月" in n.text for n in ns), [n.text for n in ns if "入帳" in n.text])
+    d.check("帳單卡：本期累積不含這筆，另外一行寫「之後的帳單 $100」", any(n.text.startswith("之後的帳單 $100") for n in ns), [n.text for n in ns if "帳單" in n.text])
 

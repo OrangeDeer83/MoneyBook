@@ -71,6 +71,7 @@ import tw.moneybook.app.rateText
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
 import tw.moneybook.app.cardBillSpending
+import tw.moneybook.app.cardBillSpendingAfter
 import tw.moneybook.app.cardCycle
 import tw.moneybook.app.cardSpending
 import tw.moneybook.app.formatMoney
@@ -506,6 +507,12 @@ private fun CardBillCard(vm: MoneyViewModel, a: Account, onPayCard: (Long, Long?
                         style = MaterialTheme.typography.labelSmall, color = cute.sub,
                     )
                 }
+            }
+            // 手動指定入帳到更後面幾期的（本期累積不含）：另外提醒，不然看起來像錢不見了
+            val later = d.cardBillSpendingAfter(a, java.time.YearMonth.from(cyc.nextStatement))
+            if (later != 0L) {
+                Spacer(Modifier.height(6.dp))
+                Text("之後的帳單 ${formatMoney(later)}（指定入帳到下一期以後的）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
             }
             val due = cyc.lastDue
             if (due != null && lastBill > 0) {
