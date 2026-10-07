@@ -169,7 +169,8 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
             null -> MainTabs(
                 vm = vm,
                 tab = tab,
-                onTab = { tab = it },
+                // 已經在「明細」分頁時再點一下「明細」：切換列表和日曆
+                onTab = { if (it == tab && it == 0) vm.homeCalendar = !vm.homeCalendar else tab = it },
                 // 在日曆上選了日期再按記一筆，就預設那一天
                 onAdd = { push(Route.Edit(null, presetDay = if (tab == 0 && vm.homeCalendar) vm.calSelected else null)) },
                 onEdit = { push(Route.Edit(it)) },

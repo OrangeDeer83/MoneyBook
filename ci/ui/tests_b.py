@@ -42,8 +42,7 @@ def open_edit_reimb_switch_on(multi=False):
     sw = [n for n in ns if n.checkable]
     if sw and not sw[0].checked:
         d.tap(sw[0])
-    if multi:
-        d.tap_text("分給多人")
+    # 報銷頁已經沒有「一人・全額／分給多人」分頁：一律是對象列表，預設一列、全額
 
 
 def fill_rows(rows):
@@ -662,4 +661,39 @@ def t_split_rest():
     d.time.sleep(1.2)
     ns = d.shot("手動把 Bob 改成 50")
     d.check("手動改過的 Bob 固定 50，剩下的 150 由 Cat 和我平分，Cat 變 75", amounts() == ["400", "50", "75"], amounts())
+
+
+@case(B, "報銷頁預設一人全額：沒有分頁，一列、金額是實付", visual=True)
+def t_reimb_default_single():
+    d.fresh(S.Seed(f.today()).json())
+    f.open_add()
+    f.keypad("400")
+    open_edit_reimb_switch_on(multi=False)
+    d.time.sleep(0.8)
+    ns = d.shot("打開報銷")
+    d.check("不再有「一人・全額」「分給多人」分頁", not d.has(ns, "一人・全額") and not d.has(ns, "分給多人"), [n.text for n in ns if n.text][:30])
+    d.check("預設一列：對象空白、金額是實付 400", len(d.edits()) == 2 and d.edits()[1].text == "400", [e.text for e in d.edits()])
+    d.check("有「＋ 新增對象」與「平分」", d.has(ns, "＋ 新增對象") and d.has(ns, "平分", False))
+    d.fill(d.edits()[0], "Zed")
+    d.hide_ime()
+    done_reimb()
+    f.save_edit()
+    to_reimb_home()
+    ns = d.shot("報銷總覽")
+    d.check("總覽有對象 Zed 與 $400（全額）", d.has(ns, "Zed", True) and d.has(ns, "$400"))
+
+
+@case(B, "點首頁的「明細」分頁可以切換列表和日曆", visual=True)
+def t_tab_toggle_view():
+    d.fresh(f.base_seed())
+    ns = d.nodes()
+    d.check("一開始是列表：有「切換成日曆」鈕", d.has(ns, "切換成日曆", True))
+    f._tap_tab("明細")
+    d.time.sleep(1)
+    ns = d.shot("再點一次「明細」分頁")
+    d.check("變成日曆：鈕變成「切換成明細列表」", d.has(ns, "切換成明細列表", True))
+    f._tap_tab("明細")
+    d.time.sleep(1)
+    ns = d.shot("又點一次")
+    d.check("變回列表", d.has(ns, "切換成日曆", True))
 

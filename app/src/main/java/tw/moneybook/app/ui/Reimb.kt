@@ -192,8 +192,6 @@ fun ReimbEditPage(
 ) {
     val cute = LocalCute.current
     var on by remember { mutableStateOf(initOn) }
-    var full by remember { mutableStateOf(initFull) }
-    var fullWho by remember { mutableStateOf(initWho) }
     val hasPays = origItems.any { it.pays.isNotEmpty() }
     // 外幣消費：每個人的金額用外幣輸入（r.amt 是外幣），換算台幣用「這一筆」的匯率（外幣金額 ÷ 台幣實付）
     val fxOn = fxCur.isNotEmpty() && fxActual > 0L && actual > 0L
@@ -205,7 +203,8 @@ fun ReimbEditPage(
     val rows = remember {
         mutableStateListOf<ReimbRow>().apply {
             val src = if (initFull) origItems.map { if (it.pays.isEmpty() && !it.closed) it.copy(amount = actual) else it } else ReimbCodec.decode(initJson)
-            if (src.isEmpty()) add(ReimbRow(null, "", amtText(actual)))
+            // 新增、或原本是「一人・全額」：一列、預設全額給這個人（對象沿用原本填的）
+            if (src.isEmpty()) add(ReimbRow(null, initWho, amtText(actual)))
             else src.forEach { add(if (it.pays.isNotEmpty() || it.closed) ReimbRow(it, it.who, it.amount.toString()) else ReimbRow(null, it.who, amtText(it.amount))) }
         }
     }
@@ -215,8 +214,9 @@ fun ReimbEditPage(
     fun finish() {
         if (!on) {
             onDone(false, true, "", "")
-        } else if (full) {
-            onDone(true, true, initJson, fullWho.trim())
+        } else if (rows.size == 1 && rows[0].locked == null && rowTwd(rows[0]) == actual) {
+            // 只有一個人、而且是全額：存成「一人・全額」，之後帳目金額改了，報銷金額跟著走
+            onDone(true, true, initJson, rows[0].who.trim())
         } else {
             val list = rows.mapNotNull { r ->
                 r.locked ?: rowTwd(r).takeIf { it > 0L }?.let { a -> ReimbItem(r.who.trim(), a) }
@@ -301,106 +301,84 @@ fun ReimbEditPage(
                     Switch(checked = on, onCheckedChange = { on = it }, enabled = !hasPays)
                 }
                 if (on) {
-                    if (!lockedAny) {
-                        PillSegment(
-                            listOf("一人・全額", "分給多人"), if (full) 0 else 1,
-                            { pick ->
-                                full = pick == 0
-                                if (!full) rows.firstOrNull { it.locked == null && it.who.isBlank() }?.let { r -> r.who = fullWho }
-                            },
-                            Modifier.fillMaxWidth(), equal = true,
-                        )
-                    }
-                    if (full) {
-                        CompactField(fullWho, { fullWho = it.take(12) }, "對象（選填，例如小明）", Modifier.fillMaxWidth())
-                        val fullSuggest = names.filter { it != fullWho.trim() }.take(8)
-                        if (fullSuggest.isNotEmpty()) {
-                            Text("常用對象，點一下加入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                fullSuggest.forEach { nm -> CuteChip(nm, false, { fullWho = nm }) }
-                            }
-                        }
-                        Text("全額 ${formatMoney(actual)}" + (if (fxOn) "（${formatFx(fxActual, fxCur)}）" else "") + "，收到後這筆就不算你的支出。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                    } else {
-                        rows.forEachIndexed { i, r ->
-                            val lk = r.locked
-                            if (lk != null) {
-                                Row(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft).padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(lk.who.ifBlank { "（沒填對象）" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                                        Text(
-                                            "已收 ${formatMoney(lk.received)}" + if (lk.closed) "・已結案" else "・還剩 ${formatMoney(lk.remaining)}",
-                                            style = MaterialTheme.typography.labelSmall, color = cute.sub,
-                                        )
-                                    }
-                                    Text(formatMoney(lk.amount), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
-                                }
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    CompactField(r.who, { r.who = it.take(12) }, "對象（選填）", Modifier.weight(1f))
-                                    CompactField(
-                                        r.amt, { v -> r.auto = false; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
-                                        "金額", Modifier.width(if (fxOn) 132.dp else 112.dp), number = true, decimal = fxOn && fdec > 0,
-                                        prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else tw.moneybook.app.Money.twd,
-                                    )
-                                    Text(
-                                        "✕", color = cute.sub, style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.clip(CircleShape).clickable { rows.removeAt(i) }.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    )
-                                }
-                                if (fxOn && rowTwd(r) > 0L) {
-                                    Text("≈ ${formatMoney(rowTwd(r))}", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp))
-                                }
-                                if (restMode && r.auto) {
-                                    Text(
-                                        "自動：剩下 ${if (fxOn) formatFx(fxOf(restPool), fxCur) else formatMoney(restPool)} ÷ ${restAuto.size + 1} 人（含我）",
-                                        style = MaterialTheme.typography.labelSmall, color = cute.income, modifier = Modifier.padding(start = 4.dp),
-                                    )
-                                }
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            CuteChip("＋ 新增對象", false, { rows.add(ReimbRow(null, "", "")) })
-                            val n = rows.count { it.locked == null }
-                            if (n >= 1) CuteChip("平分 ▾", restMode, { splitMenu = true })
-                        }
-                        val used = rows.map { it.who.trim() }.toSet()
-                        val suggest = names.filter { it !in used }.take(8)
-                        if (suggest.isNotEmpty()) {
-                            Text("常用對象，點一下加入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                suggest.forEach { nm -> CuteChip(nm, false, { addName(nm) }) }
-                            }
-                        }
-                        val frac = if (actual > 0L) (total.toFloat() / actual.toFloat()).coerceIn(0f, 1f) else 0f
-                        CuteCard(Modifier.fillMaxWidth()) {
-                            Box(Modifier.fillMaxWidth().height(12.dp).clip(CircleShape).background(cute.soft)) {
-                                Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Row {
+                    rows.forEachIndexed { i, r ->
+                        val lk = r.locked
+                        if (lk != null) {
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft).padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("可報銷", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                                    Text(formatMoney(total), style = MaterialTheme.typography.titleLarge, color = cute.income)
-                                    if (fxOn) Text(formatFx(fxOf(total), fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                    Text(lk.who.ifBlank { "（沒填對象）" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                                    Text(
+                                        "已收 ${formatMoney(lk.received)}" + if (lk.closed) "・已結案" else "・還剩 ${formatMoney(lk.remaining)}",
+                                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                                    )
                                 }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("自己負擔（算進支出）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                                    Text(formatMoney((actual - total).coerceAtLeast(0L)), style = MaterialTheme.typography.titleLarge)
-                                    if (fxOn) Text(formatFx(fxOf((actual - total).coerceAtLeast(0L)), fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                                }
+                                Text(formatMoney(lk.amount), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
                             }
-                            if (cap <= 0L) {
-                                // 先填報銷、後填帳目金額：金額還沒輸入時不用提醒上限，儲存時才會依金額限制
-                                Text("還沒輸入帳目金額，報銷金額之後不會超過實付。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                            } else if (total > cap) {
-                                Text("合計超過上限 ${formatMoney(cap)}，超過的部分不會算。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
-                            } else if (total > actual) {
-                                Text("比實付多 ${formatMoney(total - actual)}，多的部分收到後算成報銷回饋收入。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CompactField(r.who, { r.who = it.take(12) }, "對象（選填）", Modifier.weight(1f))
+                                CompactField(
+                                    r.amt, { v -> r.auto = false; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
+                                    "金額", Modifier.width(if (fxOn) 132.dp else 112.dp), number = true, decimal = fxOn && fdec > 0,
+                                    prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else tw.moneybook.app.Money.twd,
+                                )
+                                Text(
+                                    "✕", color = cute.sub, style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.clip(CircleShape).clickable { rows.removeAt(i) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                                )
                             }
+                            if (fxOn && rowTwd(r) > 0L) {
+                                Text("≈ ${formatMoney(rowTwd(r))}", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp))
+                            }
+                            if (restMode && r.auto) {
+                                Text(
+                                    "自動：剩下 ${if (fxOn) formatFx(fxOf(restPool), fxCur) else formatMoney(restPool)} ÷ ${restAuto.size + 1} 人（含我）",
+                                    style = MaterialTheme.typography.labelSmall, color = cute.income, modifier = Modifier.padding(start = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CuteChip("＋ 新增對象", false, { rows.add(ReimbRow(null, "", "")) })
+                        val n = rows.count { it.locked == null }
+                        if (n >= 1) CuteChip("平分 ▾", restMode, { splitMenu = true })
+                    }
+                    val used = rows.map { it.who.trim() }.toSet()
+                    val suggest = names.filter { it !in used }.take(8)
+                    if (suggest.isNotEmpty()) {
+                        Text("常用對象，點一下加入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            suggest.forEach { nm -> CuteChip(nm, false, { addName(nm) }) }
+                        }
+                    }
+                    val frac = if (actual > 0L) (total.toFloat() / actual.toFloat()).coerceIn(0f, 1f) else 0f
+                    CuteCard(Modifier.fillMaxWidth()) {
+                        Box(Modifier.fillMaxWidth().height(12.dp).clip(CircleShape).background(cute.soft)) {
+                            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Row {
+                            Column(Modifier.weight(1f)) {
+                                Text("可報銷", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                Text(formatMoney(total), style = MaterialTheme.typography.titleLarge, color = cute.income)
+                                if (fxOn) Text(formatFx(fxOf(total), fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("自己負擔（算進支出）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                Text(formatMoney((actual - total).coerceAtLeast(0L)), style = MaterialTheme.typography.titleLarge)
+                                if (fxOn) Text(formatFx(fxOf((actual - total).coerceAtLeast(0L)), fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            }
+                        }
+                        if (cap <= 0L) {
+                            // 先填報銷、後填帳目金額：金額還沒輸入時不用提醒上限，儲存時才會依金額限制
+                            Text("還沒輸入帳目金額，報銷金額之後不會超過實付。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                        } else if (total > cap) {
+                            Text("合計超過上限 ${formatMoney(cap)}，超過的部分不會算。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+                        } else if (total > actual) {
+                            Text("比實付多 ${formatMoney(total - actual)}，多的部分收到後算成報銷回饋收入。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                         }
                     }
                     if (lockedAny) {
