@@ -63,4 +63,15 @@ class BillMonthTest {
         root.getJSONArray("txns").getJSONObject(0).remove("billMonth")
         assertEquals(0, Codec.decode(root.toString()).txns.single().billMonth)
     }
+
+    @Test
+    fun csvRoundTripKeepsTheBillMonth() {
+        val d = data(spend(1, 2026, 10, 24, 500, bill = 202611), spend(2, 2026, 10, 10, 300))
+        val csv = String(CsvIO.export(d), Charsets.UTF_8)
+        assertEquals(true, csv.contains("2026-11"))
+        val (back, n) = CsvIO.import(Defaults.create(), csv)
+        assertEquals(2, n)
+        assertEquals(listOf(202611, 0), back.txns.sortedByDescending { it.day }.map { it.billMonth })
+    }
 }
+

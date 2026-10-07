@@ -192,7 +192,7 @@ class FxTest {
             txn(3, TxType.EXPENSE, 50, 1, d = day),
         )
         val csv = String(CsvIO.export(d), Charsets.UTF_8)
-        assertTrue(csv.lines().first().endsWith("外幣金額,外幣幣別"))
+        assertTrue(csv.lines().first().endsWith("外幣金額,外幣幣別,入帳月份"))
         assertTrue(csv.contains("1000.00,USD"))
         assertTrue(csv.contains("12.50,USD"))
         val (back, n) = CsvIO.import(Defaults.create(), csv)
