@@ -3,7 +3,7 @@ name: UI Test
 # 畫面自動測試：在 CI 開 Android 模擬器，安裝 debug 版，依腳本自動操作並截圖，最後合併成一份含截圖的報告。
 # 結果存成附件，不會發布 Release。
 # 只能手動執行（Actions 頁面，或 gh workflow run ui-test.yml --ref dev）：
-#   不填 only：跑全部用例（a、b、c、d 四個分流，約 30 分鐘）
+#   不填 only：跑全部用例（a、b、c、d1～d3 六個分流，約 35 分鐘；d 組用例最多，分成三台）
 #   填 only：只跑指定的用例（用例編號或名稱的一部分，逗號分隔，例如 TC121,更新餘額），一台模擬器，幾分鐘
 on:
   workflow_dispatch:
@@ -66,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON((inputs.only || '') != '' && '["only"]' || '["a","b","c","d"]') }}
+        shard: ${{ fromJSON((inputs.only || '') != '' && '["only"]' || '["a","b","c","d1","d2","d3"]') }}
     steps:
       - uses: actions/checkout@v4
 

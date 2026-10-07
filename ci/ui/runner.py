@@ -60,7 +60,12 @@ def run(shard):
         keys = [k.strip() for k in os.environ.get("ONLY", "").split(",") if k.strip()]
         todo = [r for r in REG if _selected(r, keys)]
     else:
-        todo = [r for r in REG if r["shard"] == shard]
+        if shard in ("d1", "d2", "d3"):
+            # d 組用例最多（外幣、投資、報銷），輪流分給三台模擬器跑，不然單獨一組要跑一個多小時
+            dl = [r for r in REG if r["shard"] == "d"]
+            todo = [r for i, r in enumerate(dl) if i % 3 == int(shard[1]) - 1]
+        else:
+            todo = [r for r in REG if r["shard"] == shard]
     print(f"分流 {shard}：{len(todo)} 個用例", flush=True)
     for r in todo:
         try:
