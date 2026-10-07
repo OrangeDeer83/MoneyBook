@@ -34,6 +34,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,7 @@ import tw.moneybook.app.avgCost
 import tw.moneybook.app.rateText
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
+import tw.moneybook.app.cardBillSpending
 import tw.moneybook.app.cardCycle
 import tw.moneybook.app.cardSpending
 import tw.moneybook.app.formatMoney
@@ -148,7 +150,9 @@ fun AccountDetailScreen(
     var adjusting by remember { mutableStateOf(false) }
     var rateDialog by remember { mutableStateOf(false) }
     var fetchAsk by remember { mutableStateOf(false) }
-    var month by remember { mutableStateOf(vm.month) }
+    // 點進某一筆再返回，要留在原本看的月份（切換月份時記在 vm）
+    var month by remember(accountId) { mutableStateOf(vm.accMonths[accountId] ?: vm.month) }
+    LaunchedEffect(month) { vm.accMonths[accountId] = month }
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     // 這個帳戶相關的記錄（所有帳本）
     val all = d.txns.filter { it.accountId == a.id || it.toAccountId == a.id || it.items.any { i -> i.pays.any { pay -> pay.accountId == a.id } } }
@@ -480,10 +484,10 @@ private fun CardBillCard(vm: MoneyViewModel, a: Account, onPayCard: (Long, Long?
         if (cyc == null) {
             Text("在「編輯」裡設定結帳日和繳款日，就能看到每期帳單和繳款倒數。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
         } else {
-            val prevStart = cyc.lastStatement.minusMonths(1).plusDays(1)
-            val lastBill = d.cardSpending(a.id, prevStart, cyc.lastStatement).coerceAtLeast(0L)
+            // 每一筆算進哪一期帳單看「入帳月份」：沒手動指定就依消費日期，指定了就照指定的
+            val lastBill = d.cardBillSpending(a, java.time.YearMonth.from(cyc.lastStatement)).coerceAtLeast(0L)
             val paid = d.transfersIn(a.id, cyc.lastStatement.plusDays(1), today)
-            val current = d.cardSpending(a.id, cyc.lastStatement.plusDays(1), today) + paid
+            val current = d.cardBillSpending(a, java.time.YearMonth.from(cyc.nextStatement)) + paid
             remain = (lastBill - paid).coerceAtLeast(0L)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {

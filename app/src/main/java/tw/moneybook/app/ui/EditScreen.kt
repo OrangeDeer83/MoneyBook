@@ -280,6 +280,14 @@ fun EditScreen(
         // 上限跟著目前的金額走：先填報銷、後填金額時，金額還是 0，不能先把報銷金額截成 0
         else -> ReimbCodec.decode(reimbJson).map { if (amount + fee > 0L && it.pays.isEmpty() && !it.closed) it.copy(amount = it.amount.coerceAtMost(amount + fee)) else it }
     }
+    // 信用卡的入帳月份：選的是設了結帳日的信用卡、而且是支出／收入才有
+    val cardAcc = accId?.let { d.accMap[it] }?.takeIf { it.type == tw.moneybook.app.AccountType.CARD && it.statementDay in 1..31 && type != TxType.TRANSFER && !tplMode }
+    var billMonth by rememberSaveable { mutableIntStateOf(orig?.billMonth ?: 0) }
+    val billAuto: java.time.YearMonth? = cardAcc?.let { tw.moneybook.app.autoBillMonth(it.statementDay, LocalDate.ofEpochDay(day)) }
+    val billManual = tw.moneybook.app.billMonthFromCode(billMonth)
+    val billEff: java.time.YearMonth? = billAuto?.let { billManual ?: it }
+    // 和自動算的一樣就當作沒指定（存 0）
+    val billSet = if (billAuto != null && billManual != null && billManual != billAuto) billMonth else 0
     val cat = catId?.let { d.catMap[it] }
     val parent = cat?.let { d.topOf(it) }
     val targetOk = when (type) {
@@ -317,6 +325,7 @@ fun EditScreen(
         discount = effDiscount,
         reimbItems = reimbItems,
         fxAmount = fxMinor,
+        billMonth = billSet,
     )
 
     val initialDraft = remember { draft() }
@@ -572,6 +581,12 @@ fun EditScreen(
                 type == TxType.EXPENSE -> "手續費／優惠"
                 else -> "手續費"
             }
+            if (billEff != null) {
+                CuteChip(
+                    "入帳 " + (if (billEff.year != LocalDate.now().year) "${billEff.year}/" else "") + "${billEff.monthValue}月",
+                    billSet != 0, { dialog = "bill" }, icon = "vec:calendar",
+                )
+            }
             if (!fromFx) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "vec:coin")
             if (type == TxType.EXPENSE && !tplMode) {
                 val totalReimb = reimbItems.sumOf { it.effective }
@@ -815,6 +830,38 @@ fun EditScreen(
                         dialog = ""
                     }) { Text("完成") }
                 },
+                dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "bill" -> if (billAuto != null) {
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("入帳月份") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "消費日期和卡片實際入帳的日期不一樣時（例如結帳日前一天刷、隔天才入帳），指定這筆算進哪一期帳單。" +
+                                "每月 ${cardAcc?.statementDay} 號結帳，帳單用結帳那天的月份稱呼。",
+                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                        )
+                        (-1..3).forEach { k ->
+                            val m = billAuto.plusMonths(k.toLong())
+                            val on = (billEff ?: billAuto) == m
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                    .background(if (on) MaterialTheme.colorScheme.primaryContainer else cute.soft)
+                                    .clickable { billMonth = if (k == 0) 0 else tw.moneybook.app.billCode(m); dialog = "" }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("${m.year} 年 ${m.monthValue} 月帳單", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                if (k == 0) Text("依日期自動", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                if (on && k != 0) Text("已指定", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
             )
         }

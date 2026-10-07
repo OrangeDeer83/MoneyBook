@@ -112,6 +112,12 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
         if (acc != null && d.accounts.size > 1) details.add(acc.name)
     }
     if (t.instTotal > 1) details.add("分期 ${t.instIndex}/${t.instTotal}")
+    // 信用卡手動指定了入帳月份（和消費日期自動算的不同）才標出來
+    if (acc != null && acc.type == AccountType.CARD) {
+        val manual = tw.moneybook.app.billMonthFromCode(t.billMonth)
+        val auto = if (acc.statementDay in 1..31) tw.moneybook.app.autoBillMonth(acc.statementDay, t.date) else null
+        if (manual != null && manual != auto) details.add("入帳 ${manual.monthValue} 月")
+    }
     if (t.discount > 0) details.add("優惠 ${formatMoney(t.discount)}")
     if (t.fee > 0) details.add("手續費 ${formatMoney(t.fee)}")
     // 外幣：在外幣帳戶的明細裡主金額是外幣、備註放台幣；其他地方主金額是台幣、備註放外幣

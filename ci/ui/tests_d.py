@@ -2010,3 +2010,74 @@ def t_account_add_fx():
     ns = d.shot("外幣帳戶按記一筆")
     d.check("帳戶是「美元帳戶」，金額顯示 US$", d.has(ns, "美元帳戶") and d.has(ns, "US$0"), [n.text for n in ns if n.text][:20])
 
+
+def month_label(ns):
+    import re
+    for n in ns:
+        if re.fullmatch(r"\d{4} 年 \d{1,2} 月", n.text or ""):
+            return n.text
+    return None
+
+
+@case(D, "帳戶明細看上個月的帳，點進去再返回要留在那個月")
+def t_account_month_stays():
+    import datetime
+    first = datetime.date.today().replace(day=1)
+    prev = (first - datetime.timedelta(days=1)).replace(day=15)
+    off = (prev - datetime.date.today()).days
+    sd = empty_seed()
+    sd.expense(off, 123, S.C_FOOD, acc=S.BANK, note="oldbank")
+    d.fresh(sd.json())
+    open_account("測試銀行")
+    now_label = month_label(d.nodes())
+    d.tap(next(n for n in d.nodes() if n.desc == "上個月"))
+    d.time.sleep(1)
+    ns = d.shot("切到上個月")
+    prev_label = month_label(ns)
+    d.check("切到上個月，月份標題變了", prev_label is not None and prev_label != now_label, (now_label, prev_label))
+    row = next((n for n in ns if "oldbank" in n.text), None)
+    d.check("上個月有那一筆（備註 oldbank）", row is not None, [n.text for n in ns if n.text][:20])
+    d.tap(row)
+    d.wait(lambda n: n.desc == "刪除", 15, "編輯畫面")
+    d.tap(next(n for n in d.nodes() if n.desc == "關閉"))
+    d.wait_text("更新餘額", timeout=15)
+    d.time.sleep(1)
+    ns = d.shot("點進去再返回")
+    d.check("返回後仍是上個月，不是跳回本月", month_label(ns) == prev_label, (month_label(ns), prev_label))
+    d.tap_back()
+    d.wait_text("總資產", timeout=15)
+    open_account("測試銀行")
+    d.check("從帳戶清單重新點進來，回到本月", month_label(d.nodes()) == now_label, (month_label(d.nodes()), now_label))
+
+
+@case(D, "信用卡入帳月份：指定這筆算進哪一期帳單", visual=True)
+def t_card_bill_month():
+    import datetime
+    t = datetime.date.today()
+    auto = (t.year * 12 + t.month - 1) + (0 if t.day <= 25 else 1)       # 結帳日 25 號
+    nxt = auto + 1
+    ny, nm = nxt // 12, nxt % 12 + 1
+    d.fresh(empty_seed().json())
+    f.open_add()
+    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.wait_text("選擇帳戶", timeout=10)
+    d.tap_text("測試信用卡", exact=True)
+    d.time.sleep(0.8)
+    f.keypad("100")
+    ns = d.shot("選了信用卡")
+    chip = next((n for n in ns if n.text.startswith("入帳 ")), None)
+    d.check("選了有結帳日的信用卡，多了「入帳 N月」按鈕", chip is not None, [n.text for n in ns if n.text][:20])
+    d.tap(chip)
+    d.wait_text("入帳月份", timeout=10)
+    ns = d.shot("入帳月份選單")
+    d.check("選單有五期帳單，第一個自動的標示「依日期自動」", d.has(ns, "依日期自動") and sum(1 for n in ns if n.text.endswith("月帳單")) == 5, [n.text for n in ns if "帳單" in n.text])
+    d.tap_text(f"{ny} 年 {nm} 月帳單", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("指定下一期")
+    chip = next((n for n in ns if n.text.startswith("入帳 ")), None)
+    d.check(f"按鈕變成指定的 {nm} 月", chip is not None and f"{nm}月" in chip.text, chip and chip.text)
+    f.save_edit()
+    open_account("測試信用卡")
+    ns = d.shot("信用卡明細")
+    d.check(f"明細列標出「入帳 {nm} 月」", any(f"入帳 {nm} 月" in n.text for n in ns), [n.text for n in ns if "入帳" in n.text])
+

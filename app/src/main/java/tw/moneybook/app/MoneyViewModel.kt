@@ -45,6 +45,8 @@ data class TxnDraft(
     val time: Int = -1,
     /** 外幣金額（最小單位）：動到外幣帳戶時外幣帳戶實際增減的金額，0 = 沒有外幣 */
     val fxAmount: Long = 0L,
+    /** 信用卡的入帳月份（202611）；0 = 依日期自動 */
+    val billMonth: Int = 0,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -76,6 +78,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     var data by mutableStateOf(store.load().also { Money.sync(it) })
         private set
     var month by mutableStateOf(YearMonth.now())
+
+    /** 帳戶明細各自看到哪個月：點進某一筆再返回，要留在原本看的月份（從帳戶清單重新點進來才回到本月） */
+    val accMonths = HashMap<Long, YearMonth>()
 
     /** 統計頁：0 月, 1 年, 2 區間, 3 趨勢 */
     var statMode by mutableIntStateOf(0)
@@ -165,6 +170,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 adjust = old.adjust && dr.type != TxType.TRANSFER,
                 time = dr.time,
                 fxAmount = dr.fxAmount,
+                billMonth = dr.billMonth,
             ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             return
@@ -181,6 +187,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     day = dr.day, note = dr.note, tags = dr.tags, time = dr.time,
                     fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
                     fxAmount = dr.fxAmount,
+                    billMonth = dr.billMonth,
                 ).let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
@@ -202,6 +209,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                         day = start.plusMonths(i.toLong()).toEpochDay(),
                         note = dr.note, tags = dr.tags, time = dr.time,
                         instGroup = group, instIndex = i + 1, instTotal = n,
+                        // 分期：每一期的入帳月份依序往後一個月
+                        billMonth = billMonthFromCode(dr.billMonth)?.let { m -> billCode(m.plusMonths(i.toLong())) } ?: 0,
                         fee = if (i == 0) dr.fee else 0L,
                         discount = if (i == 0) dr.discount else 0L,
                     ).let {

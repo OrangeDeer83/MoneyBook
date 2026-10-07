@@ -227,7 +227,7 @@ private fun MainTabs(
                     onManageBooks = { open("books") },
                     onReimb = { open("reimb") },
                 )
-                1 -> AccountsScreen(vm, onOpen = { open("account:$it") })
+                1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") })
                 2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") })
                 else -> MeScreen(vm, open)
             }
