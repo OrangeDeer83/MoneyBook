@@ -69,6 +69,7 @@ import tw.moneybook.app.incomeSum
 import tw.moneybook.app.pendingReimb
 import java.time.LocalDate
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -81,7 +82,7 @@ import kotlin.math.roundToInt
 // ───────────────────────── 共用：一筆記錄 ─────────────────────────
 
 @Composable
-fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, onClick: () -> Unit) {
+fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, highlight: Boolean = false, onClick: () -> Unit) {
     val cute = LocalCute.current
     val cat = t.categoryId?.let { d.catMap[it] }
     val acc = t.accountId?.let { d.accMap[it] }
@@ -136,6 +137,17 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(cute.card)
+            // 剛記好（或剛改好）的那一筆：淡淡的底色，左邊一條色條
+            .then(
+                if (highlight) Modifier.background(cute.accent2.copy(alpha = 0.22f)).drawBehind {
+                    drawRoundRect(
+                        color = cute.accent2,
+                        topLeft = Offset(0f, 10.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height - 20.dp.toPx()),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                    )
+                } else Modifier
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -276,7 +288,7 @@ fun HomeScreen(
     // 前面固定的項目：書本列、吉祥物（可以關）、預算、本月摘要
     val homeBase = 3 + if (mascot != "none") 1 else 0
     val homeGroups = list.groupBy { it.day }
-    CenterOnSaved(vm, vm.homeListState, homeBase + 1, switchTo = { t ->
+    val homeHl = CenterOnSaved(vm, vm.homeListState, homeBase + 1, month, switchTo = { t ->
         // 記在別的月份（例如現在看 10 月，記了 8/20）：切到那個月
         val m = java.time.YearMonth.from(t.date)
         (m != vm.month).also { if (it) vm.month = m }
@@ -439,7 +451,7 @@ fun HomeScreen(
         groups.forEach { (day, dayList) ->
             item(key = "d$day") { DayHeader(day, dayList) }
             items(dayList, key = { it.id }) { t ->
-                SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t) { onEdit(t.id) } }
+                SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, highlight = t.id == homeHl) { onEdit(t.id) } }
             }
         }
     }
@@ -509,7 +521,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
     val weeks = (cells + 6) / 7
     val selList = byDay[selected] ?: emptyList()
     // 前面固定 4 項（標題、本月收支、日曆、選到的日期）＋ 1 項（沒記錄的提示或小技巧），選到的那天的明細接在後面
-    CenterOnSaved(vm, vm.calListState, 5, switchTo = { t ->
+    val calHl = CenterOnSaved(vm, vm.calListState, 5, month to selected, switchTo = { t ->
         // 記在別的月份或別天：切到那一天（月份跟著切）
         val m = java.time.YearMonth.from(t.date)
         val changed = m != vm.month || t.day != vm.calSelected
@@ -660,7 +672,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
                     },
                     onCancel = { dragging = null },
                 ),
-            ) { TxnRow(d, t) { onEdit(t.id) } }
+            ) { TxnRow(d, t, highlight = t.id == calHl) { onEdit(t.id) } }
         }
     }
         // 拖曳中跟著手指的小卡

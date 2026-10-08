@@ -521,16 +521,20 @@ fun CuteDatePickerDialog(
  * 如果它就是列表裡最上面的第一筆，上面沒有其他明細，就直接回到最上面，不把上方的摘要卡捲掉。
  * indexOf 回傳那一筆在這個列表裡的項目編號，不在這個列表（例如在別的月份）回傳 -1；firstTxnIndex 是第一筆明細的項目編號。
  * 不在目前這個列表時，先呼叫 switchTo 切到那一筆所在的月份（切了回傳 true），等畫面換好再捲過去。
+ * 回傳要高亮的那一筆的 id：一直亮著，直到離開這一頁，或 resetKey（月份、選到的日期）變了。
  */
 @Composable
 fun CenterOnSaved(
     vm: MoneyViewModel,
     state: androidx.compose.foundation.lazy.LazyListState,
     firstTxnIndex: Int,
+    resetKey: Any?,
     switchTo: (Txn) -> Boolean = { false },
     indexOf: (Long) -> Int,
-) {
+): Long? {
     val id = vm.savedTxnId
+    var shown by remember { mutableStateOf<Pair<Long, Any?>?>(null) }
+    val keyNow = androidx.compose.runtime.rememberUpdatedState(resetKey)
     // 換月份之後要用新的列表算編號，所以讀最新一次組合的函式
     val latest = androidx.compose.runtime.rememberUpdatedState(indexOf)
     androidx.compose.runtime.LaunchedEffect(id) {
@@ -545,6 +549,7 @@ fun CenterOnSaved(
                 }
             }
             if (idx < 0) return@LaunchedEffect
+            shown = id to keyNow.value
             if (idx <= firstTxnIndex) {
                 state.scrollToItem(0)
                 return@LaunchedEffect
@@ -561,6 +566,7 @@ fun CenterOnSaved(
             vm.savedTxnId = null
         }
     }
+    return shown?.takeIf { it.second == resetKey }?.first
 }
 
 /** 依「日期標題＋當天每一筆」排列的列表裡，某一筆的項目編號（base = 前面固定項目的數量）；不在裡面回傳 -1 */
