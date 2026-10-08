@@ -2178,13 +2178,14 @@ def t_jump_to_saved_month():
 def t_reimb_in_ledger():
     s = empty_seed()
     s.expense(0, 600, S.C_FOOD, note="lunch", reimb=1, reimb_amount=600,
-              items=[S.reimb_item("Lin", 600, False, [S.pay(f.today(), S.CASH, 200, time=900)])])
+              items=[S.reimb_item("Lin", 600, False, [S.pay(f.today(), S.BANK, 200, time=900)])])
     d.fresh(s.json())
     d.wait_text("lunch", timeout=20)
     ns = d.shot("首頁明細")
     d.check("首頁有「報銷收款・Lin」與 +$200", d.has(ns, "報銷收款・Lin", True) and d.has(ns, "+$200", True), [n.text for n in ns if n.text][:30])
     d.check("第二行是原本那筆的分類路徑和備註", d.has(ns, "餐飲・lunch", True), [n.text for n in ns if "lunch" in n.text])
-    d.check("本月支出只算自己負擔的 $400（收款不算收入、不重複扣）", d.has(ns, "$400", True) and not d.has(ns, "+$200 ", True), [n.text for n in ns if "$" in n.text][:10])
+    # 600 全額待報銷，本月支出是 $0；收款 200 不算收入，收入維持 $0
+    d.check("收款不算收入：本月收入仍是 $0，待報銷還剩 $400", value_below(ns, "收入") == "$0" and any(n.text.startswith("待報銷 1 筆・$400") for n in ns), [n.text for n in ns if "$" in n.text][:10])
     d.tap_text("報銷收款・Lin", exact=True)
     d.time.sleep(1)
     ns = d.shot("點收款列之後")
@@ -2195,6 +2196,6 @@ def t_reimb_in_ledger():
     d.check("日曆選到今天，也列出「報銷收款・Lin」", d.has(ns, "報銷收款・Lin", True), [n.text for n in ns if n.text][:30])
     d.tap(next(n for n in d.nodes() if n.desc == "切換成明細列表"))
     d.time.sleep(1)
-    open_account("現金")
-    ns = d.shot("現金帳戶明細")
-    d.check("帳戶明細有「報銷收款・Lin」+$200，沒有另外一塊獨立的列", d.has(ns, "報銷收款・Lin", True) and d.has(ns, "+$200", True), [n.text for n in ns if n.text][:30])
+    open_account("測試銀行")
+    ns = d.shot("測試銀行帳戶明細")
+    d.check("帳戶明細有「報銷收款・Lin」+$200", d.has(ns, "報銷收款・Lin", True) and d.has(ns, "+$200", True), [n.text for n in ns if n.text][:30])
