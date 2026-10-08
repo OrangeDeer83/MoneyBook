@@ -153,19 +153,21 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
                     val hl = MaterialTheme.colorScheme.primary
                     Modifier
                         .background(hl.copy(alpha = hlAlpha))
-                        .border(3.dp, hl, RoundedCornerShape(20.dp))
+                        // 外框細一點、淡一點；色條離外框一段距離，兩者才分得出來
+                        .border(2.dp, hl.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
                         .drawBehind {
                             drawRoundRect(
                                 color = hl,
-                                topLeft = Offset(4.dp.toPx(), 10.dp.toPx()),
-                                size = androidx.compose.ui.geometry.Size(8.dp.toPx(), size.height - 20.dp.toPx()),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
+                                topLeft = Offset(11.dp.toPx(), 12.dp.toPx()),
+                                size = androidx.compose.ui.geometry.Size(5.dp.toPx(), size.height - 24.dp.toPx()),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5.dp.toPx()),
                             )
                         }
                 } else Modifier
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            // 高亮時左邊要放色條，內容往右讓一點
+            .padding(start = if (highlight) 22.dp else 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CatBubble(emoji, color, 40.dp)
