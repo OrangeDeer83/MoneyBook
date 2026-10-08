@@ -132,25 +132,34 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     if (t.note.isNotBlank()) notes.add(t.note.lineSequence().first())
     d.fxNote(t, inForeign)?.let { notes.add(it) }
 
+    // 高亮：剛出現時深一點（淺色 50%、深色 45%），約 1 秒後定格（淺色 30%、深色 24%）
+    val hlAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(highlight) {
+        if (highlight) {
+            hlAnim.snapTo(if (cute.dark) 0.45f else 0.50f)
+            hlAnim.animateTo(if (cute.dark) 0.24f else 0.30f, tween(1000))
+        } else hlAnim.snapTo(0f)
+    }
+    val hlAlpha = hlAnim.value
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(cute.card)
-            // 剛記好（或剛改好）的那一筆：主色的淡底色、細外框，左邊一條粗色條
-            // （用主色不用輔助色：輔助色和卡片、背景太接近，會融進去）
+            // 剛記好（或剛改好）的那一筆：主色的底色、外框，左邊一條粗色條；剛出現時比較深，約 1 秒後淡成定格的樣子
+            // （用主色不用輔助色：輔助色和卡片、背景太接近，會融進去；深色模式的主色是淺色，疊上去整張會變亮）
             .then(
                 if (highlight) {
                     val hl = MaterialTheme.colorScheme.primary
                     Modifier
-                        .background(hl.copy(alpha = 0.16f))
-                        .border(2.dp, hl.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
+                        .background(hl.copy(alpha = hlAlpha))
+                        .border(3.dp, hl, RoundedCornerShape(20.dp))
                         .drawBehind {
                             drawRoundRect(
                                 color = hl,
-                                topLeft = Offset(3.dp.toPx(), 10.dp.toPx()),
-                                size = androidx.compose.ui.geometry.Size(5.dp.toPx(), size.height - 20.dp.toPx()),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5.dp.toPx()),
+                                topLeft = Offset(4.dp.toPx(), 10.dp.toPx()),
+                                size = androidx.compose.ui.geometry.Size(8.dp.toPx(), size.height - 20.dp.toPx()),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
                             )
                         }
                 } else Modifier
