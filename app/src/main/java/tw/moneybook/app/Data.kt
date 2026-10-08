@@ -388,33 +388,43 @@ fun billMonthFromCode(code: Int): YearMonth? =
 fun billCode(m: YearMonth): Int = m.year * 100 + m.monthValue
 
 /**
- * 沒手動指定入帳月份時，這天的消費算在哪個月：就是消費日期所在的月份（和帳戶明細的月份列表一致）。
- * 刷卡日和實際入帳日跨月的（例如月底刷、隔月初才入帳），由使用者手動指定。
+ * 依結帳日自動算：這天的消費算在哪個月的帳單。帳單用「結帳日所在的月份」稱呼（銀行寄來的「x 月帳單」），
+ * 結帳日當天算這一期。例如每月 25 號結帳，10/25 以前的消費是 10 月帳單（9/26～10/25），10/26 起是 11 月帳單；
+ * 每月 9 號結帳，9/9 結帳的 8/10～9/9 是 9 月帳單。
  */
-fun autoBillMonth(date: LocalDate): YearMonth = YearMonth.from(date)
+fun autoBillMonth(statementDay: Int, date: LocalDate): YearMonth {
+    val ym = YearMonth.from(date)
+    return if (date.dayOfMonth <= statementDay.coerceIn(1, ym.lengthOfMonth())) ym else ym.plusMonths(1)
+}
 
-/**
- * 一期帳單（結帳日 closing 結帳的那一期）用哪個月份稱呼：這一期大部分日子落在哪個月就是哪個月。
- * 例如每月 9 號結帳，9/9 結帳的那一期是 8/10～9/9，大部分在 8 月，就是「8 月帳單」；
- * 每月 25 號結帳，9/25 結帳的那一期是 8/26～9/25，大部分在 9 月，就是「9 月帳單」。
- */
-fun cardBillMonthOf(closing: LocalDate): YearMonth {
-    val length = java.time.temporal.ChronoUnit.DAYS.between(closing.minusMonths(1), closing).toInt()
-    val ym = YearMonth.from(closing)
-    return if (closing.dayOfMonth * 2 > length) ym else ym.minusMonths(1)
+/** 某個月份的帳單涵蓋的期間：上個月結帳日的隔天 ～ 這個月結帳日（結帳日大於當月天數時用月底） */
+fun billRange(statementDay: Int, month: YearMonth): Pair<LocalDate, LocalDate> {
+    val prev = month.minusMonths(1)
+    val end = month.atDay(statementDay.coerceIn(1, month.lengthOfMonth()))
+    val start = prev.atDay(statementDay.coerceIn(1, prev.lengthOfMonth())).plusDays(1)
+    return start to end
 }
 
 /**
- * 這筆在帳戶 a 的明細裡算在哪個月：信用卡手動指定了入帳月份的，算在那個月（例如 10/24 刷的、指定入帳 11 月，
- * 就在 11 月的明細裡出現，10 月不顯示）；其他一律是消費日期所在的月份。首頁的明細與統計仍然看消費日期。
+ * 這筆在帳戶 a 的明細裡算在哪個月。有設結帳日的信用卡，明細是「一期一期」看的：消費算在它所屬的那一期帳單
+ * （見 billMonthFor），繳卡費、轉帳等放在發生那天所在的那一期。其他帳戶一律是日期所在的月份；
+ * 沒設結帳日的信用卡，手動指定了入帳月份的算在那個月（舊資料）。首頁的明細與統計仍然看消費日期。
  */
-fun Txn.accountMonthFor(a: Account): YearMonth =
-    if (a.type == AccountType.CARD && accountId == a.id) billMonthFromCode(billMonth) ?: month else month
+fun Txn.accountMonthFor(a: Account): YearMonth {
+    if (a.type != AccountType.CARD) return month
+    if (a.statementDay in 1..31) {
+        return if (accountId == a.id && type != TxType.TRANSFER) billMonthFor(a) ?: month else autoBillMonth(a.statementDay, date)
+    }
+    return if (accountId == a.id) billMonthFromCode(billMonth) ?: month else month
+}
 
 /** 這筆在信用卡 a 算進哪一期帳單：有手動設定的用手動的，沒有就依日期自動；卡沒設結帳日回傳 null */
 fun Txn.billMonthFor(a: Account): YearMonth? {
     if (a.statementDay !in 1..31) return null
-    return billMonthFromCode(billMonth) ?: autoBillMonth(date)
+    val auto = autoBillMonth(a.statementDay, date)
+    val manual = billMonthFromCode(billMonth)
+    // 只能往後挪：消費不可能算進結帳日比它還早的帳單，這種（舊的）手動設定忽略
+    return if (manual != null && manual >= auto) manual else auto
 }
 
 /** 某信用卡某一期帳單的刷卡金額（含手動指定入帳月份的）：消費、轉出算正的，退款（收入）算負的 */

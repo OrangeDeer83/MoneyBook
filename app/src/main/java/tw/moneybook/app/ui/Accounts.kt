@@ -72,7 +72,8 @@ import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
 import tw.moneybook.app.accountMonthFor
 import tw.moneybook.app.cardBillSpending
-import tw.moneybook.app.cardBillMonthOf
+import tw.moneybook.app.autoBillMonth
+import tw.moneybook.app.billRange
 import tw.moneybook.app.cardBillSpendingAfter
 import tw.moneybook.app.cardCycle
 import tw.moneybook.app.cardSpending
@@ -151,7 +152,11 @@ fun AccountDetailScreen(
     var rateDialog by remember { mutableStateOf(false) }
     var fetchAsk by remember { mutableStateOf(false) }
     // 點進某一筆再返回，要留在原本看的月份（切換月份時記在 vm）
-    var month by remember(accountId) { mutableStateOf(vm.accMonths[accountId] ?: vm.month) }
+    // （有設結帳日的信用卡是「一期一期」看帳單：預設是現在這一期）
+    val stmtDay = if (a.type == AccountType.CARD && a.statementDay in 1..31) a.statementDay else 0
+    var month by remember(accountId) {
+        mutableStateOf(vm.accMonths[accountId] ?: if (stmtDay > 0) autoBillMonth(stmtDay, LocalDate.now()) else vm.month)
+    }
     LaunchedEffect(month) { vm.accMonths[accountId] = month }
     val balance = remember(d) { d.balances()[a.id] ?: 0L }
     // 這個帳戶相關的記錄（所有帳本）
@@ -162,7 +167,10 @@ fun AccountDetailScreen(
     // （idx：這一筆記錄所有報銷收款的編號，要和 runningBalances 的 key 對得上）
     val reimbIn = reimbRecvsOf(d.txns)
         .filter { it.pay.accountId == a.id }
-        .filter { val rd = LocalDate.ofEpochDay(it.pay.day); rd.year == month.year && rd.monthValue == month.monthValue }
+        .filter {
+            val rd = LocalDate.ofEpochDay(it.pay.day)
+            (if (stmtDay > 0) autoBillMonth(stmtDay, rd) else java.time.YearMonth.from(rd)) == month
+        }
     // 每一筆做完之後的餘額
     val running = remember(d, a.id) { d.runningBalances(a.id) }
 
@@ -272,7 +280,17 @@ fun AccountDetailScreen(
             }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    MonthSwitcher(month, { month = it })
+                    if (stmtDay > 0) {
+                        val (rs, re) = billRange(stmtDay, month)
+                        MonthSwitcher(
+                            month, { month = it },
+                            label = "${month.year} 年 ${month.monthValue} 月帳單",
+                            sub = "${rs.monthValue}/${rs.dayOfMonth}～${re.monthValue}/${re.dayOfMonth}",
+                            home = autoBillMonth(stmtDay, LocalDate.now()),
+                        )
+                    } else {
+                        MonthSwitcher(month, { month = it })
+                    }
                     Spacer(Modifier.weight(1f))
                     Column(horizontalAlignment = Alignment.End) {
                         Text("流入 ${formatMoney(inflow)}", color = cute.income, style = MaterialTheme.typography.labelLarge)
@@ -475,9 +493,9 @@ private fun CardBillCard(vm: MoneyViewModel, a: Account, onPayCard: (Long, Long?
         if (cyc == null) {
             Text("在「編輯」裡設定結帳日和繳款日，就能看到每期帳單和繳款倒數。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
         } else {
-            // 每一筆算在哪個月看「入帳月份」：沒手動指定就是消費日期的月份，指定了就照指定的。
-            // 上期帳單用那一期大部分日子所在的月份稱呼（9 號結帳的 8/10～9/9 是 8 月帳單），本期累積是那個月份之後所有月份的合計
-            val lastMonth = cardBillMonthOf(cyc.lastStatement)
+            // 每一筆算在哪一期帳單看「入帳月份」：沒手動指定就依結帳日，指定了就照指定的（只能往後挪）。
+            // 帳單用結帳日所在的月份稱呼（9/9 結帳的是 9 月帳單），本期累積是上期之後所有期的合計
+            val lastMonth = java.time.YearMonth.from(cyc.lastStatement)
             val lastBill = d.cardBillSpending(a, lastMonth).coerceAtLeast(0L)
             val paid = d.transfersIn(a.id, cyc.lastStatement.plusDays(1), today)
             val current = d.cardBillSpendingAfter(a, lastMonth)

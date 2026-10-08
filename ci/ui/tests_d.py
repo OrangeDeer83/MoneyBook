@@ -2054,7 +2054,7 @@ def t_account_month_stays():
 def t_card_bill_month():
     import datetime
     t = datetime.date.today()
-    auto = t.year * 12 + t.month - 1       # 預設就是消費日期（今天）的月份
+    auto = (t.year * 12 + t.month - 1) + (0 if t.day <= 25 else 1)       # 結帳日 25 號：25 號以前算這個月的帳單，之後算下個月
     nxt = auto + 1
     ny, nm = nxt // 12, nxt % 12 + 1
     d.fresh(empty_seed().json())
@@ -2070,8 +2070,8 @@ def t_card_bill_month():
     d.tap(chip)
     d.wait_text("入帳月份", timeout=10)
     ns = d.shot("入帳月份選單")
-    d.check("選單有五期帳單，第一個自動的標示「依日期自動」", d.has(ns, "依日期自動") and sum(1 for n in ns if n.text.endswith("月帳單")) == 5, [n.text for n in ns if "帳單" in n.text])
-    d.tap_text(f"{ny} 年 {nm} 月帳單", exact=True)
+    d.check("選單有五期帳單，第一個自動的標示「依日期自動」", d.has(ns, "依日期自動") and sum(1 for n in ns if n.text.endswith("月帳單")) == 4, [n.text for n in ns if "帳單" in n.text])
+    d.tap_text(f"{ny} 年 {nm} 月帳單", exact=False)
     d.time.sleep(0.8)
     ns = d.shot("指定下一期")
     chip = next((n for n in ns if n.text.startswith("入帳 ")), None)
@@ -2081,7 +2081,7 @@ def t_card_bill_month():
     ns = d.shot("信用卡明細（本月）")
     d.check("指定入帳到之後的帳單：這個月的明細不再顯示這一筆", not any(f"入帳 {nm} 月" in n.text for n in ns), [n.text for n in ns if "入帳" in n.text])
     d.check("帳單卡：本期累積 $100（上期帳單月份之後所有月份的合計，和「已用」一致）", value_below(ns, "本期累積") == "$100", [n.text for n in ns if "$" in n.text][:14])
-    steps = (ny * 12 + nm - 1) - (t.year * 12 + t.month - 1)
+    steps = (ny * 12 + nm - 1) - auto                    # 信用卡明細預設停在現在這一期
     for _ in range(steps):
         d.tap(next(n for n in d.nodes() if n.desc == "下個月"))
         d.time.sleep(0.8)
@@ -2409,3 +2409,49 @@ def t_invest_edit_us_trade_paid_in_usd():
     open_account("美元帳戶")
     ns = d.shot("美元帳戶明細")
     d.check("美元帳戶餘額 US$685.50（987.50 − 302.00）", d.has(ns, "US$685.50", True), [n.text for n in ns if "US$" in n.text])
+
+
+@case(D, "信用卡明細一期一期看：x 月帳單用結帳月份稱呼，結帳日當天算這一期", visual=True)
+def t_card_statement_view():
+    import datetime
+    t = datetime.date.today()
+    prev = (t.replace(day=1) - datetime.timedelta(days=1))          # 上個月的最後一天（用它取得上個月的年月）
+    s = empty_seed()
+    # 結帳日 25 號：上個月 25 號算上個月的帳單；26 號起算這個月（結帳月份）的帳單
+    s.expense((datetime.date(prev.year, prev.month, 25) - t).days, 111, S.C_FOOD, acc=S.CARD, note="d25")
+    s.expense((datetime.date(prev.year, prev.month, 26) - t).days, 222, S.C_FOOD, acc=S.CARD, note="d26")
+    d.fresh(s.json())
+    open_account("測試信用卡")
+    import re
+
+    def bill_label(ns):
+        for n in ns:
+            m = re.fullmatch(r"(\d{4}) 年 (\d{1,2}) 月帳單", n.text or "")
+            if m:
+                return int(m.group(1)), int(m.group(2))
+        return None
+
+    def goto(y, m):
+        for _ in range(8):
+            cur = bill_label(d.nodes())
+            if cur == (y, m):
+                return
+            step = (y * 12 + m) - (cur[0] * 12 + cur[1])
+            d.tap(next(n for n in d.nodes() if n.desc == ("下個月" if step > 0 else "上個月")))
+            d.time.sleep(0.8)
+        raise TimeoutError(f"切不到 {y} 年 {m} 月帳單")
+
+    ns = d.shot("信用卡明細（現在這一期）")
+    cur = bill_label(ns)
+    want = (t.year, t.month) if t.day <= 25 else ((t.year + 1, 1) if t.month == 12 else (t.year, t.month + 1))
+    d.check("預設停在現在這一期的 x 月帳單", cur == want, (cur, want))
+    d.check("標題下面有這一期的期間（月/日～月/日）", any("～" in n.text and "/" in n.text for n in ns), [n.text for n in ns if "～" in n.text])
+    # 26 號那筆 → 結帳月份是上個月之後的那個月；25 號那筆 → 上個月
+    b26 = (prev.year + 1, 1) if prev.month == 12 else (prev.year, prev.month + 1)
+    b25 = (prev.year, prev.month)
+    goto(*b26)
+    ns = d.shot(f"{b26[1]} 月帳單")
+    d.check("26 號那筆在後一期的帳單（結帳日後算下一期）", d.has(ns, "d26", True) and not d.has(ns, "d25", True), [n.text for n in ns if n.text.startswith("d2")])
+    goto(*b25)
+    ns = d.shot(f"{b25[1]} 月帳單")
+    d.check("25 號那筆在前一期的帳單（結帳日當天算這一期）", d.has(ns, "d25", True) and not d.has(ns, "d26", True), [n.text for n in ns if n.text.startswith("d2")])

@@ -63,6 +63,7 @@ import tw.moneybook.app.TxType
 import tw.moneybook.app.ReimbPay
 import tw.moneybook.app.Txn
 import tw.moneybook.app.expenseSum
+import tw.moneybook.app.billMonthFor
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.formatShort
 import tw.moneybook.app.inMonth
@@ -178,10 +179,10 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     }
     if (t.instTotal > 1) chips.add("分期 ${t.instIndex}/${t.instTotal}")
     // 信用卡手動指定了入帳月份（和消費日期自動算的不同）才標出來
-    if (acc != null && acc.type == tw.moneybook.app.AccountType.CARD) {
-        val manual = tw.moneybook.app.billMonthFromCode(t.billMonth)
-        val auto = tw.moneybook.app.autoBillMonth(t.date)
-        if (manual != null && manual != auto) chips.add("入帳 ${manual.monthValue} 月")
+    if (acc != null && acc.type == tw.moneybook.app.AccountType.CARD && acc.statementDay in 1..31 && t.type != TxType.TRANSFER) {
+        val eff = t.billMonthFor(acc)
+        val auto = tw.moneybook.app.autoBillMonth(acc.statementDay, t.date)
+        if (eff != null && eff != auto) chips.add("入帳 ${eff.monthValue} 月")
     }
     if (t.fee > 0) fees.add("手續費 ${formatMoney(t.fee)}")
     if (t.discount > 0) fees.add("優惠 -${formatMoney(t.discount)}")

@@ -283,7 +283,7 @@ fun EditScreen(
     // 信用卡的入帳月份：選的是設了結帳日的信用卡、而且是支出／收入才有
     val cardAcc = accId?.let { d.accMap[it] }?.takeIf { it.type == tw.moneybook.app.AccountType.CARD && it.statementDay in 1..31 && type != TxType.TRANSFER && !tplMode }
     var billMonth by rememberSaveable { mutableIntStateOf(orig?.billMonth ?: 0) }
-    val billAuto: java.time.YearMonth? = cardAcc?.let { tw.moneybook.app.autoBillMonth(LocalDate.ofEpochDay(day)) }
+    val billAuto: java.time.YearMonth? = cardAcc?.let { tw.moneybook.app.autoBillMonth(it.statementDay, LocalDate.ofEpochDay(day)) }
     val billManual = tw.moneybook.app.billMonthFromCode(billMonth)
     val billEff: java.time.YearMonth? = billAuto?.let { billManual ?: it }
     // 和自動算的一樣就當作沒指定（存 0）
@@ -840,11 +840,11 @@ fun EditScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "預設是消費日期的月份（和帳戶明細的月份列表一樣）。消費日期和卡片實際入帳的日期跨月時" +
-                                "（例如月底刷、隔月初才入帳），指定這筆要算在哪個月。",
+                            "帳單用結帳日所在的月份稱呼（每月 ${cardAcc?.statementDay} 號結帳，這天以前算這個月的帳單，之後算下個月的）。" +
+                                "刷卡和銀行實際入帳跨期時（例如結帳日前幾天刷、結帳後才入帳），可以往後挪到下一期。",
                             style = MaterialTheme.typography.bodySmall, color = cute.sub,
                         )
-                        (-1..3).forEach { k ->
+                        (0..3).forEach { k ->
                             val m = billAuto.plusMonths(k.toLong())
                             val on = (billEff ?: billAuto) == m
                             Row(
@@ -854,7 +854,13 @@ fun EditScreen(
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text("${m.year} 年 ${m.monthValue} 月帳單", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                Column(Modifier.weight(1f)) {
+                                    Text("${m.year} 年 ${m.monthValue} 月帳單", style = MaterialTheme.typography.bodyLarge)
+                                    cardAcc?.let { ca ->
+                                        val (rs, re) = tw.moneybook.app.billRange(ca.statementDay, m)
+                                        Text("${rs.monthValue}/${rs.dayOfMonth}～${re.monthValue}/${re.dayOfMonth}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                                    }
+                                }
                                 if (k == 0) Text("依日期自動", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                                 if (on && k != 0) Text("已指定", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             }

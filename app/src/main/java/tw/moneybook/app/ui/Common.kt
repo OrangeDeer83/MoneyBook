@@ -152,19 +152,24 @@ fun CuteChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Mod
 }
 
 @Composable
-fun MonthSwitcher(month: YearMonth, onChange: (YearMonth) -> Unit, modifier: Modifier = Modifier) {
+fun MonthSwitcher(
+    month: YearMonth, onChange: (YearMonth) -> Unit, modifier: Modifier = Modifier,
+    /** 信用卡：標題改寫「x 月帳單」，小字寫這一期的期間；點標題回到 home（目前這一期） */
+    label: String? = null, sub: String? = null, home: YearMonth = YearMonth.now(),
+) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { onChange(month.minusMonths(1)) }) {
             Icon(AppIcons.ChevronLeft, contentDescription = "上個月")
         }
-        Text(
-            text = "${month.year} 年 ${month.monthValue} 月",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable { onChange(YearMonth.now()) }
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-        )
+        Column(
+            Modifier.clip(CircleShape).clickable { onChange(home) }.padding(horizontal = 6.dp, vertical = 4.dp),
+        ) {
+            Text(
+                text = label ?: "${month.year} 年 ${month.monthValue} 月",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (sub != null) Text(sub, style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub)
+        }
         IconButton(onClick = { onChange(month.plusMonths(1)) }) {
             Icon(AppIcons.ChevronRight, contentDescription = "下個月")
         }
