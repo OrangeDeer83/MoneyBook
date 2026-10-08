@@ -2087,3 +2087,27 @@ def t_card_bill_month():
         d.time.sleep(0.8)
     ns = d.shot(f"切到 {nm} 月")
     d.check(f"{nm} 月的明細出現這一筆，標「入帳 {nm} 月」", any(f"入帳 {nm} 月" in n.text for n in ns), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "明細列：帳戶用膠囊、手續費在金額上面、外幣備註接在備註後面", visual=True)
+def t_txn_row_layout():
+    s = empty_seed(usd=True)
+    s.expense(0, 1000, S.C_FOOD, acc=S.BANK, fee=50, disc=20, note="row note", tags=["trip"])
+    d.fresh(s.json())
+    d.wait_text("row note", timeout=20)
+    ns = d.shot("首頁明細")
+    amt = d.first(ns, "-NT$1,030")
+    fee = d.first(ns, "手續費 NT$50・優惠 -NT$20")
+    d.check("手續費與優惠在金額 -NT$1,030 的上方", amt is not None and fee is not None and fee.cy < amt.cy and abs(fee.x2 - amt.x2) < 30,
+            [n.text for n in ns if "NT$" in n.text][:10])
+    d.check("備註那行只有備註", d.has(ns, "row note", True))
+    d.check("帳戶是獨立的膠囊「測試銀行」，標籤也是膠囊「#trip」", d.has(ns, "測試銀行", True) and d.has(ns, "#trip", True), [n.text for n in ns if n.text][:30])
+    d.check("外幣消費的備註是「fx lunch・US$12.50」", d.has(ns, "fx lunch・US$12.50", True), [n.text for n in ns if "fx" in n.text])
+    open_account("美元帳戶")
+    ns = d.shot("美元帳戶明細")
+    d.check("美元帳戶明細：備註「fx lunch・約 NT$394」", d.has(ns, "fx lunch・約 NT$394", True), [n.text for n in ns if "fx" in n.text])
+    d.tap_back()
+    open_account("測試銀行")
+    ns = d.shot("測試銀行明細")
+    d.check("帳戶明細裡看得到這筆，但不再標帳戶膠囊", d.has(ns, "row note", True) and not [n for n in ns if n.text == "測試銀行" and n.cy > 600],
+            [(n.text, n.cy) for n in ns if n.text == "測試銀行"])

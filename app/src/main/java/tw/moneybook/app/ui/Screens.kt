@@ -88,18 +88,22 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
     val title: androidx.compose.ui.text.AnnotatedString
     val emoji: String
     val color: Int
-    val details = ArrayList<String>()
+    // 帳戶、分期、入帳月份和標籤一樣用小膠囊；第二行只放備註（外幣備註接在後面）；手續費、優惠放在金額上面
+    val chips = ArrayList<String>()
+    val fees = ArrayList<String>()
+    // 在某個帳戶的明細裡（signedFor 有值）已經知道是哪個帳戶，不用再標帳戶
+    val showAcc = acc != null && d.accounts.size > 1 && signedFor == null
     if (t.adjust) {
         title = androidx.compose.ui.text.AnnotatedString("餘額調整")
         emoji = "img:ui_ledger"
         color = 5
-        if (acc != null && d.accounts.size > 1) details.add(acc.name)
+        if (showAcc) chips.add(acc!!.name)
     } else if (t.type == TxType.TRANSFER) {
         title = androidx.compose.ui.text.AnnotatedString("轉帳")
         emoji = "img:ui_transfer"
         color = 5
         val to = t.toAccountId?.let { d.accMap[it] }
-        details.add("${acc?.name ?: "?"} → ${to?.name ?: "?"}")
+        chips.add("${acc?.name ?: "?"} → ${to?.name ?: "?"}")
     } else {
         // 標題一律從大分類開始：「餐飲」或「餐飲 › 午餐」，不會一筆顯示大分類、一筆顯示子分類
         val parent = cat?.parentId?.let { d.catMap[it] }
@@ -109,22 +113,23 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
         } else androidx.compose.ui.text.AnnotatedString(cat?.name ?: "未分類")
         emoji = cat?.emoji ?: "img:cat_box"
         color = cat?.color ?: 8
-        if (acc != null && d.accounts.size > 1) details.add(acc.name)
+        if (showAcc) chips.add(acc!!.name)
     }
-    if (t.instTotal > 1) details.add("分期 ${t.instIndex}/${t.instTotal}")
+    if (t.instTotal > 1) chips.add("分期 ${t.instIndex}/${t.instTotal}")
     // 信用卡手動指定了入帳月份（和消費日期自動算的不同）才標出來
     if (acc != null && acc.type == tw.moneybook.app.AccountType.CARD) {
         val manual = tw.moneybook.app.billMonthFromCode(t.billMonth)
         val auto = if (acc.statementDay in 1..31) tw.moneybook.app.autoBillMonth(acc.statementDay, t.date) else null
-        if (manual != null && manual != auto) details.add("入帳 ${manual.monthValue} 月")
+        if (manual != null && manual != auto) chips.add("入帳 ${manual.monthValue} 月")
     }
-    if (t.discount > 0) details.add("優惠 ${formatMoney(t.discount)}")
-    if (t.fee > 0) details.add("手續費 ${formatMoney(t.fee)}")
+    if (t.fee > 0) fees.add("手續費 ${formatMoney(t.fee)}")
+    if (t.discount > 0) fees.add("優惠 -${formatMoney(t.discount)}")
     // 外幣：在外幣帳戶的明細裡主金額是外幣、備註放台幣；其他地方主金額是台幣、備註放外幣
     val signedAcc = signedFor?.let { d.accMap[it] }
     val inForeign = signedAcc?.isForeign == true
-    d.fxNote(t, inForeign)?.let { details.add(it) }
-    if (t.note.isNotBlank()) details.add(t.note.lineSequence().first())
+    val notes = ArrayList<String>()
+    if (t.note.isNotBlank()) notes.add(t.note.lineSequence().first())
+    d.fxNote(t, inForeign)?.let { notes.add(it) }
 
     Row(
         modifier = Modifier
@@ -156,25 +161,20 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
                     )
                 }
             }
-            if (details.isNotEmpty()) {
+            if (notes.isNotEmpty()) {
                 Text(
-                    details.joinToString("・"),
+                    notes.joinToString("・"),
                     style = MaterialTheme.typography.bodySmall,
                     color = cute.sub,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (t.tags.isNotEmpty()) {
+            if (chips.isNotEmpty() || t.tags.isNotEmpty()) {
                 Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    t.tags.take(3).forEach { tag ->
-                        Text(
-                            "#$tag",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
-                        )
-                    }
+                    // 第一個膠囊（通常是帳戶，名字可能很長）可以縮短，後面的照原樣
+                    chips.forEachIndexed { i, text -> TxnChip(text, if (i == 0) Modifier.weight(1f, fill = false) else Modifier) }
+                    t.tags.take(3).forEach { tag -> TxnChip("#$tag") }
                 }
             }
         }
@@ -194,6 +194,9 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
         val shownText = if (inForeign && signedAcc != null) formatFx(shown, signedAcc.currency) else formatMoney(shown)
         // 金額下面小字：這一筆做完之後這個帳戶的餘額（只有帳戶明細會帶 balance），和左邊的標題／備註一大一小
         Column(horizontalAlignment = Alignment.End) {
+            if (fees.isNotEmpty()) {
+                Text(fees.joinToString("・"), style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+            }
             Text(sign + shownText, color = c, fontWeight = FontWeight.SemiBold, maxLines = 1)
             if (balance != null) {
                 Text(
@@ -203,6 +206,20 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
             }
         }
     }
+}
+
+/** 明細列的小膠囊（帳戶、分期、入帳月份、標籤共用） */
+@Composable
+private fun TxnChip(text: String, modifier: Modifier = Modifier) {
+    val cute = LocalCute.current
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }
 
 @Composable
