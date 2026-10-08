@@ -51,6 +51,7 @@ import androidx.compose.ui.window.Dialog
 import tw.moneybook.app.Defaults
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.Txn
+import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
