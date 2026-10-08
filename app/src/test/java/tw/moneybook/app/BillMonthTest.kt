@@ -16,11 +16,44 @@ class BillMonthTest {
     private fun data(vararg t: Txn) = Defaults.create().copy(accounts = listOf(card), txns = sortTxns(t.toList()))
 
     @Test
-    fun autoBillMonthFollowsTheStatementDay() {
-        assertEquals(YearMonth.of(2026, 10), autoBillMonth(25, LocalDate.of(2026, 10, 25)))   // 結帳當天算這一期
-        assertEquals(YearMonth.of(2026, 11), autoBillMonth(25, LocalDate.of(2026, 10, 26)))
-        assertEquals(YearMonth.of(2027, 1), autoBillMonth(25, LocalDate.of(2026, 12, 31)))    // 跨年
-        assertEquals(YearMonth.of(2026, 2), autoBillMonth(31, LocalDate.of(2026, 2, 28)))     // 結帳日 31 號的月份只到 28 號
+    fun autoBillMonthIsTheMonthOfTheDate() {
+        assertEquals(YearMonth.of(2026, 10), autoBillMonth(LocalDate.of(2026, 10, 25)))
+        assertEquals(YearMonth.of(2026, 10), autoBillMonth(LocalDate.of(2026, 10, 26)))       // 不看結帳日
+        assertEquals(YearMonth.of(2026, 12), autoBillMonth(LocalDate.of(2026, 12, 31)))
+    }
+
+    @Test
+    fun billMonthIsNamedByTheMonthMostOfThePeriodFallsIn() {
+        // 每月 9 號結帳：9/9 結帳的是 8/10～9/9，大部分在 8 月
+        assertEquals(YearMonth.of(2026, 8), cardBillMonthOf(LocalDate.of(2026, 9, 9)))
+        assertEquals(YearMonth.of(2026, 9), cardBillMonthOf(LocalDate.of(2026, 10, 9)))
+        // 每月 25 號結帳：9/25 結帳的是 8/26～9/25，大部分在 9 月
+        assertEquals(YearMonth.of(2026, 9), cardBillMonthOf(LocalDate.of(2026, 9, 25)))
+        // 跨年、月底結帳
+        assertEquals(YearMonth.of(2025, 12), cardBillMonthOf(LocalDate.of(2026, 1, 5)))
+        assertEquals(YearMonth.of(2026, 3), cardBillMonthOf(LocalDate.of(2026, 3, 31)))
+        assertEquals(YearMonth.of(2026, 2), cardBillMonthOf(LocalDate.of(2026, 2, 28)))
+        // 15 號結帳（一半一半）算前一個月
+        assertEquals(YearMonth.of(2026, 8), cardBillMonthOf(LocalDate.of(2026, 9, 15)))
+    }
+
+    @Test
+    fun lastBillAndCurrentFollowTheListMonths() {
+        // 照使用者的 cube卡：9 號結帳、手動把 8/3 改到 7 月、9/1 改到 8 月；8 月帳單 = 8 月列表
+        val c9 = card.copy(statementDay = 9)
+        val d = Defaults.create().copy(
+            accounts = listOf(c9),
+            txns = sortTxns(
+                listOf(
+                    spend(1, 2026, 8, 3, 2, bill = 202607), spend(2, 2026, 8, 6, 1000), spend(3, 2026, 8, 20, 500),
+                    spend(4, 2026, 9, 1, 168, bill = 202608), spend(5, 2026, 9, 12, 300), spend(6, 2026, 10, 2, 90),
+                )
+            ),
+        )
+        val lastMonth = cardBillMonthOf(LocalDate.of(2026, 9, 9))
+        assertEquals(YearMonth.of(2026, 8), lastMonth)
+        assertEquals(1000L + 500L + 168L, d.cardBillSpending(c9, lastMonth))                  // 8 月帳單：8/6、8/20、手動的 9/1
+        assertEquals(300L + 90L, d.cardBillSpendingAfter(c9, lastMonth))                      // 本期累積：8 月之後所有月份
     }
 
     @Test

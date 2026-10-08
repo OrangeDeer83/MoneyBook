@@ -283,7 +283,7 @@ fun EditScreen(
     // 信用卡的入帳月份：選的是設了結帳日的信用卡、而且是支出／收入才有
     val cardAcc = accId?.let { d.accMap[it] }?.takeIf { it.type == tw.moneybook.app.AccountType.CARD && it.statementDay in 1..31 && type != TxType.TRANSFER && !tplMode }
     var billMonth by rememberSaveable { mutableIntStateOf(orig?.billMonth ?: 0) }
-    val billAuto: java.time.YearMonth? = cardAcc?.let { tw.moneybook.app.autoBillMonth(it.statementDay, LocalDate.ofEpochDay(day)) }
+    val billAuto: java.time.YearMonth? = cardAcc?.let { tw.moneybook.app.autoBillMonth(LocalDate.ofEpochDay(day)) }
     val billManual = tw.moneybook.app.billMonthFromCode(billMonth)
     val billEff: java.time.YearMonth? = billAuto?.let { billManual ?: it }
     // 和自動算的一樣就當作沒指定（存 0）
@@ -840,8 +840,8 @@ fun EditScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "消費日期和卡片實際入帳的日期不一樣時（例如結帳日前一天刷、隔天才入帳），指定這筆算進哪一期帳單。" +
-                                "每月 ${cardAcc?.statementDay} 號結帳，帳單用結帳那天的月份稱呼。",
+                            "預設是消費日期的月份（和帳戶明細的月份列表一樣）。消費日期和卡片實際入帳的日期跨月時" +
+                                "（例如月底刷、隔月初才入帳），指定這筆要算在哪個月。",
                             style = MaterialTheme.typography.bodySmall, color = cute.sub,
                         )
                         (-1..3).forEach { k ->

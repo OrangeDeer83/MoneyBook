@@ -180,7 +180,7 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     // 信用卡手動指定了入帳月份（和消費日期自動算的不同）才標出來
     if (acc != null && acc.type == tw.moneybook.app.AccountType.CARD) {
         val manual = tw.moneybook.app.billMonthFromCode(t.billMonth)
-        val auto = if (acc.statementDay in 1..31) tw.moneybook.app.autoBillMonth(acc.statementDay, t.date) else null
+        val auto = tw.moneybook.app.autoBillMonth(t.date)
         if (manual != null && manual != auto) chips.add("入帳 ${manual.monthValue} 月")
     }
     if (t.fee > 0) fees.add("手續費 ${formatMoney(t.fee)}")

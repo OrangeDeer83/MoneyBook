@@ -388,12 +388,20 @@ fun billMonthFromCode(code: Int): YearMonth? =
 fun billCode(m: YearMonth): Int = m.year * 100 + m.monthValue
 
 /**
- * 依日期自動算：這天的消費算進哪一期帳單。每一期用「結帳日所在的月份」稱呼，
- * 例如每月 25 號結帳，10/25 以前的消費是 10 月帳單，10/26 起是 11 月帳單。
+ * 沒手動指定入帳月份時，這天的消費算在哪個月：就是消費日期所在的月份（和帳戶明細的月份列表一致）。
+ * 刷卡日和實際入帳日跨月的（例如月底刷、隔月初才入帳），由使用者手動指定。
  */
-fun autoBillMonth(statementDay: Int, date: LocalDate): YearMonth {
-    val ym = YearMonth.from(date)
-    return if (date.dayOfMonth <= statementDay.coerceIn(1, ym.lengthOfMonth())) ym else ym.plusMonths(1)
+fun autoBillMonth(date: LocalDate): YearMonth = YearMonth.from(date)
+
+/**
+ * 一期帳單（結帳日 closing 結帳的那一期）用哪個月份稱呼：這一期大部分日子落在哪個月就是哪個月。
+ * 例如每月 9 號結帳，9/9 結帳的那一期是 8/10～9/9，大部分在 8 月，就是「8 月帳單」；
+ * 每月 25 號結帳，9/25 結帳的那一期是 8/26～9/25，大部分在 9 月，就是「9 月帳單」。
+ */
+fun cardBillMonthOf(closing: LocalDate): YearMonth {
+    val length = java.time.temporal.ChronoUnit.DAYS.between(closing.minusMonths(1), closing).toInt()
+    val ym = YearMonth.from(closing)
+    return if (closing.dayOfMonth * 2 > length) ym else ym.minusMonths(1)
 }
 
 /**
@@ -406,7 +414,7 @@ fun Txn.accountMonthFor(a: Account): YearMonth =
 /** 這筆在信用卡 a 算進哪一期帳單：有手動設定的用手動的，沒有就依日期自動；卡沒設結帳日回傳 null */
 fun Txn.billMonthFor(a: Account): YearMonth? {
     if (a.statementDay !in 1..31) return null
-    return billMonthFromCode(billMonth) ?: autoBillMonth(a.statementDay, date)
+    return billMonthFromCode(billMonth) ?: autoBillMonth(date)
 }
 
 /** 某信用卡某一期帳單的刷卡金額（含手動指定入帳月份的）：消費、轉出算正的，退款（收入）算負的 */

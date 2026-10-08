@@ -72,6 +72,7 @@ import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
 import tw.moneybook.app.accountMonthFor
 import tw.moneybook.app.cardBillSpending
+import tw.moneybook.app.cardBillMonthOf
 import tw.moneybook.app.cardBillSpendingAfter
 import tw.moneybook.app.cardCycle
 import tw.moneybook.app.cardSpending
@@ -474,17 +475,19 @@ private fun CardBillCard(vm: MoneyViewModel, a: Account, onPayCard: (Long, Long?
         if (cyc == null) {
             Text("在「編輯」裡設定結帳日和繳款日，就能看到每期帳單和繳款倒數。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
         } else {
-            // 每一筆算進哪一期帳單看「入帳月份」：沒手動指定就依消費日期，指定了就照指定的
-            val lastBill = d.cardBillSpending(a, java.time.YearMonth.from(cyc.lastStatement)).coerceAtLeast(0L)
+            // 每一筆算在哪個月看「入帳月份」：沒手動指定就是消費日期的月份，指定了就照指定的。
+            // 上期帳單用那一期大部分日子所在的月份稱呼（9 號結帳的 8/10～9/9 是 8 月帳單），本期累積是那個月份之後所有月份的合計
+            val lastMonth = cardBillMonthOf(cyc.lastStatement)
+            val lastBill = d.cardBillSpending(a, lastMonth).coerceAtLeast(0L)
             val paid = d.transfersIn(a.id, cyc.lastStatement.plusDays(1), today)
-            val current = d.cardBillSpending(a, java.time.YearMonth.from(cyc.nextStatement)) + paid
+            val current = d.cardBillSpendingAfter(a, lastMonth)
             remain = (lastBill - paid).coerceAtLeast(0L)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("上期帳單", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     Text(formatMoney(lastBill), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "結帳 ${cyc.lastStatement.monthValue}/${cyc.lastStatement.dayOfMonth}",
+                        "${lastMonth.monthValue} 月帳單・結帳 ${cyc.lastStatement.monthValue}/${cyc.lastStatement.dayOfMonth}",
                         style = MaterialTheme.typography.labelSmall, color = cute.sub,
                     )
                 }
@@ -496,12 +499,6 @@ private fun CardBillCard(vm: MoneyViewModel, a: Account, onPayCard: (Long, Long?
                         style = MaterialTheme.typography.labelSmall, color = cute.sub,
                     )
                 }
-            }
-            // 手動指定入帳到更後面幾期的（本期累積不含）：另外提醒，不然看起來像錢不見了
-            val later = d.cardBillSpendingAfter(a, java.time.YearMonth.from(cyc.nextStatement))
-            if (later != 0L) {
-                Spacer(Modifier.height(6.dp))
-                Text("之後的帳單 ${formatMoney(later)}（指定入帳到下一期以後的）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
             }
             val due = cyc.lastDue
             if (due != null && lastBill > 0) {
