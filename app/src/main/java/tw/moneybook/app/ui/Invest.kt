@@ -75,6 +75,8 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     var tradeBuy by remember { mutableStateOf(true) }
     var tradeSymbol by remember { mutableStateOf("") }
     var pricePos by remember { mutableStateOf<Position?>(null) }
+    // 點買賣記錄修改的那一筆
+    var editTrade by remember { mutableStateOf<Trade?>(null) }
 
     // 已同意上網抓價、而且這個帳戶有持股超過 3 天沒更新，打開這一頁時自動抓一次這個帳戶的（每個月就會有幾次價格當代表）
     LaunchedEffect(a.id) {
@@ -207,7 +209,9 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             trades.take(30).forEach { t ->
                 SwipeRow(onDelete = { vm.deleteTrade(t.id) }) {
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card).padding(horizontal = 14.dp, vertical = 10.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card)
+                            .clickable { editTrade = t; dialog = "tradeEdit" }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -242,6 +246,12 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             vm = vm, a = a, held = pf.positions, initialBuy = tradeBuy, initialSymbol = tradeSymbol,
             onDismiss = { dialog = "" },
         )
+        "tradeEdit" -> editTrade?.let { t ->
+            TradeDialog(
+                vm = vm, a = a, held = pf.positions, initialBuy = t.buy, initialSymbol = t.symbol, edit = t,
+                onDismiss = { dialog = "" },
+            )
+        }
         "price" -> pricePos?.let { p ->
             PriceDialog(
                 p = p,
@@ -452,26 +462,41 @@ private fun TradeDialog(
     held: List<Position>,
     initialBuy: Boolean,
     initialSymbol: String,
+    /** 修改這一筆買賣：買賣方向、代號、名稱、市場鎖住，其餘預填 */
+    edit: Trade? = null,
     onDismiss: () -> Unit,
 ) {
     val d = vm.data
     val cute = LocalCute.current
+    // 修改時：連動的轉帳另一邊的帳戶（沒有連動就是 null＝不連動）
+    val editLink = edit?.txnId?.let { tid -> d.txns.firstOrNull { it.id == tid } }
+    val editCash = editLink?.let { l -> if (edit?.buy == true) l.accountId else l.toAccountId }
+    val editCashFx = edit != null && edit.currency.isNotEmpty() && edit.rate > 0.0 && editCash?.let { d.accMap[it] }?.let { it.isForeign && it.currency == edit.currency } == true
     var buy by remember { mutableStateOf(initialBuy) }
     var symbol by remember { mutableStateOf(initialSymbol) }
     // 賣出時沿用持股的市場；新買進預設台股
-    var market by remember { mutableStateOf(held.firstOrNull { it.symbol == initialSymbol }?.market?.ifBlank { null } ?: "TW") }
-    var name by remember { mutableStateOf(held.firstOrNull { it.symbol == initialSymbol }?.name ?: "") }
-    var qty by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
-    var fee by remember { mutableStateOf("") }
-    var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
+    var market by remember { mutableStateOf(edit?.market?.ifBlank { null } ?: held.firstOrNull { it.symbol == initialSymbol }?.market?.ifBlank { null } ?: "TW") }
+    var name by remember { mutableStateOf(edit?.name ?: held.firstOrNull { it.symbol == initialSymbol }?.name ?: "") }
+    var qty by remember { mutableStateOf(edit?.let { java.math.BigDecimal.valueOf(it.qty).stripTrailingZeros().toPlainString() } ?: "") }
+    var price by remember { mutableStateOf(edit?.let { java.math.BigDecimal.valueOf(it.price).stripTrailingZeros().toPlainString() } ?: "") }
+    // 手續費：用外幣帳戶收付時是外幣（台幣手續費 ÷ 匯率），其他是台幣
+    var fee by remember {
+        mutableStateOf(
+            when {
+                edit == null || edit.fee <= 0L -> ""
+                editCashFx -> java.math.BigDecimal.valueOf(edit!!.fee / edit.rate).setScale(Currencies.of(edit.currency).decimals, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+                else -> edit!!.fee.toString()
+            }
+        )
+    }
+    var day by remember { mutableStateOf(edit?.day ?: LocalDate.now().toEpochDay()) }
     var datePick by remember { mutableStateOf(false) }
     // 單價用哪個幣別記：美股是美金、日股是日圓…，台股是台幣（空白）
     val cur = Markets.currencyOf(market)
     // 可以付款的帳戶：台幣帳戶，加上「幣別跟這檔一樣」的外幣帳戶（例如第一證券的美金）
     val cashAccs = d.visibleAccounts.filter { it.id != a.id && it.type != AccountType.INVEST && (!it.isForeign || (cur.isNotEmpty() && it.currency == cur)) }
     // null＝不連動，只記買賣
-    var cash by remember { mutableStateOf(cashAccs.firstOrNull { !it.isForeign }?.id ?: cashAccs.firstOrNull()?.id) }
+    var cash by remember { mutableStateOf(if (edit != null) editCash else cashAccs.firstOrNull { !it.isForeign }?.id ?: cashAccs.firstOrNull()?.id) }
     // 換了市場，原本選的外幣帳戶幣別對不上就改回台幣帳戶
     LaunchedEffect(cur) {
         val c = cash?.let { d.accMap[it] }
@@ -480,8 +505,8 @@ private fun TradeDialog(
     val cashAcc = cash?.let { d.accMap[it] }
     val cashFx = cur.isNotEmpty() && cashAcc != null && cashAcc.isForeign && cashAcc.currency == cur
     // 匯率：用外幣帳戶付款預設用那個帳戶的平均買進成本（換美金時實際花的台幣），複委託預設用目前匯率；可以自己改
-    var rateInput by remember { mutableStateOf("") }
-    var rateTouched by remember { mutableStateOf(false) }
+    var rateInput by remember { mutableStateOf(if (edit != null && edit.rate > 0.0) rateText(edit.rate) else "") }
+    var rateTouched by remember { mutableStateOf(edit != null && edit.rate > 0.0) }
     LaunchedEffect(cur, cash) {
         if (!rateTouched) {
             val r = if (cur.isEmpty()) null else (if (cashFx) d.avgCost(cashAcc!!) else null) ?: d.rateOf(cur)
@@ -497,14 +522,19 @@ private fun TradeDialog(
     val feNative = if (cashFx) fee.toDoubleOrNull() ?: 0.0 else 0.0
     val fe = if (cashFx) 0L else fee.toLongOrNull() ?: 0L
     val feeTwdShown = if (cashFx) (feNative * rt).roundToLong() else fe
-    val holdQty = held.firstOrNull { it.symbol == sym }?.qty ?: 0.0
+    // 修改時，先把這一筆原本的影響拿掉，剩下的才是「可以賣」或「後面賣出已經用掉」的股數
+    val holdNow = held.firstOrNull { it.symbol == sym }?.qty ?: 0.0
+    val holdQty = if (edit == null) holdNow else if (edit.buy) holdNow - edit.qty else holdNow + edit.qty
     val oversell = !buy && q > holdQty + 1e-9
+    // 修改買進：後面已經賣掉的股數不能比新的股數多
+    val tooFew = edit != null && buy && holdQty + q < -1e-9
     // 必填：照畫面由上到下，按「記錄」才亮紅框
     val tries = rememberNeedTries()
     val need = firstNeed(
         if (sym.isEmpty()) Need("symbol", if (buy) "請輸入代號" else "請選擇或輸入要賣出的代號") else null,
         if (q <= 0.0) Need("qty", "請輸入股數") else null,
         if (oversell) Need("qty", "超過持有的 ${qtyText(holdQty)} 股") else null,
+        if (tooFew) Need("qty", "後面已經賣出 ${qtyText(-holdQty)} 股，至少要 ${qtyText(-holdQty)} 股") else null,
         if (pr <= 0.0) Need("price", if (cur.isNotEmpty()) "請輸入單價（$cur）" else "請輸入單價") else null,
         if (cur.isNotEmpty() && rt <= 0.0) Need("rate", "請輸入匯率（1 $cur = 幾元台幣）") else null,
     )
@@ -514,15 +544,19 @@ private fun TradeDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (buy) "買進" else "賣出") },
+        title = { Text((if (edit != null) "修改" else "") + if (buy) "買進" else "賣出") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    CuteChip("買進", buy, { buy = true })
-                    CuteChip("賣出", !buy, { buy = false })
+                    // 修改時買賣方向鎖住：只顯示目前的方向
+                    if (edit == null || buy) CuteChip("買進", buy, { if (edit == null) buy = true })
+                    if (edit == null || !buy) CuteChip("賣出", !buy, { if (edit == null) buy = false })
                     CuteChip(dayLabel(day), false, { datePick = true }, icon = "vec:calendar")
                 }
-                if (!buy && held.isNotEmpty()) {
+                if (edit != null) {
+                    Text("買賣方向、市場、代號、名稱不能改：要改代號、名稱、市場請用持股的「編輯」，買錯方向請刪除重記。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                }
+                if (!buy && held.isNotEmpty() && edit == null) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         held.forEach { p ->
                             CuteChip(p.symbol, sym == p.symbol, { symbol = p.symbol; name = p.name; if (p.market.isNotBlank()) market = p.market })
@@ -531,23 +565,24 @@ private fun TradeDialog(
                 }
                 Text("市場（決定怎麼抓價，選錯會抓不到）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Markets.all.forEach { (code, label) -> CuteChip(label, market == code, { market = code }) }
+                    Markets.all.filter { edit == null || it.first == market }.forEach { (code, label) -> CuteChip(label, market == code, { if (edit == null) market = code }) }
                 }
                 OutlinedTextField(
                     symbol, { symbol = it.filter { c -> c.isLetterOrDigit() || c == '.' || c == '-' }.take(12) },
-                    label = { Text("代號（${Markets.example(market)}）") }, singleLine = true,
+                    label = { Text("代號（${Markets.example(market)}）") }, singleLine = true, enabled = edit == null,
                     isError = nv.on("symbol"), supportingText = nv.supporting("symbol"),
                     modifier = Modifier.fillMaxWidth().needInView(nv, "symbol"),
                 )
                 OutlinedTextField(
                     name, { name = it.take(16) }, label = { Text("名稱（選填，自己看得懂就好，例如 元大50）") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, enabled = edit == null, modifier = Modifier.fillMaxWidth(),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         qty, { qty = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
                         label = { Text("股數") }, singleLine = true,
-                        isError = nv.on("qty") || oversell, supportingText = nv.supporting("qty") ?: if (oversell) ({ Text("超過持有的 ${qtyText(holdQty)} 股") }) else null,
+                        isError = nv.on("qty") || oversell || tooFew,
+                        supportingText = nv.supporting("qty") ?: if (oversell) ({ Text("超過持有的 ${qtyText(holdQty)} 股") }) else if (tooFew) ({ Text("後面已經賣出 ${qtyText(-holdQty)} 股，至少要 ${qtyText(-holdQty)} 股") }) else null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f).needInView(nv, "qty"),
                     )
                     OutlinedTextField(
@@ -603,12 +638,16 @@ private fun TradeDialog(
             TextButton(
                 onClick = {
                     if (need != null) { tries.count++; return@TextButton }
-                    vm.saveTrade(a.id, sym, name, day, buy, q, pr, fe, cash, market, cur, rt, feNative)
+                    if (edit != null) {
+                        if (!vm.updateTrade(edit.id, day, q, pr, fe, cash, rt, feNative)) return@TextButton
+                    } else {
+                        vm.saveTrade(a.id, sym, name, day, buy, q, pr, fe, cash, market, cur, rt, feNative)
+                    }
                     // 順便把這次的成交價當成現價，持股市值才不會是空的
                     vm.setPrice(sym, pr, day, cur)
                     onDismiss()
                 },
-            ) { Text("記錄") }
+            ) { Text(if (edit != null) "儲存" else "記錄") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )

@@ -303,4 +303,66 @@ class InvestTest {
         assertEquals("USD", d.trades.single().currency)
         assertEquals(31.0, d.trades.single().rate, 1e-9)
     }
+
+    // ───────── 修改買賣（withTradeUpdated）─────────
+
+    private fun withAccounts(trades: List<Trade>, txns: List<Txn> = emptyList()): AppData {
+        val bank = Account(10, "銀行", AccountType.BANK.emoji, AccountType.BANK, 0L, 1)
+        val bank2 = Account(11, "現金", AccountType.CASH.emoji, AccountType.CASH, 0L, 2)
+        val inv = Account(1, "證券", AccountType.INVEST.emoji, AccountType.INVEST, 0L, 3)
+        return Defaults.create().copy(accounts = listOf(bank, bank2, inv), trades = trades, txns = txns, nextId = 5000)
+    }
+
+    @Test
+    fun updateTradeChangesNumbersAndFee() {
+        val d = withAccounts(listOf(buy(1, 100, 100.0, 100.0, 20)))
+        val after = d.withTradeUpdated(1, day = 120, qty = 50.0, price = 110.0, fee = 10, cashAccountId = null)!!
+        val t = after.trades.single()
+        assertEquals(120L, t.day)
+        assertEquals(50.0, t.qty, 1e-9)
+        assertEquals(110.0, t.price, 1e-9)
+        assertEquals(10L, t.fee)
+        assertEquals(null, t.txnId)
+        // 成本 = 50 × 110 + 手續費 10
+        assertEquals(5_510L, after.portfolio(1L).positions.single().cost)
+    }
+
+    @Test
+    fun updateBuyBelowLaterSellIsRejected() {
+        val d = withAccounts(listOf(buy(1, 100, 100.0, 100.0), sell(2, 101, 60.0, 120.0)))
+        assertEquals(null, d.withTradeUpdated(1, 100, 50.0, 100.0, 0, null))     // 只買 50 卻賣了 60
+        assertTrue(d.withTradeUpdated(1, 100, 60.0, 100.0, 0, null) != null)     // 剛好 60 可以
+    }
+
+    @Test
+    fun updateRegeneratesLinkedTransfer() {
+        // 買進 100 股 @100，從銀行(10)付款：連動轉帳 10,000＋手續費 20
+        val link = Txn(900, 1L, TxType.TRANSFER, 10_000L, null, 10, 1, 100, "買進 0050 100 @ 100.00", emptyList(), fee = 20L)
+        val d = withAccounts(listOf(Trade(1, 1L, "0050", "元大50", 100, true, 100.0, 100.0, 20L, txnId = 900)), listOf(link))
+        // 改成 80 股 @105、手續費 30、改從現金(11)付款
+        val after = d.withTradeUpdated(1, day = 105, qty = 80.0, price = 105.0, fee = 30, cashAccountId = 11)!!
+        val l = after.txns.single { it.id == 900L }
+        assertEquals(8_400L, l.amount)
+        assertEquals(30L, l.fee)
+        assertEquals(11L, l.accountId)
+        assertEquals(1L, l.toAccountId)
+        assertEquals(105L, l.day)
+        assertEquals(900L, after.trades.single().txnId)
+        assertEquals(5000L, after.nextId)                 // 沿用原本的轉帳，不多佔編號
+    }
+
+    @Test
+    fun updateToUnlinkedDeletesTransferAndLinkedOneIsCreated() {
+        val link = Txn(900, 1L, TxType.TRANSFER, 10_000L, null, 10, 1, 100, "買進", emptyList(), fee = 20L)
+        val d = withAccounts(listOf(Trade(1, 1L, "0050", "元大50", 100, true, 100.0, 100.0, 20L, txnId = 900)), listOf(link))
+        val none = d.withTradeUpdated(1, 100, 100.0, 100.0, 20, null)!!
+        assertTrue(none.txns.none { it.id == 900L })
+        assertEquals(null, none.trades.single().txnId)
+        // 原本沒連動的，改成連動：新增一筆轉帳
+        val again = none.withTradeUpdated(1, 100, 100.0, 100.0, 20, 10)!!
+        val l = again.txns.single()
+        assertEquals(10_000L, l.amount)
+        assertEquals(again.trades.single().txnId, l.id)
+        assertEquals(5001L, again.nextId)
+    }
 }

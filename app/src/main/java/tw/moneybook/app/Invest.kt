@@ -175,6 +175,83 @@ fun AppData.renameHolding(
 /** 買賣金額（不含手續費），四捨五入到元 */
 fun tradeAmount(qty: Double, price: Double): Long = (qty * price).roundToLong()
 
+/**
+ * 買賣一起記的資金移動（銀行 ⇄ 投資帳戶的轉帳）。回傳連動的轉帳（沒有連動就是 null，id 用 linkId）與台幣手續費。
+ * 買進＝銀行轉到投資帳戶（手續費算在轉帳上）；賣出＝投資帳戶轉回銀行（收入扣掉手續費）；
+ * 用同幣別的外幣帳戶付款／收款時，手續費用外幣（feeNative）記，轉帳金額含手續費。
+ */
+fun AppData.buildTradeLink(
+    linkId: Long, accountId: Long, sym: String, day: Long, buy: Boolean, qty: Double, price: Double, fee: Long,
+    cashAccountId: Long?, currency: String, rate: Double, feeNative: Double,
+): Pair<Txn?, Long> {
+    val fxTrade = currency.isNotEmpty() && rate > 0.0
+    val r = if (fxTrade) rate else 1.0
+    val cashAcc = cashAccountId?.let { accMap[it] }
+    // 用同幣別的外幣帳戶（例如第一證券的美金）付款或收款
+    val cashFx = fxTrade && cashAcc != null && cashAcc.isForeign && cashAcc.currency == currency
+    val dec = Currencies.of(currency).decimals
+    val feeTwd = if (cashFx) (feeNative * r).roundToLong() else fee
+    val amount = tradeAmount(qty, price * r)
+    var linked: Txn? = null
+    if (cashAccountId != null && cashAccountId != accountId && cashAcc != null) {
+        val note = "${if (buy) "買進" else "賣出"} $sym ${qtyText(qty)} @ ${if (fxTrade) Currencies.of(currency).symbol else ""}${priceText(price)}"
+        if (cashFx) {
+            // 外幣帳戶實際增減的外幣金額（買進含手續費、賣出扣掉手續費）；台幣那邊用同一個匯率換算
+            val nativeTotal = (qty * price + if (buy) feeNative else -feeNative).coerceAtLeast(0.0)
+            val fxMinor = java.math.BigDecimal(nativeTotal).setScale(dec, java.math.RoundingMode.HALF_UP).movePointRight(dec).toLong()
+            if (fxMinor > 0L) {
+                linked = Txn(
+                    id = linkId, bookId = currentBook.id, type = TxType.TRANSFER, amount = fxToTwd(fxMinor, dec, r),
+                    categoryId = null,
+                    accountId = if (buy) cashAccountId else accountId,
+                    toAccountId = if (buy) accountId else cashAccountId,
+                    day = day, note = note, tags = emptyList(), fxAmount = fxMinor,
+                )
+            }
+        } else {
+            val cashAmount = if (buy) amount else (amount - feeTwd).coerceAtLeast(0L)
+            if (cashAmount > 0L && !cashAcc.isForeign) {
+                linked = Txn(
+                    id = linkId, bookId = currentBook.id, type = TxType.TRANSFER, amount = cashAmount,
+                    categoryId = null,
+                    accountId = if (buy) cashAccountId else accountId,
+                    toAccountId = if (buy) accountId else cashAccountId,
+                    day = day, note = note, tags = emptyList(),
+                    fee = if (buy) feeTwd else 0L,
+                )
+            }
+        }
+    }
+    return linked to feeTwd
+}
+
+/**
+ * 修改一筆買賣的日期、股數、單價、手續費、匯率、付款／收款帳戶（買賣方向、代號、名稱、市場不能改）。
+ * 連動的轉帳以這筆買賣為準重新產生：原本有、現在不連動就刪掉；原本沒有、現在要連動就新增。
+ * 找不到這一筆、數值不對、或改完這檔持股會變成負的，回傳 null。
+ */
+fun AppData.withTradeUpdated(
+    id: Long, day: Long, qty: Double, price: Double, fee: Long, cashAccountId: Long?, rate: Double = 0.0, feeNative: Double = 0.0,
+): AppData? {
+    val old = trades.firstOrNull { it.id == id } ?: return null
+    if (qty <= 0.0 || price <= 0.0) return null
+    val others = trades.filter { it.accountId == old.accountId && it.symbol == old.symbol && it.id != id }.sumOf { if (it.buy) it.qty else -it.qty }
+    if (others + (if (old.buy) qty else -qty) < -1e-9) return null
+    val oldLink = old.txnId?.let { tid -> txns.firstOrNull { it.id == tid } }
+    val fxTrade = old.currency.isNotEmpty() && rate > 0.0
+    val (made, feeTwd) = buildTradeLink(oldLink?.id ?: nextId, old.accountId, old.symbol, day, old.buy, qty, price, fee, cashAccountId, old.currency, rate, feeNative)
+    val link = made?.copy(bookId = oldLink?.bookId ?: made.bookId)
+    val trade = old.copy(
+        day = day, qty = qty, price = price, fee = feeTwd, txnId = link?.id,
+        currency = if (fxTrade) old.currency else "", rate = if (fxTrade) rate else 0.0,
+    )
+    return copy(
+        trades = trades.map { if (it.id == id) trade else it },
+        txns = sortTxns(txns.filter { it.id != oldLink?.id } + listOfNotNull(link)),
+        nextId = if (link != null && oldLink == null) nextId + 1 else nextId,
+    )
+}
+
 /** 一檔的抓價結果（抓價完成後列給使用者看） */
 data class FetchResult(val symbol: String, val name: String, val market: String, val price: Double?, val currency: String = "") {
     val ok: Boolean get() = price != null

@@ -288,44 +288,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val sym = symbol.trim().uppercase()
         if (d.accMap[accountId] == null || sym.isEmpty() || qty <= 0.0 || price <= 0.0) return
         val fxTrade = currency.isNotEmpty() && rate > 0.0
-        val r = if (fxTrade) rate else 1.0
-        val cashAcc = cashAccountId?.let { d.accMap[it] }
-        // 用同幣別的外幣帳戶（例如第一證券的美金）付款或收款
-        val cashFx = fxTrade && cashAcc != null && cashAcc.isForeign && cashAcc.currency == currency
-        val dec = Currencies.of(currency).decimals
-        val feeTwd = if (cashFx) (feeNative * r).roundToLong() else fee
         var next = d.nextId
-        val amount = tradeAmount(qty, price * r)
-        var linked: Txn? = null
-        if (cashAccountId != null && cashAccountId != accountId && cashAcc != null) {
-            val note = "${if (buy) "買進" else "賣出"} $sym ${qtyText(qty)} @ ${if (fxTrade) Currencies.of(currency).symbol else ""}${priceText(price)}"
-            if (cashFx) {
-                // 外幣帳戶實際增減的外幣金額（買進含手續費、賣出扣掉手續費）；台幣那邊用同一個匯率換算
-                val nativeTotal = (qty * price + if (buy) feeNative else -feeNative).coerceAtLeast(0.0)
-                val fxMinor = java.math.BigDecimal(nativeTotal).setScale(dec, java.math.RoundingMode.HALF_UP).movePointRight(dec).toLong()
-                if (fxMinor > 0L) {
-                    linked = Txn(
-                        id = next++, bookId = d.currentBook.id, type = TxType.TRANSFER, amount = fxToTwd(fxMinor, dec, r),
-                        categoryId = null,
-                        accountId = if (buy) cashAccountId else accountId,
-                        toAccountId = if (buy) accountId else cashAccountId,
-                        day = day, note = note, tags = emptyList(), fxAmount = fxMinor,
-                    )
-                }
-            } else {
-                val cashAmount = if (buy) amount else (amount - feeTwd).coerceAtLeast(0L)
-                if (cashAmount > 0L && !cashAcc.isForeign) {
-                    linked = Txn(
-                        id = next++, bookId = d.currentBook.id, type = TxType.TRANSFER, amount = cashAmount,
-                        categoryId = null,
-                        accountId = if (buy) cashAccountId else accountId,
-                        toAccountId = if (buy) accountId else cashAccountId,
-                        day = day, note = note, tags = emptyList(),
-                        fee = if (buy) feeTwd else 0L,
-                    )
-                }
-            }
-        }
+        val (linked, feeTwd) = d.buildTradeLink(next, accountId, sym, day, buy, qty, price, fee, cashAccountId, currency, rate, feeNative)
+        if (linked != null) next++
         val trade = Trade(next++, accountId, sym, name.trim(), day, buy, qty, price, feeTwd, linked?.id, market, if (fxTrade) currency else "", if (fxTrade) rate else 0.0)
         commit(
             d.copy(
@@ -335,6 +300,19 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             )
         )
         toast("已記錄${if (buy) "買進" else "賣出"} $sym")
+    }
+
+    /** 修改一筆買賣（見 withTradeUpdated）；成功回傳 true */
+    fun updateTrade(id: Long, day: Long, qty: Double, price: Double, fee: Long, cashAccountId: Long?, rate: Double = 0.0, feeNative: Double = 0.0): Boolean {
+        val old = data.trades.firstOrNull { it.id == id } ?: return false
+        val after = data.withTradeUpdated(id, day, qty, price, fee, cashAccountId, rate, feeNative)
+        if (after == null) {
+            toast("改完持股會變成負的，或數值不對")
+            return false
+        }
+        commit(after)
+        toast("已修改這筆${if (old.buy) "買進" else "賣出"}")
+        return true
     }
 
     /** 修改一檔持股的代號、名稱、市場（見 renameHolding）；改錯了再改回來就好 */
