@@ -26,7 +26,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import kotlinx.coroutines.flow.collectLatest
@@ -149,6 +151,11 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
         stack = stack.dropLast(1)
     }
 
+    // 點某一筆記錄修改：買賣連動的轉帳不能直接改（要到投資帳戶改那一筆買賣），先彈出提示
+    fun editTxn(id: Long) {
+        if (vm.linkedTradeOf(id) != null) vm.linkedEditAsk = id else push(Route.Edit(id))
+    }
+
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         AnimatedContent(
             targetState = stack.lastOrNull(),
@@ -173,7 +180,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 onTab = { if (it == tab && it == 0) vm.homeCalendar = !vm.homeCalendar else tab = it },
                 // 在日曆上選了日期再按記一筆，就預設那一天
                 onAdd = { push(Route.Edit(null, presetDay = if (tab == 0 && vm.homeCalendar) vm.calSelected else null)) },
-                onEdit = { push(Route.Edit(it)) },
+                onEdit = { editTxn(it) },
                 // 「我的 → 帳戶管理」直接切到帳戶分頁
                 open = { if (it == "accounts") { tab = 1 } else { push(Route.Page(it)) } },
             )
@@ -184,15 +191,15 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "templates" -> TemplatesScreen(vm, onOpen = { push(Route.Edit(null, tplMode = true, tplId = it)) }) { pop() }
                 "appearance" -> AppearanceScreen(vm) { pop() }
                 "data" -> DataScreen(vm) { pop() }
-                "reimb" -> ReimbScreen(vm, onEdit = { push(Route.Edit(it)) }) { pop() }
-                "search" -> SearchScreen(vm, onEdit = { push(Route.Edit(it)) }) { pop() }
-                "drill" -> DrillScreen(vm, onEdit = { push(Route.Edit(it)) }) { pop() }
+                "reimb" -> ReimbScreen(vm, onEdit = { editTxn(it) }) { pop() }
+                "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
+                "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 else -> {
                     val accId = top.name.removePrefix("account:").toLongOrNull()
                     if (top.name.startsWith("account:") && accId != null) {
                         AccountDetailScreen(
                             vm, accId,
-                            onEdit = { push(Route.Edit(it)) },
+                            onEdit = { editTxn(it) },
                             onAdd = { acc -> push(Route.Edit(null, presetAcc = acc)) },
                             onPayCard = { acc, amt -> push(Route.Edit(null, presetTo = acc, presetAmount = amt)) },
                             onFxTrade = { acc, buy -> push(if (buy) Route.Edit(null, presetTo = acc) else Route.Edit(null, presetFrom = acc)) },
@@ -201,6 +208,51 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 }
             }
         }
+        }
+        // 買賣連動的轉帳：點進去改 → 提示去改買賣；左滑刪除 → 問要不要連買賣一起刪
+        vm.linkedEditAsk?.let { tid ->
+            val tr = vm.linkedTradeOf(tid)
+            if (tr == null) {
+                vm.linkedEditAsk = null
+            } else {
+                AlertDialog(
+                    onDismissRequest = { vm.linkedEditAsk = null },
+                    title = { Text("買賣連動的轉帳") },
+                    text = {
+                        Text("這筆轉帳是「${if (tr.buy) "買進" else "賣出"} ${tr.symbol}」時一起記的。\n金額、手續費、日期、帳戶都跟著買賣走，要修改請到投資帳戶的買賣記錄。")
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            vm.linkedEditAsk = null
+                            vm.openTradeEdit = tr.id
+                            // 已經在那個投資帳戶的頁面就不用再開一層
+                            val route = Route.Page("account:${tr.accountId}")
+                            if (stack.lastOrNull() != route) push(route)
+                        }) { Text("前往修改") }
+                    },
+                    dismissButton = { TextButton(onClick = { vm.linkedEditAsk = null }) { Text("取消") } },
+                )
+            }
+        }
+        vm.linkedDeleteAsk?.let { tid ->
+            val tr = vm.linkedTradeOf(tid)
+            if (tr == null) {
+                vm.linkedDeleteAsk = null
+            } else {
+                AlertDialog(
+                    onDismissRequest = { vm.linkedDeleteAsk = null },
+                    title = { Text("買賣連動的轉帳") },
+                    text = {
+                        Text("這筆轉帳是「${if (tr.buy) "買進" else "賣出"} ${tr.symbol}」時一起記的。\n刪除會連同這筆買賣一起刪掉，持股、成本會跟著變（可以復原）。")
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { vm.linkedDeleteAsk = null; vm.deleteTrade(tr.id) }) {
+                            Text("一起刪除", color = LocalCute.current.expense)
+                        }
+                    },
+                    dismissButton = { TextButton(onClick = { vm.linkedDeleteAsk = null }) { Text("取消") } },
+                )
+            }
         }
         ConfettiOverlay(vm)
         SnackbarHost(

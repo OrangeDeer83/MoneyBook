@@ -77,6 +77,14 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     var pricePos by remember { mutableStateOf<Position?>(null) }
     // 點買賣記錄修改的那一筆
     var editTrade by remember { mutableStateOf<Trade?>(null) }
+    // 從連動的轉帳「前往修改」過來：打開那一筆買賣的修改視窗
+    LaunchedEffect(vm.openTradeEdit, trades) {
+        val id = vm.openTradeEdit ?: return@LaunchedEffect
+        val t = trades.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        vm.openTradeEdit = null
+        editTrade = t
+        dialog = "tradeEdit"
+    }
 
     // 已同意上網抓價、而且這個帳戶有持股超過 3 天沒更新，打開這一頁時自動抓一次這個帳戶的（每個月就會有幾次價格當代表）
     LaunchedEffect(a.id) {
@@ -484,7 +492,12 @@ private fun TradeDialog(
         mutableStateOf(
             when {
                 edit == null || edit.fee <= 0L -> ""
-                editCashFx -> java.math.BigDecimal.valueOf(edit!!.fee / edit.rate).setScale(Currencies.of(edit.currency).decimals, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+                // 外幣手續費 = 連動轉帳的外幣金額 − 股數×單價（買進含手續費、賣出扣掉手續費），不用台幣反推才不會差一點點
+                editCashFx && editLink != null -> {
+                    val dec = Currencies.of(edit!!.currency).decimals
+                    val native = Math.abs(editLink.fxAmount / Math.pow(10.0, dec.toDouble()) - edit.qty * edit.price)
+                    java.math.BigDecimal.valueOf(native).setScale(dec, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+                }
                 else -> edit!!.fee.toString()
             }
         )

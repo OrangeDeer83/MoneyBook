@@ -365,4 +365,102 @@ class InvestTest {
         assertEquals(again.trades.single().txnId, l.id)
         assertEquals(5001L, again.nextId)
     }
+
+    // ───────── 修改買賣：更多情況 ─────────
+
+    @Test
+    fun updateSellLinkedTransferAmountIsNetOfFee() {
+        // 賣出 50 股 @120、手續費 15，收進銀行(10)：轉帳金額 = 6,000 − 15 = 5,985，手續費不另外記在轉帳上
+        val link = Txn(901, 1L, TxType.TRANSFER, 5_985L, null, 1, 10, 110, "賣出", emptyList())
+        val d = withAccounts(
+            listOf(buy(1, 100, 100.0, 100.0), Trade(2, 1L, "0050", "元大50", 110, false, 50.0, 120.0, 15L, txnId = 901)),
+            listOf(link),
+        )
+        val after = d.withTradeUpdated(2, day = 111, qty = 40.0, price = 130.0, fee = 20, cashAccountId = 10)!!
+        val l = after.txns.single { it.id == 901L }
+        assertEquals(5_180L, l.amount)                 // 40 × 130 − 20
+        assertEquals(0L, l.fee)
+        assertEquals(1L, l.accountId)                  // 賣出：從投資帳戶轉出
+        assertEquals(10L, l.toAccountId)
+        assertEquals(111L, l.day)
+        assertEquals(111L, after.trades.single { it.id == 2L }.day)
+    }
+
+    @Test
+    fun updateSellChangesRealizedGain() {
+        // 買 100 股 @100（手續費 20）、賣 40 股 @120（手續費 10）：已實現 782
+        val d = data(listOf(buy(1, 100, 100.0, 100.0, 20), sell(2, 101, 40.0, 120.0, 10)))
+        assertEquals(782L, d.portfolio(1L).realized)
+        // 賣價改 130：40×130 − 10 − 成本 4,008 = 1,182
+        val after = d.withTradeUpdated(2, 101, 40.0, 130.0, 10, null)!!
+        assertEquals(1_182L, after.portfolio(1L).realized)
+    }
+
+    @Test
+    fun updateSellBeyondHoldingIsRejected() {
+        val d = data(listOf(buy(1, 100, 100.0, 100.0), sell(2, 101, 60.0, 120.0)))
+        assertEquals(null, d.withTradeUpdated(2, 101, 120.0, 120.0, 0, null))     // 只買了 100 股，賣不出 120
+        assertTrue(d.withTradeUpdated(2, 101, 100.0, 120.0, 0, null) != null)     // 剛好 100 可以
+    }
+
+    @Test
+    fun updateWithUnknownIdOrBadNumbersReturnsNull() {
+        val d = data(listOf(buy(1, 100, 100.0, 100.0)))
+        assertEquals(null, d.withTradeUpdated(99, 100, 10.0, 10.0, 0, null))
+        assertEquals(null, d.withTradeUpdated(1, 100, 0.0, 10.0, 0, null))
+        assertEquals(null, d.withTradeUpdated(1, 100, 10.0, 0.0, 0, null))
+    }
+
+    @Test
+    fun updateLeavesOtherTradesAndTransfersUntouched() {
+        val other = Txn(800, 1L, TxType.TRANSFER, 500L, null, 10, 1, 90, "別的轉帳", emptyList())
+        val d = withAccounts(
+            listOf(buy(1, 100, 100.0, 100.0), buy(2, 101, 10.0, 50.0, sym = "2330")),
+            listOf(other),
+        )
+        val after = d.withTradeUpdated(1, 100, 80.0, 100.0, 0, null)!!
+        assertEquals(d.trades.single { it.id == 2L }, after.trades.single { it.id == 2L })
+        assertEquals(other, after.txns.single { it.id == 800L })
+    }
+
+    @Test
+    fun updateForeignTradeRateChangesTransferAmount() {
+        // 複委託：10 股 @ US$100、匯率 30 → 台幣 30,000；從台幣銀行付款
+        val link = Txn(902, 1L, TxType.TRANSFER, 30_000L, null, 10, 1, 100, "買進 VOO", emptyList())
+        val tr = Trade(1, 1L, "VOO", "VOO", 100, true, 10.0, 100.0, 0L, txnId = 902, market = "US", currency = "USD", rate = 30.0)
+        val d = withAccounts(listOf(tr), listOf(link))
+        val after = d.withTradeUpdated(1, 100, 10.0, 100.0, 0, 10, rate = 32.0)!!
+        assertEquals(32_000L, after.txns.single { it.id == 902L }.amount)
+        assertEquals(32.0, after.trades.single().rate, 1e-9)
+        assertEquals("USD", after.trades.single().currency)
+        // 台幣成本跟著匯率變：10 × 100 × 32 = 32,000
+        assertEquals(32_000L, after.portfolio(1L).positions.single().cost)
+    }
+
+    @Test
+    fun updateForeignTradePaidFromForeignAccountKeepsFeeInNative() {
+        // 用美元帳戶(12)付款：買 10 股 @ US$100、手續費 US$1.5、匯率 30 → 外幣 101,500 分、台幣 30,450，手續費台幣 45
+        val usd = Account(12, "美元帳戶", AccountType.BANK.emoji, AccountType.BANK, 0L, 4, currency = "USD")
+        val base = withAccounts(emptyList())
+        val d = base.copy(
+            accounts = base.accounts + usd,
+            trades = listOf(Trade(1, 1L, "VOO", "VOO", 100, true, 10.0, 100.0, 45L, txnId = null, market = "US", currency = "USD", rate = 30.0)),
+        )
+        val after = d.withTradeUpdated(1, 100, 10.0, 100.0, 0, 12, rate = 30.0, feeNative = 1.5)!!
+        val l = after.txns.single()
+        assertEquals(100_150L, l.fxAmount)              // US$1,001.50（含手續費）
+        assertEquals(30_045L, l.amount)
+        assertEquals(12L, l.accountId)
+        assertEquals(45L, after.trades.single().fee)
+        assertEquals(l.id, after.trades.single().txnId)
+    }
+
+    @Test
+    fun updateChangingDayMovesLinkedTransferDay() {
+        val link = Txn(903, 1L, TxType.TRANSFER, 10_000L, null, 10, 1, 100, "買進", emptyList(), fee = 20L)
+        val d = withAccounts(listOf(Trade(1, 1L, "0050", "元大50", 100, true, 100.0, 100.0, 20L, txnId = 903)), listOf(link))
+        val after = d.withTradeUpdated(1, 40, 100.0, 100.0, 20, 10)!!
+        assertEquals(40L, after.txns.single { it.id == 903L }.day)
+        assertEquals(40L, after.trades.single().day)
+    }
 }

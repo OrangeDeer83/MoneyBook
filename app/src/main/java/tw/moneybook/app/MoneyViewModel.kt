@@ -132,6 +132,17 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         _messages.tryEmit(UiMsg(msg))
     }
 
+    /**
+     * 買賣連動的轉帳（買賣時一起記的銀行 ⇄ 投資帳戶轉帳）歸買賣管：不能直接改或單獨刪。
+     * linkedEditAsk／linkedDeleteAsk 是要詢問的那筆轉帳 id（畫面彈出提示）；openTradeEdit 是要開修改視窗的買賣 id。
+     */
+    var linkedEditAsk by mutableStateOf<Long?>(null)
+    var linkedDeleteAsk by mutableStateOf<Long?>(null)
+    var openTradeEdit by mutableStateOf<Long?>(null)
+
+    /** 這筆轉帳連動的買賣；不是連動的轉帳回傳 null */
+    fun linkedTradeOf(txnId: Long): Trade? = data.trades.firstOrNull { it.txnId == txnId }
+
     /** 剛存好（新增或修改）的那一筆：列表頁回來時把它捲到畫面中間，捲完就清掉 */
     var savedTxnId by mutableStateOf<Long?>(null)
 
@@ -235,6 +246,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 刪除一筆，並提供「復原」 */
     fun deleteWithUndo(id: Long) {
+        // 連動的轉帳要和買賣一起刪：先問
+        if (linkedTradeOf(id) != null) {
+            linkedDeleteAsk = id
+            return
+        }
         val d = data
         val t = d.txns.firstOrNull { it.id == id } ?: return
         commit(d.copy(txns = d.txns.filter { it.id != id }))
@@ -450,11 +466,16 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val t = data.txns.firstOrNull { it.id == id } ?: return
         if (t.day == day) return
         val old = t.day
-        update { d -> d.copy(txns = sortTxns(d.txns.map { if (it.id == id) it.copy(day = day) else it })) }
+        // 連動的轉帳移到別天，買賣的日期跟著移（兩邊要一致）
+        fun moveTo(to: Long) = update { d ->
+            d.copy(
+                txns = sortTxns(d.txns.map { if (it.id == id) it.copy(day = to) else it }),
+                trades = d.trades.map { if (it.txnId == id) it.copy(day = to) else it },
+            )
+        }
+        moveTo(day)
         val nd = LocalDate.ofEpochDay(day)
-        _messages.tryEmit(UiMsg("已移到 ${nd.monthValue}/${nd.dayOfMonth}", "復原") {
-            update { d -> d.copy(txns = sortTxns(d.txns.map { if (it.id == id) it.copy(day = old) else it })) }
-        })
+        _messages.tryEmit(UiMsg("已移到 ${nd.monthValue}/${nd.dayOfMonth}", "復原") { moveTo(old) })
     }
 
     fun deleteTxn(id: Long, allInstallments: Boolean) {
