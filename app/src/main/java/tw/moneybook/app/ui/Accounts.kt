@@ -179,7 +179,11 @@ fun AccountDetailScreen(
     // 前面固定的項目：帳戶卡、（信用卡帳單／投資）、月份列、報銷入帳
     val dayGroups = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.groupBy { it.day }
     val listBase = 2 + (if (a.type == AccountType.CARD) 1 else 0) + (if (a.type == AccountType.INVEST) 1 else 0) + reimbIn.size
-    CenterOnSaved(vm, listState, listBase + 1) { txnItemIndex(dayGroups, listBase, it) }
+    CenterOnSaved(vm, listState, listBase + 1, switchTo = { t ->
+        // 記在別的月份：切到那個月（信用卡指定了入帳月份就是入帳的那個月）
+        val m = t.accountMonthFor(a)
+        (m != month).also { if (it) month = m }
+    }) { txnItemIndex(dayGroups, listBase, it) }
 
     SubPage(a.name, onBack) {
       Box(Modifier.fillMaxSize()) {

@@ -2154,3 +2154,21 @@ def t_center_on_saved():
     ns = d.shot("首頁存好之後")
     row = d.first(ns, "row20")
     d.check("首頁：存好的那一筆在畫面中間（高度 30%～70%）", row is not None and 0.3 * h < row.cy < 0.7 * h, (row and row.cy, h))
+
+
+@case(D, "記在別的月份：存好後自動切到那個月並捲到那一筆", visual=True)
+def t_jump_to_saved_month():
+    d.fresh(empty_seed().json())
+    d.wait_text("本月支出", timeout=20)
+    now_label = month_label(d.nodes())
+    d.tap(next(n for n in d.nodes() if n.desc == "上個月"))
+    d.time.sleep(1)
+    prev_label = month_label(d.nodes())
+    d.check("先切到上個月看", prev_label is not None and prev_label != now_label, (prev_label, now_label))
+    f.open_add()
+    f.keypad("77")
+    f.save_edit()
+    d.time.sleep(1.5)
+    ns = d.shot("存好之後")
+    d.check("記的是今天，現在看的是上個月 → 自動切回本月", month_label(ns) == now_label, (month_label(ns), now_label))
+    d.check("本月的明細看得到剛記的 -$77", d.has(ns, "-$77", True), [n.text for n in ns if "$" in n.text][:8])

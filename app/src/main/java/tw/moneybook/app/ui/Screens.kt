@@ -276,7 +276,11 @@ fun HomeScreen(
     // 前面固定的項目：書本列、吉祥物（可以關）、預算、本月摘要
     val homeBase = 3 + if (mascot != "none") 1 else 0
     val homeGroups = list.groupBy { it.day }
-    CenterOnSaved(vm, vm.homeListState, homeBase + 1) { txnItemIndex(homeGroups, homeBase, it) }
+    CenterOnSaved(vm, vm.homeListState, homeBase + 1, switchTo = { t ->
+        // 記在別的月份（例如現在看 10 月，記了 8/20）：切到那個月
+        val m = java.time.YearMonth.from(t.date)
+        (m != vm.month).also { if (it) vm.month = m }
+    }) { txnItemIndex(homeGroups, homeBase, it) }
     LazyColumn(
         state = vm.homeListState,
         modifier = Modifier.fillMaxSize(),
@@ -505,7 +509,16 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
     val weeks = (cells + 6) / 7
     val selList = byDay[selected] ?: emptyList()
     // 前面固定 4 項（標題、本月收支、日曆、選到的日期）＋ 1 項（沒記錄的提示或小技巧），選到的那天的明細接在後面
-    CenterOnSaved(vm, vm.calListState, 5) { id -> selList.indexOfFirst { it.id == id }.let { k -> if (k >= 0) 5 + k else -1 } }
+    CenterOnSaved(vm, vm.calListState, 5, switchTo = { t ->
+        // 記在別的月份或別天：切到那一天（月份跟著切）
+        val m = java.time.YearMonth.from(t.date)
+        val changed = m != vm.month || t.day != vm.calSelected
+        if (changed) {
+            vm.calSelected = t.day
+            vm.month = m
+        }
+        changed
+    }) { id -> selList.indexOfFirst { it.id == id }.let { k -> if (k >= 0) 5 + k else -1 } }
 
     // 長按拖曳：記錄每個日期格子的位置
     val cellRects = remember(month) { HashMap<Long, Rect>() }
