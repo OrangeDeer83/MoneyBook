@@ -1627,7 +1627,7 @@ def t_fx_reimb_receive_foreign():
     open_account("美元帳戶")
     ns = d.shot("美元帳戶明細")
     d.check("美元帳戶餘額 US$987.50（987.50 − 20.50 + 20.50）", d.has(ns, "US$987.50", True), [n.text for n in ns if "US$" in n.text])
-    d.check("明細有「報銷入帳・Amy」+US$20.50", d.has(ns, "報銷入帳・Amy", True) and d.has(ns, "+US$20.50", True), [n.text for n in ns if "報銷" in n.text or "US$" in n.text])
+    d.check("明細有「報銷收款・Amy」+US$20.50", d.has(ns, "報銷收款・Amy", True) and d.has(ns, "+US$20.50", True), [n.text for n in ns if "報銷" in n.text or "US$" in n.text])
 
 
 @case(D, "外幣報銷：只收一部分外幣，剩下的台幣照那筆消費的匯率算")
@@ -2172,3 +2172,29 @@ def t_jump_to_saved_month():
     ns = d.shot("存好之後")
     d.check("記的是今天，現在看的是上個月 → 自動切回本月", month_label(ns) == now_label, (month_label(ns), now_label))
     d.check("本月的明細看得到剛記的 -$77", d.has(ns, "-$77", True), [n.text for n in ns if "$" in n.text][:8])
+
+
+@case(D, "報銷收款也列在明細裡：首頁、日曆、帳戶明細，只顯示不能點", visual=True)
+def t_reimb_in_ledger():
+    s = empty_seed()
+    s.expense(0, 600, S.C_FOOD, note="lunch", reimb=1, reimb_amount=600,
+              items=[S.reimb_item("Lin", 600, False, [S.pay(f.today(), S.CASH, 200, time=900)])])
+    d.fresh(s.json())
+    d.wait_text("lunch", timeout=20)
+    ns = d.shot("首頁明細")
+    d.check("首頁有「報銷收款・Lin」與 +$200", d.has(ns, "報銷收款・Lin", True) and d.has(ns, "+$200", True), [n.text for n in ns if n.text][:30])
+    d.check("第二行是原本那筆的分類路徑和備註", d.has(ns, "餐飲・lunch", True), [n.text for n in ns if "lunch" in n.text])
+    d.check("本月支出只算自己負擔的 $400（收款不算收入、不重複扣）", d.has(ns, "$400", True) and not d.has(ns, "+$200 ", True), [n.text for n in ns if "$" in n.text][:10])
+    d.tap_text("報銷收款・Lin", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("點收款列之後")
+    d.check("點了沒反應，不會進編輯畫面", not d.has(ns, "備註（選填）") and d.has(ns, "報銷收款・Lin", True))
+    d.tap(next(n for n in d.nodes() if n.desc == "切換成日曆"))
+    d.time.sleep(1.5)
+    ns = d.shot("日曆")
+    d.check("日曆選到今天，也列出「報銷收款・Lin」", d.has(ns, "報銷收款・Lin", True), [n.text for n in ns if n.text][:30])
+    d.tap(next(n for n in d.nodes() if n.desc == "切換成明細列表"))
+    d.time.sleep(1)
+    open_account("現金")
+    ns = d.shot("現金帳戶明細")
+    d.check("帳戶明細有「報銷收款・Lin」+$200，沒有另外一塊獨立的列", d.has(ns, "報銷收款・Lin", True) and d.has(ns, "+$200", True), [n.text for n in ns if n.text][:30])

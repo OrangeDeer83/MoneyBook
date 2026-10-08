@@ -125,9 +125,6 @@ private fun daysLeft(to: LocalDate): String {
     }
 }
 
-/** 帳戶明細裡一筆報銷收款（idx 是這筆記錄的第幾筆收款） */
-private data class ReimbIn(val t: Txn, val who: String, val pay: ReimbPay, val idx: Int)
-
 /** 單一帳戶的明細 */
 @Composable
 fun AccountDetailScreen(
@@ -161,10 +158,8 @@ fun AccountDetailScreen(
     // 信用卡指定入帳到下個月的，在下個月的明細顯示（見 accountMonthFor）
     val monthList = all.filter { it.accountMonthFor(a) == month }
     // 這個帳戶這個月收到的報銷款（每一筆收款各算一筆）
-    val reimbIn = d.txns.flatMap { t ->
-        // idx：這一筆記錄所有報銷收款的編號，要和 runningBalances 的 key 對得上
-        t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbIn(t, who, pay, idx) }
-    }
+    // （idx：這一筆記錄所有報銷收款的編號，要和 runningBalances 的 key 對得上）
+    val reimbIn = reimbRecvsOf(d.txns)
         .filter { it.pay.accountId == a.id }
         .filter { val rd = LocalDate.ofEpochDay(it.pay.day); rd.year == month.year && rd.monthValue == month.monthValue }
     // 每一筆做完之後的餘額
@@ -177,8 +172,9 @@ fun AccountDetailScreen(
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     // 前面固定的項目：帳戶卡、（信用卡帳單／投資）、月份列、報銷入帳
-    val dayGroups = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.groupBy { it.day }
-    val listBase = 2 + (if (a.type == AccountType.CARD) 1 else 0) + (if (a.type == AccountType.INVEST) 1 else 0) + reimbIn.size
+    // 報銷收款和一般記錄合在一起照日期時間排（收款只顯示，不能點）
+    val dayGroups = ledgerEntries(monthList.filter { it.accountId == a.id || it.toAccountId == a.id }, reimbIn).groupBy { it.day }
+    val listBase = 2 + (if (a.type == AccountType.CARD) 1 else 0) + (if (a.type == AccountType.INVEST) 1 else 0)
     val accHl = CenterOnSaved(vm, listState, listBase + 1, month, switchTo = { t ->
         // 記在別的月份：切到那個月（信用卡指定了入帳月份就是入帳的那個月）
         val m = t.accountMonthFor(a)
@@ -286,36 +282,17 @@ fun AccountDetailScreen(
             if (monthList.isEmpty() && reimbIn.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "這個月這個帳戶沒有記錄") }
             }
-            reimbIn.forEachIndexed { n, (t, who, pay, idx) ->
-                item(key = "r${t.id}_$n") {
-                    val c = t.categoryId?.let { d.catMap[it] }
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card)
-                            .clickable { onEdit(t.id) }.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CatBubble("img:acc_receipt", 2, 40.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("報銷入帳" + if (who.isNotBlank()) "・$who" else "", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                "${dayTimeLabel(pay.day, pay.time)}・${c?.name ?: ""}",
-                                style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("+" + a.fmt(pay.flowFor(a)), color = cute.income, fontWeight = FontWeight.SemiBold)
-                            running["p${t.id}_$idx"]?.let { b ->
-                                Text("餘額 ${formatMoney(b)}", style = MaterialTheme.typography.labelSmall, color = if (b < 0) cute.expense else cute.sub, maxLines = 1)
-                            }
-                        }
-                    }
-                }
-            }
             dayGroups.forEach { (day, list) ->
-                item(key = "d$day") { DayHeader(day, list) }
-                items(list, key = { it.id }) { t ->
-                    SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"], highlight = t.id == accHl) { onEdit(t.id) } }
+                item(key = "d$day") { DayHeader(day, list.mapNotNull { it.txn }) }
+                items(list, key = { it.key }) { e ->
+                    val t = e.txn
+                    if (t != null) {
+                        SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"], highlight = t.id == accHl) { onEdit(t.id) } }
+                    } else {
+                        val r = e.recv!!
+                        val b = running["p${r.t.id}_${r.idx}"]
+                        ReimbRecvRow(d, r, showAcc = false, amount = a.fmt(r.pay.flowFor(a)), balance = b?.let { "餘額 ${formatMoney(it)}" }, balanceNegative = (b ?: 0L) < 0)
+                    }
                 }
             }
         }

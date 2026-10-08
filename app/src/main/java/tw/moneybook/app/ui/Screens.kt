@@ -60,6 +60,7 @@ import tw.moneybook.app.fmt
 import tw.moneybook.app.fxNote
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.TxType
+import tw.moneybook.app.ReimbPay
 import tw.moneybook.app.Txn
 import tw.moneybook.app.expenseSum
 import tw.moneybook.app.formatMoney
@@ -78,6 +79,65 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
+
+// ───────────────────────── 共用：報銷收款也列在明細裡 ─────────────────────────
+
+/** 明細裡的一筆報銷收款（只顯示，不能點）：t 是原本那筆支出，pay 是這次收到的款，idx 是這筆支出所有收款裡的第幾筆 */
+data class ReimbRecv(val t: Txn, val who: String, val pay: ReimbPay, val idx: Int)
+
+/** 明細列表的一列：一般記錄，或一筆報銷收款 */
+class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?) {
+    val day: Long get() = txn?.day ?: recv!!.pay.day
+    val time: Int get() = txn?.time ?: recv!!.pay.time
+
+    /** 列表用的 key：一般記錄用 id，收款用「r 原記錄 id _ 第幾筆」 */
+    val key: Any get() = txn?.id ?: "r${recv!!.t.id}_${recv.idx}"
+}
+
+/** 這些記錄底下所有的報銷收款 */
+fun reimbRecvsOf(txns: List<Txn>): List<ReimbRecv> = txns.flatMap { t ->
+    t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) }
+}
+
+/** 一般記錄和報銷收款合在一起，照日期、時間由新到舊排（同一天同一時間，一般記錄在前） */
+fun ledgerEntries(txns: List<Txn>, recvs: List<ReimbRecv>): List<LedgerEntry> =
+    (txns.map { LedgerEntry(it, null) } + recvs.map { LedgerEntry(null, it) })
+        .sortedWith(compareByDescending<LedgerEntry> { it.day }.thenByDescending { it.time })
+
+/**
+ * 報銷收款的一列（和一般明細一樣大，但不能點、不能左滑）：「報銷收款・對象」，
+ * 第二行是原本那筆的分類路徑和備註，金額是收到的錢。showAcc：顯示收進哪個帳戶；balance：帳戶明細裡那一筆之後的餘額。
+ */
+@Composable
+fun ReimbRecvRow(d: AppData, r: ReimbRecv, showAcc: Boolean, amount: String, balance: String? = null, balanceNegative: Boolean = false) {
+    val cute = LocalCute.current
+    val acc = r.pay.accountId?.let { d.accMap[it] }
+    val note = r.t.note.trim().lineSequence().firstOrNull()?.trim().orEmpty()
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CatBubble("img:acc_receipt", 2, 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("報銷收款" + if (r.who.isNotBlank()) "・${r.who}" else "", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOf(catPath(d, r.t), note).filter { it.isNotEmpty() }.joinToString("・"),
+                style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            if (showAcc && acc != null) {
+                Row(Modifier.padding(top = 3.dp)) { TxnChip(acc.name) }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text("+$amount", color = cute.income, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (balance != null) {
+                Text(balance, style = MaterialTheme.typography.labelSmall, color = if (balanceNegative) cute.expense else cute.sub, maxLines = 1)
+            }
+        }
+    }
+}
 
 // ───────────────────────── 共用：一筆記錄 ─────────────────────────
 
@@ -305,7 +365,10 @@ fun HomeScreen(
     var showBudget by remember { mutableStateOf(false) }
     // 前面固定的項目：書本列、吉祥物（可以關）、預算、本月摘要
     val homeBase = 3 + if (mascot != "none") 1 else 0
-    val homeGroups = list.groupBy { it.day }
+    // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排
+    val homeRecvs = reimbRecvsOf(d.bookTxns).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.pay.day)) == month }
+    val homeEntries = ledgerEntries(list, homeRecvs)
+    val homeGroups = homeEntries.groupBy { it.day }
     val homeHl = CenterOnSaved(vm, vm.homeListState, homeBase + 1, month, switchTo = { t ->
         // 記在別的月份（例如現在看 10 月，記了 8/20）：切到那個月
         val m = java.time.YearMonth.from(t.date)
@@ -462,14 +525,19 @@ fun HomeScreen(
             }
         }
 
-        if (list.isEmpty()) {
+        if (homeEntries.isEmpty()) {
             item { EmptyHint(mascot, "這個月還沒有記錄\n按下方的 ＋ 記下第一筆吧") }
         }
-        val groups = list.groupBy { it.day }
-        groups.forEach { (day, dayList) ->
-            item(key = "d$day") { DayHeader(day, dayList) }
-            items(dayList, key = { it.id }) { t ->
-                SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, highlight = t.id == homeHl) { onEdit(t.id) } }
+        homeGroups.forEach { (day, dayList) ->
+            item(key = "d$day") { DayHeader(day, dayList.mapNotNull { it.txn }) }
+            items(dayList, key = { it.key }) { e ->
+                val t = e.txn
+                if (t != null) {
+                    SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, highlight = t.id == homeHl) { onEdit(t.id) } }
+                } else {
+                    val r = e.recv!!
+                    ReimbRecvRow(d, r, showAcc = d.accounts.size > 1, amount = formatMoney(r.pay.amount))
+                }
             }
         }
     }
@@ -538,8 +606,12 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
     val cells = lead + days
     val weeks = (cells + 6) / 7
     val selList = byDay[selected] ?: emptyList()
-    // 前面固定 4 項（標題、本月收支、日曆、選到的日期）＋ 1 項（沒記錄的提示或小技巧），選到的那天的明細接在後面
-    val calHl = CenterOnSaved(vm, vm.calListState, 5, month to selected, switchTo = { t ->
+    // 選到的那天收到的報銷款也列出來（只顯示）
+    val selRecvs = reimbRecvsOf(d.bookTxns).filter { it.pay.day == selected }
+    val selEntries = ledgerEntries(selList, selRecvs)
+    // 前面固定 4 項（標題、本月收支、日曆、選到的日期）＋ 1 項（沒記錄的提示或小技巧，只有收款時兩個都沒有），選到的那天的明細接在後面
+    val calFirst = 4 + if (selEntries.isEmpty() || selList.isNotEmpty()) 1 else 0
+    val calHl = CenterOnSaved(vm, vm.calListState, calFirst, month to selected, switchTo = { t ->
         // 記在別的月份或別天：切到那一天（月份跟著切）
         val m = java.time.YearMonth.from(t.date)
         val changed = m != vm.month || t.day != vm.calSelected
@@ -548,7 +620,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
             vm.month = m
         }
         changed
-    }) { id -> selList.indexOfFirst { it.id == id }.let { k -> if (k >= 0) 5 + k else -1 } }
+    }) { id -> selEntries.indexOfFirst { it.txn?.id == id }.let { k -> if (k >= 0) calFirst + k else -1 } }
 
     // 長按拖曳：記錄每個日期格子的位置
     val cellRects = remember(month) { HashMap<Long, Rect>() }
@@ -654,7 +726,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
                 if (e > 0) Text("支 ${formatMoney(e)}", color = cute.expense, style = MaterialTheme.typography.labelLarge)
             }
         }
-        if (selList.isEmpty()) {
+        if (selEntries.isEmpty()) {
             item {
                 Text(
                     "這天沒有記錄",
@@ -674,7 +746,12 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
                 )
             }
         }
-        items(selList, key = { it.id }) { t ->
+        items(selEntries, key = { it.key }) { e ->
+          val t = e.txn
+          if (t == null) {
+            val r = e.recv!!
+            ReimbRecvRow(d, r, showAcc = d.accounts.size > 1, amount = formatMoney(r.pay.amount))
+          } else {
             SwipeRow(
                 onDelete = { vm.deleteWithUndo(t.id) },
                 drag = DragCallbacks(
@@ -691,6 +768,7 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
                     onCancel = { dragging = null },
                 ),
             ) { TxnRow(d, t, highlight = t.id == calHl) { onEdit(t.id) } }
+          }
         }
     }
         // 拖曳中跟著手指的小卡

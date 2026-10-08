@@ -569,12 +569,12 @@ fun CenterOnSaved(
     return shown?.takeIf { it.second == resetKey }?.first
 }
 
-/** 依「日期標題＋當天每一筆」排列的列表裡，某一筆的項目編號（base = 前面固定項目的數量）；不在裡面回傳 -1 */
-fun txnItemIndex(groups: Map<Long, List<Txn>>, base: Int, id: Long): Int {
+/** 依「日期標題＋當天每一列」排列的列表裡，某一筆的項目編號（base = 前面固定項目的數量）；不在裡面回傳 -1 */
+fun txnItemIndex(groups: Map<Long, List<LedgerEntry>>, base: Int, id: Long): Int {
     var i = base
     for ((_, l) in groups) {
         i += 1
-        val k = l.indexOfFirst { it.id == id }
+        val k = l.indexOfFirst { it.txn?.id == id }
         if (k >= 0) return i + k
         i += l.size
     }

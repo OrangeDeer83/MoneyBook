@@ -143,7 +143,7 @@ private fun claimsOf(txns: List<Txn>): List<Claim> =
         .flatMap { t -> t.items.mapIndexed { i, item -> Claim(t, i, item) } }
 
 /** 分類的完整路徑：子分類前面帶上大分類（餐飲 › 午餐），沒分類是「未分類」 */
-private fun catPath(d: AppData, t: Txn): String {
+fun catPath(d: AppData, t: Txn): String {
     val c = t.categoryId?.let { d.catMap[it] } ?: return "未分類"
     val top = d.topOf(c)
     return if (top.id == c.id) c.name else "${top.name} › ${c.name}"
