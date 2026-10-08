@@ -137,15 +137,22 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(cute.card)
-            // 剛記好（或剛改好）的那一筆：淡淡的底色，左邊一條色條
+            // 剛記好（或剛改好）的那一筆：主色的淡底色、細外框，左邊一條粗色條
+            // （用主色不用輔助色：輔助色和卡片、背景太接近，會融進去）
             .then(
-                if (highlight) Modifier.background(cute.accent2.copy(alpha = 0.22f)).drawBehind {
-                    drawRoundRect(
-                        color = cute.accent2,
-                        topLeft = Offset(0f, 10.dp.toPx()),
-                        size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height - 20.dp.toPx()),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
-                    )
+                if (highlight) {
+                    val hl = MaterialTheme.colorScheme.primary
+                    Modifier
+                        .background(hl.copy(alpha = 0.16f))
+                        .border(2.dp, hl.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
+                        .drawBehind {
+                            drawRoundRect(
+                                color = hl,
+                                topLeft = Offset(3.dp.toPx(), 10.dp.toPx()),
+                                size = androidx.compose.ui.geometry.Size(5.dp.toPx(), size.height - 20.dp.toPx()),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5.dp.toPx()),
+                            )
+                        }
                 } else Modifier
             )
             .clickable(onClick = onClick)
