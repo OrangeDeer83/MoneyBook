@@ -2111,3 +2111,46 @@ def t_txn_row_layout():
     ns = d.shot("測試銀行明細")
     d.check("帳戶明細裡看得到這筆，但不再標帳戶膠囊", d.has(ns, "row note", True) and not [n for n in ns if n.text == "測試銀行" and n.cy > 600],
             [(n.text, n.cy) for n in ns if n.text == "測試銀行"])
+
+
+def _scroll_to_row(text, max_swipes=14):
+    """往下捲到某一列出現在畫面中段（不在底部導覽列下面）為止，回傳那個節點"""
+    _, h = d._screen()
+    for _ in range(max_swipes):
+        hit = [n for n in d.nodes() if n.text == text and 0.15 * h < n.cy < 0.75 * h]
+        if hit:
+            return hit[0]
+        d.scroll_down()
+        d.time.sleep(0.5)
+    raise TimeoutError(f"捲不到 {text}")
+
+
+@case(D, "存好之後回到列表，那一筆會捲到畫面中間（帳戶明細與首頁）", visual=True)
+def t_center_on_saved():
+    s = empty_seed()
+    for i in range(30):
+        s.expense(0, 100 + i, S.C_FOOD, acc=S.BANK, note=f"row{i:02d}")
+    d.fresh(s.json())
+    _, h = d._screen()
+    open_account("測試銀行")
+    # 帳戶明細：捲到中段的一筆，點進去不改直接存
+    d.tap(_scroll_to_row("row10"))
+    f.edit_open()
+    d.tap(max([n for n in d.nodes() if n.text == "完成"], key=lambda n: n.cy))
+    d.wait(lambda n: n.text == "row10", 15, "回到帳戶明細")
+    d.time.sleep(1.5)
+    ns = d.shot("帳戶明細存好之後")
+    row = d.first(ns, "row10")
+    d.check("帳戶明細：存好的那一筆在畫面中間（高度 30%～70%）", row is not None and 0.3 * h < row.cy < 0.7 * h, (row and row.cy, h))
+    d.tap_back()
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1)
+    d.tap(_scroll_to_row("row20"))
+    f.edit_open()
+    f.save_edit()
+    d.wait(lambda n: n.text == "row20", 15, "回到首頁")
+    d.time.sleep(1.5)
+    ns = d.shot("首頁存好之後")
+    row = d.first(ns, "row20")
+    d.check("首頁：存好的那一筆在畫面中間（高度 30%～70%）", row is not None and 0.3 * h < row.cy < 0.7 * h, (row and row.cy, h))

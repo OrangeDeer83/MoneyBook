@@ -49,6 +49,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import tw.moneybook.app.Defaults
+import tw.moneybook.app.MoneyViewModel
+import tw.moneybook.app.Txn
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -510,3 +514,52 @@ fun CuteDatePickerDialog(
         }
     }
 }
+
+/**
+ * 記完（或改完）一筆回到列表：把那一筆捲到畫面正中間；上面的內容不夠多就停在最上面（下面不夠就停在最下面）。
+ * 如果它就是列表裡最上面的第一筆，上面沒有其他明細，就直接回到最上面，不把上方的摘要卡捲掉。
+ * indexOf 回傳那一筆在這個列表裡的項目編號，不在這個列表（例如在別的月份）回傳 -1；firstTxnIndex 是第一筆明細的項目編號。
+ */
+@Composable
+fun CenterOnSaved(
+    vm: MoneyViewModel,
+    state: androidx.compose.foundation.lazy.LazyListState,
+    firstTxnIndex: Int,
+    indexOf: (Long) -> Int,
+) {
+    val id = vm.savedTxnId
+    androidx.compose.runtime.LaunchedEffect(id) {
+        if (id == null) return@LaunchedEffect
+        try {
+            val idx = indexOf(id)
+            if (idx < 0) return@LaunchedEffect
+            if (idx <= firstTxnIndex) {
+                state.scrollToItem(0)
+                return@LaunchedEffect
+            }
+            state.scrollToItem(idx)
+            val info = kotlinx.coroutines.withTimeoutOrNull(1000) {
+                androidx.compose.runtime.snapshotFlow { state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == idx } }
+                    .filterNotNull().first()
+            } ?: return@LaunchedEffect
+            val lay = state.layoutInfo
+            val want = lay.viewportStartOffset + (lay.viewportEndOffset - lay.viewportStartOffset - info.size) / 2
+            state.scrollBy((info.offset - want).toFloat())
+        } finally {
+            vm.savedTxnId = null
+        }
+    }
+}
+
+/** 依「日期標題＋當天每一筆」排列的列表裡，某一筆的項目編號（base = 前面固定項目的數量）；不在裡面回傳 -1 */
+fun txnItemIndex(groups: Map<Long, List<Txn>>, base: Int, id: Long): Int {
+    var i = base
+    for ((_, l) in groups) {
+        i += 1
+        val k = l.indexOfFirst { it.id == id }
+        if (k >= 0) return i + k
+        i += l.size
+    }
+    return -1
+}
+

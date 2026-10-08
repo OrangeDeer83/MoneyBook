@@ -132,6 +132,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         _messages.tryEmit(UiMsg(msg))
     }
 
+    /** 剛存好（新增或修改）的那一筆：列表頁回來時把它捲到畫面中間，捲完就清掉 */
+    var savedTxnId by mutableStateOf<Long?>(null)
+
     /** 撒花：只在新增記錄時觸發，播過就不再重播 */
     var celebratePlayed = 0
 
@@ -173,6 +176,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 billMonth = dr.billMonth,
             ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
+            savedTxnId = editId
             return
         }
         var next = d.nextId
@@ -224,6 +228,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         commit(d.copy(txns = sortTxns(d.txns + list), nextId = next))
+        savedTxnId = list.first().id
         if (d.prefs.celebrate) celebrateTick++
         if (n > 1) toast("已建立 $n 期分期，每期約 ${formatMoney(dr.amount / n)}")
     }
@@ -258,6 +263,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             fxAmount = if (acc.isForeign) kotlin.math.abs(diff) else 0L,
         )
         commit(d.copy(txns = sortTxns(d.txns + t), nextId = d.nextId + 1))
+        savedTxnId = t.id
         _messages.tryEmit(UiMsg("已更新餘額，${if (diff > 0) "增加" else "減少"} ${acc.fmt(kotlin.math.abs(diff))}", "復原") {
             val now = data
             commit(now.copy(txns = now.txns.filter { it.id != t.id }))

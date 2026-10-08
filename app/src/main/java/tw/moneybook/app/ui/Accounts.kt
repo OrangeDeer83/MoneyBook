@@ -175,10 +175,16 @@ fun AccountDetailScreen(
     val inflow = flows.filter { it > 0 }.sum()
     val outflow = -flows.filter { it < 0 }.sum()
 
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // 前面固定的項目：帳戶卡、（信用卡帳單／投資）、月份列、報銷入帳
+    val dayGroups = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.groupBy { it.day }
+    val listBase = 2 + (if (a.type == AccountType.CARD) 1 else 0) + (if (a.type == AccountType.INVEST) 1 else 0) + reimbIn.size
+    CenterOnSaved(vm, listState, listBase + 1) { txnItemIndex(dayGroups, listBase, it) }
+
     SubPage(a.name, onBack) {
       Box(Modifier.fillMaxSize()) {
         // 底下多留空間，最後一筆不會被右下角的 + 蓋住
-        LazyColumn(contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(state = listState, contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 CuteCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -302,7 +308,7 @@ fun AccountDetailScreen(
                     }
                 }
             }
-            monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.groupBy { it.day }.forEach { (day, list) ->
+            dayGroups.forEach { (day, list) ->
                 item(key = "d$day") { DayHeader(day, list) }
                 items(list, key = { it.id }) { t ->
                     SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"]) { onEdit(t.id) } }

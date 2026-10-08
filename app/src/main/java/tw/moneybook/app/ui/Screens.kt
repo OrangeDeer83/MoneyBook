@@ -151,6 +151,8 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, o
                         (if (t.reimb == 1) "待報銷" else "已報銷") + when {
                             t.reimb == 1 && t.reimbOutstanding < t.reimbAmount -> " 剩${formatMoney(t.reimbOutstanding)}"
                             t.reimbAmount < t.paid -> " ${formatMoney(t.reimbAmount)}"
+                            // 待報銷：全額也標出金額；已報銷全額不另外標
+                            t.reimb == 1 -> " ${formatMoney(t.reimbAmount)}"
                             else -> ""
                         },
                         style = MaterialTheme.typography.labelSmall,
@@ -271,6 +273,10 @@ fun HomeScreen(
     val mascot = d.prefs.mascot
     var showBooks by remember { mutableStateOf(false) }
     var showBudget by remember { mutableStateOf(false) }
+    // 前面固定的項目：書本列、吉祥物（可以關）、預算、本月摘要
+    val homeBase = 3 + if (mascot != "none") 1 else 0
+    val homeGroups = list.groupBy { it.day }
+    CenterOnSaved(vm, vm.homeListState, homeBase + 1) { txnItemIndex(homeGroups, homeBase, it) }
     LazyColumn(
         state = vm.homeListState,
         modifier = Modifier.fillMaxSize(),
@@ -498,6 +504,8 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
     val cells = lead + days
     val weeks = (cells + 6) / 7
     val selList = byDay[selected] ?: emptyList()
+    // 前面固定 4 項（標題、本月收支、日曆、選到的日期）＋ 1 項（沒記錄的提示或小技巧），選到的那天的明細接在後面
+    CenterOnSaved(vm, vm.calListState, 5) { id -> selList.indexOfFirst { it.id == id }.let { k -> if (k >= 0) 5 + k else -1 } }
 
     // 長按拖曳：記錄每個日期格子的位置
     val cellRects = remember(month) { HashMap<Long, Rect>() }
