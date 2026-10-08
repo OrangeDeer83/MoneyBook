@@ -71,8 +71,8 @@ class BillMonthTest {
     @Test
     fun billSpendingMovesWithTheManualMonth() {
         val d = data(spend(1, 2026, 10, 10, 300), spend(2, 2026, 10, 24, 500, bill = 202611), spend(3, 2026, 10, 30, 200))
-        assertEquals(300L, d.cardBillSpending(card, YearMonth.of(2026, 10)))          // 10 月帳單：只有 10/10 那筆
-        assertEquals(700L, d.cardBillSpending(card, YearMonth.of(2026, 11)))          // 11 月帳單：10/30（自動）＋ 10/24（手動）
+        assertEquals(500L, d.cardBillSpending(card, YearMonth.of(2026, 10)))          // 10 月：10/10、10/30（依消費日期），10/24 被手動移走
+        assertEquals(500L, d.cardBillSpending(card, YearMonth.of(2026, 11)))          // 11 月：只有手動指定的 10/24
     }
 
     @Test
