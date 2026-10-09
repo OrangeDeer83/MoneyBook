@@ -91,6 +91,12 @@ class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?) {
     val day: Long get() = txn?.day ?: recv!!.pay.day
     val time: Int get() = txn?.time ?: recv!!.pay.time
 
+    /** 排序用的時間：報銷收款沒有時間的當成當天最後（1440），和算餘額的順序一致 */
+    val sortTime: Int get() = txn?.time ?: recv!!.pay.time.let { if (it >= 0) it else 1440 }
+
+    /** 排序用的先後：一般記錄是 id×1000，收款接在它那筆記錄後面（依收款順序），和算餘額的順序一致 */
+    val sortOrder: Long get() = txn?.let { it.id * 1000 } ?: (recv!!.t.id * 1000 + 1 + recv.idx)
+
     /** 列表用的 key：一般記錄用 id，收款用「r 原記錄 id _ 第幾筆」 */
     val key: Any get() = txn?.id ?: "r${recv!!.t.id}_${recv.idx}"
 }
@@ -100,10 +106,18 @@ fun reimbRecvsOf(txns: List<Txn>): List<ReimbRecv> = txns.flatMap { t ->
     t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) }
 }
 
-/** 一般記錄和報銷收款合在一起，照日期、時間由新到舊排（同一天同一時間，一般記錄在前） */
+/**
+ * 一般記錄和報銷收款合在一起，由新到舊排。排序規則要和 [AppData.runningBalances]（算每一筆做完之後的餘額）
+ * 剛好相反，這樣同一天裡由下往上讀，餘額才會一筆一筆加上去，最上面那筆是當天最後的餘額：
+ * 日期 → 時間（一般記錄沒有時間的排最前面；報銷收款沒有時間的排當天最後）→ 記錄編號（收款接在它那筆記錄後面、依收款順序）。
+ */
 fun ledgerEntries(txns: List<Txn>, recvs: List<ReimbRecv>): List<LedgerEntry> =
     (txns.map { LedgerEntry(it, null) } + recvs.map { LedgerEntry(null, it) })
-        .sortedWith(compareByDescending<LedgerEntry> { it.day }.thenByDescending { it.time })
+        .sortedWith(
+            compareByDescending<LedgerEntry> { it.day }
+                .thenByDescending { it.sortTime }
+                .thenByDescending { it.sortOrder },
+        )
 
 /**
  * 報銷收款的一列（和一般明細一樣大，但不能點、不能左滑）：「報銷收款・對象」，

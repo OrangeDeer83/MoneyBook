@@ -2455,3 +2455,19 @@ def t_card_statement_view():
     goto(*b25)
     ns = d.shot(f"{b25[1]} 月帳單")
     d.check("25 號那筆在前一期的帳單（結帳日當天算這一期）", d.has(ns, "d25", True) and not d.has(ns, "d26", True), [n.text for n in ns if n.text.startswith("d2")])
+
+
+@case(D, "帳戶明細同一天的報銷收款：由下往上讀、餘額一筆筆加上去，最上面最多", visual=True)
+def t_ledger_same_day_order():
+    import re
+    s = empty_seed()
+    # 三筆待報銷的支出日期亂排，報銷款都在今天收進測試銀行（沒有時間）
+    for off, amt in ((-3, 100), (-1, 200), (-2, 300)):
+        s.expense(off, amt, S.C_FOOD, note=f"r{amt}", reimb=1, reimb_amount=amt,
+                  items=[S.reimb_item("公司", amt, False, [S.pay(f.today(), S.BANK, amt)])])
+    d.fresh(s.json())
+    open_account("測試銀行")
+    ns = d.shot("測試銀行明細")
+    rows = sorted([n for n in ns if n.text.startswith("餘額 $")], key=lambda n: n.cy)
+    vals = [int(re.sub(r"[^0-9]", "", n.text)) for n in rows]
+    d.check("三筆報銷收款的餘額由上到下遞減（最上面最多）", len(vals) >= 3 and vals[:3] == [50_600, 50_300, 50_100], vals)
