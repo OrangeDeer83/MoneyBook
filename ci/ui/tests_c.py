@@ -70,7 +70,7 @@ def t_dark_edit():
     d.shot("深色：記一筆", contrast=True)
 
     def tags():
-        d.tap_text("新增標籤", exact=True)
+        f.chip_scroll("新增標籤", "今天")
         d.time.sleep(1)
         d.shot("深色：標籤對話框", contrast=True)
         d.back()

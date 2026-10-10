@@ -2490,8 +2490,8 @@ def t_fx_spend_record_and_settle():
     d.tap_text("測試信用卡", exact=True)
     d.time.sleep(0.8)
     ns = d.shot("選了信用卡")
-    d.check("選了台幣信用卡，多了灰色的「外幣」按鈕", d.has(ns, "外幣", True), [n.text for n in ns if n.text][:24])
-    d.tap_text("外幣", exact=True)
+    chip = f.chip_scroll("外幣", "今天")                # 在可以橫向捲動的那一排
+    d.check("選了台幣信用卡，多了灰色的「外幣」按鈕", chip.text == "外幣", chip.text)
     d.wait_text("外幣消費", timeout=10)
     d.time.sleep(0.8)
     fill_dialog(["12000", "0.22"])
@@ -2539,8 +2539,9 @@ def t_fx_spend_settle_from_edit():
     d.tap(d.wait(lambda n: n.text.startswith("ramen"), 10, "那一筆"))
     f.edit_open()
     ns = d.shot("修改外幣消費")
-    d.check("按鈕是「外幣 JPY・待請款」，下面寫預估", d.has(ns, "外幣 JPY・待請款", True) and d.has(ns, "¥12,000 @ 0.22（預估，待請款）", True), [n.text for n in ns if "外幣" in n.text or "¥" in n.text])
-    d.tap_text("外幣 JPY・待請款", exact=True)
+    d.check("金額下面寫「¥12,000 @ 0.22（預估，待請款）」", d.has(ns, "¥12,000 @ 0.22（預估，待請款）", True), [n.text for n in ns if "¥" in n.text])
+    chip = f.chip_scroll("外幣 JPY", "今天")            # 按鈕在可以橫向捲動的那一排，要往左捲才看得到
+    d.check("按鈕是「外幣 JPY・待請款」", chip.text == "外幣 JPY・待請款", chip.text)
     d.wait_text("外幣消費", timeout=10)
     d.tap_text("已請款（填實際台幣）", exact=True)
     d.time.sleep(0.8)

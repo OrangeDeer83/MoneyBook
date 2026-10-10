@@ -195,7 +195,7 @@ def t_tags():
     d.fresh(home_seed())
     f.open_add()
     f.keypad("10")
-    d.tap_text("新增標籤", exact=True)
+    f.chip_scroll("新增標籤", "今天")           # 多了「外幣」按鈕，標籤按鈕可能要往左捲才看得到
     d.time.sleep(1)
     d.shot("標籤對話框")
     ed = d.edits()
