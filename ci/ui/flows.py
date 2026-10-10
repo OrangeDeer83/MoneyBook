@@ -103,8 +103,8 @@ def me_page(label):
     d.time.sleep(1)
 
 
-def chip_scroll(label, anchor, tries=6):
-    """可橫向捲動的一排按鈕：找不到就往左捲"""
+def chip_scroll(label, anchor, tries=10):
+    """可橫向捲動的一排按鈕：找不到就往左捲（每次捲一小段、慢慢滑，不然一下子滑過頭就錯過了）"""
     for _ in range(tries):
         ns = d.nodes()
         r = d.find(ns, label, exact=True) or [n for n in ns if n.text.startswith(label)]
@@ -113,7 +113,7 @@ def chip_scroll(label, anchor, tries=6):
             return r[0]
         row = next((n for n in ns if anchor in n.text), None)
         y = row.cy if row else 1440
-        d.swipe(950, y, 120, y)
+        d.swipe(800, y, 380, y, 900)
     raise TimeoutError(f"找不到按鈕「{label}」")
 
 
