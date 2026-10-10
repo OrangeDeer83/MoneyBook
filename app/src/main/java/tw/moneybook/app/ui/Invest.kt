@@ -504,6 +504,7 @@ private fun TradeDialog(
     }
     var day by remember { mutableStateOf(edit?.day ?: LocalDate.now().toEpochDay()) }
     var datePick by remember { mutableStateOf(false) }
+    var pickCash by remember { mutableStateOf(false) }
     // 單價用哪個幣別記：美股是美金、日股是日圓…，台股是台幣（空白）
     val cur = Markets.currencyOf(market)
     // 可以付款的帳戶：台幣帳戶，加上「幣別跟這檔一樣」的外幣帳戶（例如第一證券的美金）
@@ -623,9 +624,19 @@ private fun TradeDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = if (cashFx) KeyboardType.Decimal else KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
                 )
                 Text(if (buy) "從哪個帳戶付款" else "賣出的錢轉到哪個帳戶", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    cashAccs.forEach { c -> CuteChip(c.name + if (c.isForeign) "（${c.currency}）" else "", cash == c.id, { cash = c.id; rateTouched = false }) }
-                    CuteChip("不連動", cash == null, { cash = null; rateTouched = false })
+                PickerButton(cashAcc?.let { it.name + if (it.isForeign) "（${it.currency}）" else "" } ?: "不連動（只記買賣，不動帳戶）", { pickCash = true })
+                if (pickCash) {
+                    AccountPickDialog(
+                        vm = vm,
+                        accounts = cashAccs,
+                        selectedId = cash,
+                        onPick = { c -> cash = c.id; rateTouched = false; pickCash = false },
+                        onDismiss = { pickCash = false },
+                        title = if (buy) "從哪個帳戶付款" else "賣出的錢轉到哪個帳戶",
+                        noneLabel = "不連動（只記買賣，不動帳戶）",
+                        noneSelected = cash == null,
+                        onNone = { cash = null; rateTouched = false; pickCash = false },
+                    )
                 }
                 Text(
                     when {

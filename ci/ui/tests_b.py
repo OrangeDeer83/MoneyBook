@@ -373,7 +373,7 @@ def t_overpay():
 def t_other_account():
     d.fresh(reimb_seed())
     receive_page("Hua")
-    d.tap_text("測試銀行", exact=False)
+    f.pick_from_list("測試銀行", anchor="存進哪個帳戶")
     d.shot("選測試銀行")
     confirm_receive()
     d.tap_text("已收款", exact=True)

@@ -633,6 +633,8 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
     val overrides = remember { mutableStateMapOf<String, String>() }
     val chase = remember { mutableStateMapOf<String, Boolean>() }
     var askChase by remember { mutableStateOf(false) }
+    // 正在選收款帳戶的那一列（-1＝沒有）
+    var pickAccFor by remember { mutableStateOf(-1) }
     val multi = lines.size > 1
     // 勾選這次對方「已經給了」的帳（預設全部勾選）：只分配到勾選的，最上面統計勾選的合計
     val selected = remember { mutableStateMapOf<String, Boolean>() }
@@ -768,10 +770,17 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                         Spacer(Modifier.height(8.dp))
                         Text("存進哪個帳戶", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         Spacer(Modifier.height(4.dp))
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PickerButton(accOf(l)?.name ?: "選擇帳戶", { pickAccFor = li })
+                        if (pickAccFor == li) {
                             // 同一次收款每種幣別只能有一列：已經被別列用掉的幣別不列出（自己這一列的幣別除外）
-                            allChoices.filter { a -> currencyOfAcc(a) == cur || lines.none { o -> o !== l && curOf(o) == currencyOfAcc(a) } }
-                                .forEach { a -> CuteChip(accLabel(a), l.accId == a.id, { pickAccount(l, a) }) }
+                            AccountPickDialog(
+                                vm = vm,
+                                accounts = allChoices.filter { a -> currencyOfAcc(a) == cur || lines.none { o -> o !== l && curOf(o) == currencyOfAcc(a) } },
+                                selectedId = l.accId,
+                                onPick = { a -> pickAccount(l, a); pickAccFor = -1 },
+                                onDismiss = { pickAccFor = -1 },
+                                title = "存進哪個帳戶",
+                            )
                         }
                     }
                 }
@@ -1017,6 +1026,7 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
         var timeMin by remember { mutableStateOf(pay.time) }
         var pickDate by remember { mutableStateOf(false) }
         var pickTime by remember { mutableStateOf(false) }
+        var pickPayAcc by remember { mutableStateOf(false) }
         val payTries = rememberNeedTries()
         val payAmt = if (editFx != null) parseFx(amt, editDec) ?: 0L else amt.toLongOrNull() ?: 0L
         val payNeed = firstNeed(if (payAmt <= 0L) Need("amt", "請輸入這次收到的金額") else null)
@@ -1032,9 +1042,16 @@ private fun ReimbPersonPage(vm: MoneyViewModel, who: String, onBack: () -> Unit,
                         error = payView.on("amt"),
                     )
                     payView.Message("amt")
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        d.visibleAccounts.filter { !it.isForeign }.forEach { a -> CuteChip(accLabel(a), accId == a.id, { switchAccount(a) }) }
-                        fxOptions.forEach { a -> CuteChip(accLabel(a), accId == a.id, { switchAccount(a) }) }
+                    PickerButton(editAcc?.name ?: "選擇帳戶", { pickPayAcc = true })
+                    if (pickPayAcc) {
+                        AccountPickDialog(
+                            vm = vm,
+                            accounts = d.visibleAccounts.filter { !it.isForeign } + fxOptions,
+                            selectedId = accId,
+                            onPick = { a -> switchAccount(a); pickPayAcc = false },
+                            onDismiss = { pickPayAcc = false },
+                            title = "存進哪個帳戶",
+                        )
                     }
                     if (editFx != null) {
                         Text("收外幣：沖掉的台幣用這筆消費當時的匯率換算。", style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub)

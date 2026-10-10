@@ -75,11 +75,9 @@ fun FxSpendDialog(
 ) {
     val d = vm.data
     val cute = LocalCute.current
-    val builtinCodes = Currencies.builtin.map { it.code }
     val startCur = init.cur.ifEmpty { d.txns.firstOrNull { it.fxSpendCur.isNotEmpty() }?.fxSpendCur ?: "JPY" }
     var cur by remember { mutableStateOf(startCur) }
-    var custom by remember { mutableStateOf(startCur !in builtinCodes) }
-    var customCode by remember { mutableStateOf(if (startCur !in builtinCodes) startCur else "") }
+    var pickCur by remember { mutableStateOf(false) }
     var amountText by remember { mutableStateOf(init.amount) }
     var pending by remember { mutableStateOf(init.pending) }
     var rateStr by remember { mutableStateOf("") }
@@ -87,7 +85,7 @@ fun FxSpendDialog(
     var twdText by remember { mutableStateOf(if (!init.pending && init.twd > 0L) init.twd.toString() else "") }
     var askConsent by remember { mutableStateOf(false) }
 
-    val code = (if (custom) customCode else cur).trim().uppercase()
+    val code = cur.trim().uppercase()
     val codeOk = Currencies.validCode(code)
     val dec = Currencies.of(code).decimals
     val minor = parseFx(amountText, dec)?.takeIf { it > 0L }
@@ -123,20 +121,8 @@ fun FxSpendDialog(
         title = { Text("外幣消費") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Currencies.builtin.forEach { c ->
-                        CuteChip("${c.code} ${c.name}", !custom && cur == c.code, { custom = false; cur = c.code })
-                    }
-                    CuteChip("其他…", custom, { custom = true })
-                }
-                if (custom) {
-                    OutlinedTextField(
-                        customCode, { customCode = it.filter { ch -> ch in 'A'..'Z' || ch in 'a'..'z' }.take(3).uppercase() },
-                        label = { Text("幣別代碼（3 個英文字母）") }, singleLine = true,
-                        isError = nv.on("cur"), supportingText = nv.supporting("cur"),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                PickerButton(currencyLabel(code), { pickCur = true })
+                if (pickCur) CurrencyPickDialog(cur, { cur = it; pickCur = false }, { pickCur = false })
                 OutlinedTextField(
                     amountText, { amountText = it.filter { ch -> ch.isDigit() || (ch == '.' && dec > 0) }.take(14) },
                     label = { Text("外幣金額（${code.ifEmpty { "外幣" }}）") }, singleLine = true,

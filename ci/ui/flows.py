@@ -117,6 +117,26 @@ def chip_scroll(label, anchor, tries=6):
     raise TimeoutError(f"找不到按鈕「{label}」")
 
 
+def pick_from_list(target, anchor=None, via=None):
+    """選擇鈕（帳戶、幣別）：點開跳出的清單，選 target。按鈕用「上面的小標籤 anchor」或「按鈕上目前的字 via」找；
+    清單裡同名的（常用帳戶、類型標題、帳戶）選最下面那個"""
+    ns = d.nodes()
+    if via:
+        btn = next(n for n in ns if n.text == via)
+    else:
+        lab = next(n for n in ns if n.text == anchor)
+        below = [n for n in ns if n.text and 0 < n.cy - lab.cy < 180 and n.x1 < 400]
+        btn = min(below, key=lambda n: n.cy)
+    d.tap(btn)
+    d.wait_text("關閉", timeout=10)
+    d.time.sleep(0.6)
+    hits = [n for n in d.nodes() if n.text == target]
+    if not hits:
+        raise TimeoutError(f"清單裡找不到「{target}」")
+    d.tap(max(hits, key=lambda n: n.cy))
+    d.time.sleep(0.8)
+
+
 def confirm_dialog():
     return d.tap_any(["好", "完成", "儲存", "確定", "新增", "OK"], exact=True)
 

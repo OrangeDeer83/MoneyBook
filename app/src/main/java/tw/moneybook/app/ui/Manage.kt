@@ -528,6 +528,7 @@ fun AccountDialog(
     }
     var curChoice by remember { mutableStateOf(acc?.currency?.takeIf { c -> Currencies.builtin.any { it.code == c } } ?: if (acc?.isForeign == true) "" else "USD") }
     var curCustom by remember { mutableStateOf(acc?.currency?.takeIf { c -> Currencies.builtin.none { it.code == c } } ?: "") }
+    var pickCur by remember { mutableStateOf(false) }
     val currency = if (type != AccountType.FOREIGN) "" else if (Currencies.validCode(curCustom)) curCustom.trim().uppercase() else curChoice
     val curInfo = if (currency.isNotEmpty()) Currencies.of(currency) else null
     var hidden by remember { mutableStateOf(acc?.hidden ?: false) }
@@ -691,19 +692,18 @@ fun AccountDialog(
                         Text("幣別：${curInfo?.name ?: currency}（$currency），建立後不能更改", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     } else {
                         Text("幣別", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                        androidx.compose.foundation.layout.FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Currencies.builtin.forEach { c ->
-                                CuteChip("${c.code} ${c.name}", curCustom.isBlank() && curChoice == c.code, { curChoice = c.code; curCustom = "" })
-                            }
+                        PickerButton(currencyLabel(currency), { pickCur = true })
+                        if (pickCur) {
+                            CurrencyPickDialog(
+                                currency,
+                                { code ->
+                                    // 內建的幣別存在 curChoice，其他的存在 curCustom（和原本一樣）
+                                    if (Currencies.builtin.any { it.code == code }) { curChoice = code; curCustom = "" } else curCustom = code
+                                    pickCur = false
+                                },
+                                { pickCur = false },
+                            )
                         }
-                        OutlinedTextField(
-                            curCustom, { curCustom = it.filter { ch -> ch in 'A'..'Z' || ch in 'a'..'z' }.take(3).uppercase() },
-                            label = { Text("其他幣別代碼（3 個英文字母，例如 CAD）") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
                     }
                 }
                 OutlinedTextField(

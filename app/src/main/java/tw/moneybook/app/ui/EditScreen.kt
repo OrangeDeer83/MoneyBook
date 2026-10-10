@@ -90,6 +90,7 @@ import tw.moneybook.app.Calc
 import tw.moneybook.app.FxMode
 import tw.moneybook.app.cur
 import tw.moneybook.app.formatFx
+import tw.moneybook.app.fmt
 import tw.moneybook.app.fxExpr
 import tw.moneybook.app.fxPlain
 import tw.moneybook.app.fxPlan
@@ -458,12 +459,15 @@ fun EditScreen(
             if (type == TxType.TRANSFER) {
                 // 買賣外幣時多一列「收到」的輸入，各列縮小一點；螢幕還是放不下就可以往下捲
                 val tight = (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) && fxAcc != null
+                val tbal = remember(d) { d.balances() }
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(if (tight) 6.dp else 10.dp)) {
-                    AccountPick("從", accId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶", compact = tight) { dialog = "from" }
+                    AccountPick("從", accId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶", compact = tight,
+                        balance = accId?.let { d.accMap[it] }?.let { it.fmt(tbal[it.id] ?: 0L) }) { dialog = "from" }
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:down", if (tight) 18.sp else 22.sp) }
                     }
-                    AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶", compact = tight) { dialog = "to" }
+                    AccountPick("轉到", toAccId?.let { d.accMap[it] }?.let { accLabel(it) } ?: "選擇帳戶", compact = tight,
+                        balance = toAccId?.let { d.accMap[it] }?.let { it.fmt(tbal[it.id] ?: 0L) }) { dialog = "to" }
                     if (tight && fxAcc != null) {
                         val buy = plan.mode == FxMode.BUY
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1088,7 +1092,7 @@ fun EditScreen(
 }
 
 @Composable
-private fun AccountPick(label: String, value: String, compact: Boolean = false, onClick: () -> Unit) {
+private fun AccountPick(label: String, value: String, compact: Boolean = false, balance: String? = null, onClick: () -> Unit) {
     val cute = LocalCute.current
     val shape = RoundedCornerShape(20.dp)
     Row(
@@ -1101,6 +1105,10 @@ private fun AccountPick(label: String, value: String, compact: Boolean = false, 
     ) {
         Text(label, color = cute.sub, modifier = Modifier.width(48.dp))
         Text(value, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        // 轉帳：帳戶旁邊寫現在的餘額，一眼看得出夠不夠
+        if (balance != null) {
+            Text(balance, style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.padding(end = 10.dp))
+        }
         Box(Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
     }
 }
