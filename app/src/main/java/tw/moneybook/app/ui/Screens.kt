@@ -561,7 +561,7 @@ fun HomeScreen(
                                     .padding(horizontal = 12.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                IconGlyph("vec:coin", 16.sp)
+                                IconGlyph("vec:coin_two", 16.sp)
                                 Spacer(Modifier.width(6.dp))
                                 Text("待請款外幣 ${fxPend.size} 筆  ›", style = MaterialTheme.typography.labelLarge, color = cute.ink)
                             }

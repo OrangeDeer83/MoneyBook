@@ -183,11 +183,31 @@ object AppLines {
         "vec:tag" to AppIcons.LTag,
         "vec:receipt" to AppIcons.LReceipt,
         "vec:coin" to AppIcons.LCoin,
+        "vec:coin_yen" to AppIcons.LCoinYen,
+        "vec:coin_dollar" to AppIcons.LCoinDollar,
+        "vec:coin_euro" to AppIcons.LCoinEuro,
+        "vec:coin_pound" to AppIcons.LCoinPound,
+        "vec:coin_won" to AppIcons.LCoinWon,
+        "vec:coin_baht" to AppIcons.LCoinBaht,
+        "vec:coin_other" to AppIcons.LCoinOther,
+        "vec:coin_two" to AppIcons.LCoinTwo,
+        "vec:fee" to AppIcons.LFee,
         "vec:star" to AppIcons.LStar,
         "vec:book" to AppIcons.LBook,
     )
 
     fun isLine(s: String): Boolean = s.startsWith(PREFIX)
+}
+
+/** 外幣按鈕的圖示：硬幣裡放這個幣別的符號；還沒選幣別是 ¥，列表裡沒有的幣別是通用的硬幣 */
+fun fxCoinIcon(code: String): String = when (code.uppercase()) {
+    "", "JPY", "CNY" -> "vec:coin_yen"
+    "USD", "HKD", "AUD", "SGD" -> "vec:coin_dollar"
+    "EUR" -> "vec:coin_euro"
+    "GBP" -> "vec:coin_pound"
+    "KRW" -> "vec:coin_won"
+    "THB" -> "vec:coin_baht"
+    else -> "vec:coin_other"
 }
 
 /** 有圖片的圖示回傳 null（要另外畫圖），其他照原樣 */

@@ -594,7 +594,7 @@ fun EditScreen(
             if (fxsEligible) {
                 CuteChip(
                     if (fxsOn) "外幣 $fxsCur" + (if (fxsPending) "・待請款" else "") else "外幣",
-                    fxsOn, { dialog = "fxs" }, icon = "vec:coin",
+                    fxsOn, { dialog = "fxs" }, icon = fxCoinIcon(if (fxsOn) fxsCur else ""),
                 )
             }
             CuteChip(if (tags.isEmpty()) "新增標籤" else tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" }, icon = "vec:tag")
@@ -605,7 +605,7 @@ fun EditScreen(
                 type == TxType.EXPENSE -> "手續費／優惠"
                 else -> "手續費"
             }
-            if (!fromFx) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = if (fee == 0L && effDiscount > 0) "vec:ticket" else "vec:coin")
+            if (!fromFx) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = "vec:fee")
             if (type == TxType.EXPENSE && !tplMode) {
                 val totalReimb = reimbItems.sumOf { it.effective }
                 val part = if (reimbItems.isNotEmpty() && totalReimb != actual) " ${formatMoney(totalReimb)}" else ""

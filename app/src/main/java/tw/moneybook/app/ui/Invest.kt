@@ -126,7 +126,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                CuteChip("買進", false, { tradeBuy = true; tradeSymbol = ""; dialog = "trade" }, icon = "vec:coin")
+                CuteChip("買進", false, { tradeBuy = true; tradeSymbol = ""; dialog = "trade" })
                 CuteChip("賣出", false, { tradeBuy = false; tradeSymbol = pf.positions.firstOrNull()?.symbol ?: ""; dialog = "trade" })
                 if (pf.positions.isNotEmpty()) {
                     CuteChip(
