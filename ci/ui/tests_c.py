@@ -77,6 +77,12 @@ def t_dark_edit():
     safe("標籤對話框", tags)
 
     def date():
+        # 前一步為了找「新增標籤」把這一排往左捲了，先捲回來才看得到日期按鈕
+        ns = d.nodes()
+        row = next((n for n in ns if "新增標籤" in n.text or "手續費" in n.text), None)
+        y = row.cy if row else 1440
+        d.swipe(120, y, 950, y)
+        d.swipe(120, y, 950, y)
         ns = d.nodes()
         d.tap(next(n for n in ns if n.text.startswith("今天")))
         d.time.sleep(1.2)
