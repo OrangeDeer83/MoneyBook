@@ -58,6 +58,8 @@ import tw.moneybook.app.flowFor
 import tw.moneybook.app.formatFx
 import tw.moneybook.app.fmt
 import tw.moneybook.app.fxNote
+import tw.moneybook.app.fxPendingList
+import tw.moneybook.app.isFxSpend
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.TxType
 import tw.moneybook.app.ReimbPay
@@ -250,6 +252,16 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (t.fxPending && t.isFxSpend) {
+                    // 外幣刷卡還沒請款：金額是預估的
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "待請款",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cute.ink,
+                        modifier = Modifier.clip(CircleShape).background(cute.accent2.copy(alpha = 0.4f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
                 if (t.reimb != 0) {
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -305,6 +317,7 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
                 Text(fees.joinToString("・"), style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
             }
             Text(sign + shownText, color = c, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (t.fxPending && t.isFxSpend) Text("預估", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
             if (balance != null) {
                 Text(
                     "餘額 ${signedAcc?.fmt(balance) ?: formatMoney(balance)}", style = MaterialTheme.typography.labelSmall,
@@ -367,6 +380,7 @@ fun HomeScreen(
     onEdit: (Long) -> Unit,
     onManageBooks: () -> Unit,
     onReimb: () -> Unit,
+    onFxPending: () -> Unit = {},
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -521,20 +535,37 @@ fun HomeScreen(
                     MiniStat("結餘", formatMoney(income - expense), cute.ink, Modifier.weight(1f))
                 }
                 val pending = d.bookTxns.pendingReimb()
-                if (pending.isNotEmpty()) {
+                val fxPend = d.fxPendingList()
+                if (pending.isNotEmpty() || fxPend.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    Row(
-                        Modifier.clip(CircleShape).background(cute.soft).clickable(onClick = onReimb)
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconGlyph("vec:receipt", 16.sp)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbOutstanding })}  ›",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (pending.isNotEmpty()) {
+                            Row(
+                                Modifier.clip(CircleShape).background(cute.soft).clickable(onClick = onReimb)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconGlyph("vec:receipt", 16.sp)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbOutstanding })}  ›",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        // 外幣刷卡還沒請款的提醒
+                        if (fxPend.isNotEmpty()) {
+                            Row(
+                                Modifier.clip(CircleShape).background(cute.accent2.copy(alpha = 0.35f)).clickable(onClick = onFxPending)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconGlyph("vec:coin", 16.sp)
+                                Spacer(Modifier.width(6.dp))
+                                Text("待請款外幣 ${fxPend.size} 筆  ›", style = MaterialTheme.typography.labelLarge, color = cute.ink)
+                            }
+                        }
                     }
                 }
             }

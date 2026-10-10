@@ -74,6 +74,7 @@ import tw.moneybook.app.accountMonthFor
 import tw.moneybook.app.cardBillSpending
 import tw.moneybook.app.autoBillMonth
 import tw.moneybook.app.billRange
+import tw.moneybook.app.fxPendingList
 import tw.moneybook.app.cardBillSpendingAfter
 import tw.moneybook.app.cardCycle
 import tw.moneybook.app.cardSpending
@@ -138,6 +139,8 @@ fun AccountDetailScreen(
     onPayCard: (Long, Long?) -> Unit,
     /** 買賣外幣：帳戶 id、true = 買進（台幣轉進來）、false = 賣出（轉回台幣） */
     onFxTrade: (Long, Boolean) -> Unit = { _, _ -> },
+    /** 開「待請款外幣」清單 */
+    onFxPending: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val d = vm.data
@@ -211,6 +214,21 @@ fun AccountDetailScreen(
                     }
                     Spacer(Modifier.height(10.dp))
                     SoftButton("更新餘額", { adjusting = true }, Modifier.fillMaxWidth())
+                    // 這個帳戶有外幣刷卡還沒請款：提醒（點進去看清單、填實際金額）
+                    val fxHere = d.fxPendingList().filter { it.accountId == a.id }
+                    if (fxHere.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.accent2.copy(alpha = 0.35f))
+                                .clickable(onClick = onFxPending).padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${fxHere.size} 筆外幣還沒請款（預估約 ${formatMoney(fxHere.sumOf { it.amount })}）  ›",
+                                style = MaterialTheme.typography.labelLarge, color = cute.ink,
+                            )
+                        }
+                    }
                     if (a.isForeign) {
                         val rate = d.rateOf(a.currency)
                         val manual = d.rates.any { it.code == a.currency }

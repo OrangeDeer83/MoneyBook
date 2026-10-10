@@ -76,6 +76,7 @@ object Codec {
                         .put("reimbAmount", t.reimbAmount)
                         .put("reimbItems", ReimbCodec.toJson(t.reimbItems))
                         .put("adjust", t.adjust).put("time", t.time).put("fxAmount", t.fxAmount).put("billMonth", t.billMonth)
+                        .put("fxSpendAmount", t.fxSpendAmount).put("fxSpendCur", t.fxSpendCur).put("fxPending", t.fxPending)
                 )
             }
         })
@@ -188,6 +189,9 @@ object Codec {
                 time = o.optInt("time", -1),
                 fxAmount = o.optLong("fxAmount", 0L),
                 billMonth = o.optInt("billMonth", 0),
+                fxSpendAmount = o.optLong("fxSpendAmount", 0L),
+                fxSpendCur = o.optString("fxSpendCur", ""),
+                fxPending = o.optBoolean("fxPending", false),
             )
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
@@ -418,7 +422,7 @@ object Calc {
 
 /** CSV 匯出與匯入 */
 object CsvIO {
-    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間", "外幣金額", "外幣幣別", "入帳月份")
+    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間", "外幣金額", "外幣幣別", "入帳月份", "刷外幣金額", "刷外幣幣別", "待請款")
 
     private fun esc(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
@@ -477,6 +481,10 @@ object CsvIO {
                 *fxCells(d, t),
                 // 信用卡的入帳月份（手動指定的才有），例如 2026-11
                 billMonthFromCode(t.billMonth)?.toString() ?: "",
+                // 台幣帳戶刷外幣：外幣金額、幣別、是否還沒請款（金額欄位是預估或實際請款的台幣）
+                if (t.isFxSpend) fxPlain(t.fxSpendAmount, Currencies.of(t.fxSpendCur).decimals) else "",
+                if (t.isFxSpend) t.fxSpendCur else "",
+                if (t.isFxSpend && t.fxPending) "是" else "",
             )
             sb.append(row.joinToString(",") { esc(it) }).append('\n')
         }
@@ -539,6 +547,9 @@ object CsvIO {
         val cFx = col("外幣金額")
         val cFxCur = col("外幣幣別")
         val cBill = col("入帳月份")
+        val cFxs = col("刷外幣金額")
+        val cFxsCur = col("刷外幣幣別")
+        val cFxsPend = col("待請款")
         if (cDate < 0 || cAmt < 0) return Pair(d0, 0)
 
         var d = d0
@@ -625,7 +636,12 @@ object CsvIO {
                     adjust = isAdjust,
                     fxAmount = fxVal,
                     billMonth = if (type != TxType.TRANSFER && !isAdjust) runCatching { billCode(YearMonth.parse(get(cBill).trim())) }.getOrDefault(0) else 0,
-                ).let { t ->
+                ).let { t0 ->
+                    // 台幣帳戶刷外幣：外幣金額、幣別、待請款
+                    val sCur = get(cFxsCur).trim().uppercase().takeIf { Currencies.validCode(it) } ?: ""
+                    val sAmt = if (sCur.isNotEmpty() && type == TxType.EXPENSE && !isAdjust) parseFx(get(cFxs), Currencies.of(sCur).decimals) ?: 0L else 0L
+                    if (sAmt > 0L && accs.firstOrNull { it.id == accId }?.isForeign != true) t0.copy(fxSpendAmount = sAmt, fxSpendCur = sCur, fxPending = get(cFxsPend).trim() == "是") else t0
+                }.let { t ->
                     if (t.reimb == 0) t
                     else t.copy(reimbAmount = get(cReimbAmt).replace(",", "").toDoubleOrNull()?.let { Math.round(it) }?.coerceIn(0L, t.paid) ?: t.paid)
                 }

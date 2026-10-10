@@ -212,6 +212,10 @@ fun EditScreen(
         )
     }
     var rateUserCode by rememberSaveable { mutableStateOf(origPlan?.acc?.currency ?: "") }
+    // 台幣帳戶刷外幣：外幣金額、幣別、是否還沒請款（見 FxSpendDialog）；金額欄位放預估或實際請款的台幣
+    var fxsCur by rememberSaveable { mutableStateOf(orig?.fxSpendCur ?: "") }
+    var fxsMinor by rememberSaveable { mutableStateOf(orig?.fxSpendAmount ?: 0L) }
+    var fxsPending by rememberSaveable { mutableStateOf(orig?.fxPending ?: false) }
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -290,6 +294,11 @@ fun EditScreen(
     val billSet = if (billAuto != null && billManual != null && billManual != billAuto) billMonth else 0
     val cat = catId?.let { d.catMap[it] }
     val parent = cat?.let { d.topOf(it) }
+    // 外幣消費：一般（非外幣、非投資）帳戶的支出才有，分期不支援
+    val fxsAcc = accId?.let { d.accMap[it] }
+    val fxsEligible = !tplMode && type == TxType.EXPENSE && plan.mode == FxMode.NONE && fxsAcc != null && !fxsAcc.isForeign &&
+        fxsAcc.type != tw.moneybook.app.AccountType.INVEST && inst <= 1 && (orig == null || orig.instTotal <= 1)
+    val fxsOn = fxsEligible && fxsCur.isNotEmpty() && fxsMinor > 0L
     val targetOk = when (type) {
         TxType.TRANSFER -> accId != null && toAccId != null && accId != toAccId
         else -> catId != null
@@ -326,6 +335,9 @@ fun EditScreen(
         reimbItems = reimbItems,
         fxAmount = fxMinor,
         billMonth = billSet,
+        fxSpendAmount = if (fxsOn) fxsMinor else 0L,
+        fxSpendCur = if (fxsOn) fxsCur else "",
+        fxPending = fxsOn && fxsPending,
     )
 
     val initialDraft = remember { draft() }
@@ -579,6 +591,12 @@ fun EditScreen(
                     billSet != 0, { dialog = "bill" }, icon = "vec:calendar",
                 )
             }
+            if (fxsEligible) {
+                CuteChip(
+                    if (fxsOn) "外幣 $fxsCur" + (if (fxsPending) "・待請款" else "") else "外幣",
+                    fxsOn, { dialog = "fxs" }, icon = "vec:coin",
+                )
+            }
             CuteChip(if (tags.isEmpty()) "新增標籤" else tags.joinToString(" ") { "#$it" }.take(16), tags.isNotEmpty(), { dialog = "tags" }, icon = "vec:tag")
             val feeLabel = when {
                 fee > 0 && effDiscount > 0 -> "手續費・優惠"
@@ -616,10 +634,14 @@ fun EditScreen(
             Modifier.fillMaxWidth().needFrame(nv, "amount", RoundedCornerShape(24.dp)).needFrame(nv, "rate", RoundedCornerShape(24.dp)),
             padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            if (pending || (cat == null && type != TxType.TRANSFER)) {
+            if (pending || fxsOn || (cat == null && type != TxType.TRANSFER)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (cat == null && type != TxType.TRANSFER) "請先選分類" else "",
+                        if (cat == null && type != TxType.TRANSFER) "請先選分類"
+                        else if (fxsOn) formatFx(fxsMinor, fxsCur) +
+                            (impliedRate(amount, fxsMinor, tw.moneybook.app.Currencies.of(fxsCur).decimals)?.let { " @ ${rateText(it)}" } ?: "") +
+                            (if (fxsPending) "（預估，待請款）" else "（已請款）")
+                        else "",
                         style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f),
                     )
                     if (pending) Text("= " + (if (keyIsFx && fxAcc != null) formatFx(keyVal, fxAcc.currency) else formatMoney(keyVal)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -747,6 +769,27 @@ fun EditScreen(
                 },
                 confirmButton = { TextButton(onClick = { if (nameNeed != null) nameTries.count++ else { tplName = text.trim(); dialog = "" } }) { Text("好") } },
                 dismissButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+            )
+        }
+        "fxs" -> if (fxsEligible) {
+            FxSpendDialog(
+                vm = vm,
+                init = FxSpendInit(
+                    cur = fxsCur,
+                    amount = if (fxsMinor > 0L && fxsCur.isNotEmpty()) fxPlain(fxsMinor, tw.moneybook.app.Currencies.of(fxsCur).decimals) else "",
+                    pending = if (fxsOn) fxsPending else true,
+                    twd = if (fxsOn) amount else 0L,
+                ),
+                hasValue = fxsOn,
+                onConfirm = { cur, minor, twd, isPending ->
+                    fxsCur = cur
+                    fxsMinor = minor
+                    fxsPending = isPending
+                    expr = twd.toString()
+                    dialog = ""
+                },
+                onClear = { fxsCur = ""; fxsMinor = 0L; fxsPending = false; dialog = "" },
+                onDismiss = { dialog = "" },
             )
         }
         "fxrate" -> if (fxAcc != null) {

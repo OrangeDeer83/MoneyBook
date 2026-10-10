@@ -131,6 +131,15 @@ data class Txn(
      * 消費日期和卡片實際入帳的日期不一樣（例如結帳日前一天刷的、隔天才入帳）時，用它指定算在哪一期。
      */
     val billMonth: Int = 0,
+    /**
+     * 台幣帳戶（例如台幣信用卡）刷外幣：外幣金額（最小單位）與幣別碼；0／空白 = 不是外幣消費。
+     * 這時 amount 一律是台幣：還沒請款（fxPending）是用預估匯率算的預估金額，請款後改成銀行實際請款的台幣。
+     * 匯率不另外存，用 amount ÷ 外幣金額算（預估時就是記帳用的匯率，請款後就是實際匯率）。
+     */
+    val fxSpendAmount: Long = 0L,
+    val fxSpendCur: String = "",
+    /** 外幣消費還沒請款：amount 是預估的台幣 */
+    val fxPending: Boolean = false,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -525,7 +534,7 @@ object Money {
     var twd: String = "$"
 
     fun sync(d: AppData) {
-        twd = if (d.accounts.any { it.type == AccountType.FOREIGN } || d.trades.any { it.currency.isNotEmpty() }) "NT$" else "$"
+        twd = if (d.accounts.any { it.type == AccountType.FOREIGN } || d.trades.any { it.currency.isNotEmpty() } || d.txns.any { it.fxSpendAmount > 0L }) "NT$" else "$"
     }
 }
 

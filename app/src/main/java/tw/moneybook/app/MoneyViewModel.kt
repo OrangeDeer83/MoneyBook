@@ -47,6 +47,10 @@ data class TxnDraft(
     val fxAmount: Long = 0L,
     /** 信用卡的入帳月份（202611）；0 = 依日期自動 */
     val billMonth: Int = 0,
+    /** 台幣帳戶刷外幣：外幣金額（最小單位）、幣別、是否還沒請款（amount 是預估或實際請款的台幣） */
+    val fxSpendAmount: Long = 0L,
+    val fxSpendCur: String = "",
+    val fxPending: Boolean = false,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -185,6 +189,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 time = dr.time,
                 fxAmount = dr.fxAmount,
                 billMonth = dr.billMonth,
+                fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
             ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             savedTxnId = editId
@@ -203,6 +208,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
                     fxAmount = dr.fxAmount,
                     billMonth = dr.billMonth,
+                    // 分期（n > 1）不支援外幣消費：這裡只有單筆
+                    fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                 ).let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
@@ -329,6 +336,30 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         commit(after)
         toast("已修改這筆${if (old.buy) "買進" else "賣出"}")
         return true
+    }
+
+    /** 外幣消費請款：填銀行實際請款的台幣金額（見 withFxSettled），可以復原 */
+    fun settleFx(id: Long, actualTwd: Long): Boolean {
+        val old = data.txns.firstOrNull { it.id == id } ?: return false
+        val after = data.withFxSettled(id, actualTwd) ?: return false
+        commit(after)
+        val rate = after.txns.first { it.id == id }.fxSpendRate()
+        _messages.tryEmit(UiMsg("已請款${rate?.let { "，實際匯率 ${rateText(it)}" } ?: ""}", "復原") {
+            val now = data
+            if (now.txns.any { it.id == id }) commit(now.copy(txns = now.txns.map { if (it.id == id) old else it }))
+        })
+        return true
+    }
+
+    /** 上網抓一個幣別的目前匯率（要先同意上網）；抓到就存起來並回傳，抓不到回傳 null */
+    fun fetchRateOf(code: String, onDone: (Double?) -> Unit = {}) {
+        if (!data.prefs.priceFetch) return onDone(null)
+        viewModelScope.launch {
+            val r = try { PriceFetcher.fetchRate(code) } catch (_: Exception) { null }
+            if (r != null) update { d -> d.copy(rates = d.rates.filter { it.code != code.uppercase() } + FxRate(code.uppercase(), r, LocalDate.now().toEpochDay())) }
+            else toast("抓不到 $code 的匯率，請手動輸入")
+            onDone(r)
+        }
     }
 
     /** 修改一檔持股的代號、名稱、市場（見 renameHolding）；改錯了再改回來就好 */

@@ -131,11 +131,35 @@ fun AppData.avgCost(a: Account): Double? {
     return impliedRate(twd, fx, a.cur.decimals)
 }
 
+/** 台幣帳戶刷外幣（待請款或已請款） */
+val Txn.isFxSpend: Boolean get() = fxSpendAmount > 0L && fxSpendCur.isNotEmpty()
+
+/** 這筆外幣消費的匯率：台幣 ÷ 外幣（待請款是預估的，已請款是實際的）；金額是 0 回傳 null */
+fun Txn.fxSpendRate(): Double? = if (!isFxSpend) null else impliedRate(amount, fxSpendAmount, Currencies.of(fxSpendCur).decimals)
+
+/** 外幣消費的備註：「¥12,000 @ 0.2198（預估）」「¥12,000 @ 0.2241（實際）」 */
+fun Txn.fxSpendNote(): String? {
+    if (!isFxSpend) return null
+    val rate = fxSpendRate()?.let { " @ ${rateText(it)}" } ?: ""
+    return formatFx(fxSpendAmount, fxSpendCur) + rate + if (fxPending) "（預估）" else "（實際）"
+}
+
+/** 還沒請款的外幣消費（目前帳本），最久的排前面 */
+fun AppData.fxPendingList(): List<Txn> = bookTxns.filter { it.fxPending && it.isFxSpend }.sortedWith(compareBy({ it.day }, { it.id }))
+
+/** 請款：把預估的台幣改成銀行實際請款的台幣，標記消失；找不到、不是待請款、金額不對回傳 null */
+fun AppData.withFxSettled(id: Long, actualTwd: Long): AppData? {
+    val t = txns.firstOrNull { it.id == id } ?: return null
+    if (!t.fxPending || !t.isFxSpend || actualTwd <= 0L) return null
+    return copy(txns = txns.map { if (it.id == id) it.copy(amount = actualTwd, fxPending = false) else it })
+}
+
 /**
  * 明細列的外幣備註：inForeign（在外幣帳戶的明細裡，主金額已經是外幣）→ 顯示台幣那一邊；否則顯示外幣金額。
  * 台幣 ⇄ 外幣的買賣會附上成交匯率（台幣 ÷ 外幣）。
  */
 fun AppData.fxNote(t: Txn, inForeign: Boolean): String? {
+    t.fxSpendNote()?.let { return it }
     if (t.fxAmount <= 0L) return null
     val fa = listOfNotNull(t.accountId, t.toAccountId).mapNotNull { accMap[it] }.firstOrNull { it.isForeign } ?: return null
     val from = t.accountId?.let { accMap[it] }

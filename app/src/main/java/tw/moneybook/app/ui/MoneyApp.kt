@@ -192,6 +192,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "appearance" -> AppearanceScreen(vm) { pop() }
                 "data" -> DataScreen(vm) { pop() }
                 "reimb" -> ReimbScreen(vm, onEdit = { editTxn(it) }) { pop() }
+                "fxpending" -> FxPendingScreen(vm) { pop() }
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 else -> {
@@ -203,6 +204,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                             onAdd = { acc -> push(Route.Edit(null, presetAcc = acc)) },
                             onPayCard = { acc, amt -> push(Route.Edit(null, presetTo = acc, presetAmount = amt)) },
                             onFxTrade = { acc, buy -> push(if (buy) Route.Edit(null, presetTo = acc) else Route.Edit(null, presetFrom = acc)) },
+                            onFxPending = { push(Route.Page("fxpending")) },
                         ) { pop() }
                     }
                 }
@@ -278,6 +280,7 @@ private fun MainTabs(
                     vm, onEdit,
                     onManageBooks = { open("books") },
                     onReimb = { open("reimb") },
+                    onFxPending = { open("fxpending") },
                 )
                 1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") })
                 2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") })
