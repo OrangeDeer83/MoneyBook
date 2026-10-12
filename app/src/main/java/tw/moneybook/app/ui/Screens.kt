@@ -538,7 +538,11 @@ fun HomeScreen(
                 val fxPend = d.fxPendingList()
                 if (pending.isNotEmpty() || fxPend.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 兩顆小標籤放不下時換行，每顆自己不折行
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         if (pending.isNotEmpty()) {
                             Row(
                                 Modifier.clip(CircleShape).background(cute.soft).clickable(onClick = onReimb)
@@ -557,13 +561,14 @@ fun HomeScreen(
                         // 外幣刷卡還沒請款的提醒
                         if (fxPend.isNotEmpty()) {
                             Row(
-                                Modifier.clip(CircleShape).background(cute.accent2.copy(alpha = 0.35f)).clickable(onClick = onFxPending)
+                                Modifier.clip(CircleShape).background(cute.soft).clickable(onClick = onFxPending)
                                     .padding(horizontal = 12.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                IconGlyph("vec:coin_two", 16.sp)
+                                IconGlyph("vec:coin_pending", 18.sp)
                                 Spacer(Modifier.width(6.dp))
-                                Text("待請款外幣 ${fxPend.size} 筆  ›", style = MaterialTheme.typography.labelLarge, color = cute.ink)
+                                // 顏色和旁邊的「待報銷」一樣
+                                Text("待請款外幣 ${fxPend.size} 筆  ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                             }
                         }
                     }
