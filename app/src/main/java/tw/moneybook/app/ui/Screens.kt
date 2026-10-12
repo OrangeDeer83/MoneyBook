@@ -374,6 +374,7 @@ fun ViewToggle(vm: MoneyViewModel) {
 
 // ───────────────────────── 首頁（明細） ─────────────────────────
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     vm: MoneyViewModel,
