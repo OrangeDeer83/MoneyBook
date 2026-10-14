@@ -128,6 +128,8 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CuteChip("買進", false, { tradeBuy = true; tradeSymbol = ""; dialog = "trade" })
                 CuteChip("賣出", false, { tradeBuy = false; tradeSymbol = pf.positions.firstOrNull()?.symbol ?: ""; dialog = "trade" })
+                // 還沒有持股時，下面有大一點的「已經有股票了？」卡片，這裡不重複放
+                if (pf.positions.isNotEmpty()) CuteChip("快速加入庫存", false, { dialog = "quick" })
                 if (pf.positions.isNotEmpty()) {
                     CuteChip(
                         if (vm.fetching) "抓價中…" else "抓最新價格", false,
@@ -146,6 +148,15 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
 
         if (pf.positions.isEmpty()) {
             Text("還沒有持股，按「買進」記錄第一筆。", style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.padding(horizontal = 4.dp))
+            // 初次使用：已經持有的股票一次填進來，不用一筆一筆記買進
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.soft).clickable { dialog = "quick" }.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("已經有股票了？", style = MaterialTheme.typography.titleMedium)
+                Text("一次把現有的持股加進來（不用一筆一筆記買進）", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                Text("快速加入庫存", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            }
         }
         val today = LocalDate.now().toEpochDay()
         pf.positions.forEach { p ->
@@ -254,6 +265,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             vm = vm, a = a, held = pf.positions, initialBuy = tradeBuy, initialSymbol = tradeSymbol,
             onDismiss = { dialog = "" },
         )
+        "quick" -> QuickHoldingsDialog(vm = vm, a = a, onClose = { dialog = "" })
         "tradeEdit" -> editTrade?.let { t ->
             TradeDialog(
                 vm = vm, a = a, held = pf.positions, initialBuy = t.buy, initialSymbol = t.symbol, edit = t,

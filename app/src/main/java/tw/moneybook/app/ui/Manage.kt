@@ -337,6 +337,9 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
     val cute = LocalCute.current
     val bal = remember(d) { d.balances() }
     var adding by remember { mutableStateOf(false) }
+    // 剛新增的投資帳戶：問一次要不要現在把現有的持股加進去（0＝沒有在問）；quickFor＝正在快速加入持股的帳戶
+    var askQuick by remember { mutableStateOf(0L) }
+    var quickFor by remember { mutableStateOf<tw.moneybook.app.Account?>(null) }
     var fetchAsk by remember { mutableStateOf(false) }
     // 編輯排序模式：右上角按鈕切換，開啟後每個帳戶右邊才出現拖曳把手
     var editing by remember { mutableStateOf(false) }
@@ -491,11 +494,26 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
         AccountDialog(
             acc = null,
             cards = d.accounts.filter { it.type == AccountType.CARD },
-            onSave = { na -> vm.saveAccount(null, na); adding = false },
+            onSave = { na ->
+                val newId = vm.data.nextId
+                vm.saveAccount(null, na)
+                adding = false
+                if (na.type == AccountType.INVEST) askQuick = newId
+            },
             onDelete = null,
             onDismiss = { adding = false },
         )
     }
+    d.accMap[askQuick]?.let { na ->
+        AlertDialog(
+            onDismissRequest = { askQuick = 0L },
+            title = { Text("現在加入持股嗎？") },
+            text = { Text("「${na.name}」裡已經有股票的話，可以一次把現有的持股填進來，不用一筆一筆記買進。之後也能在帳戶頁隨時加入。", style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = { TextButton(onClick = { quickFor = na; askQuick = 0L }) { Text("現在加入") } },
+            dismissButton = { TextButton(onClick = { askQuick = 0L }) { Text("之後再說") } },
+        )
+    }
+    quickFor?.let { qa -> QuickHoldingsDialog(vm = vm, a = qa, onClose = { quickFor = null }) }
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

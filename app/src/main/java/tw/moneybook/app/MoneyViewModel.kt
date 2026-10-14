@@ -325,6 +325,20 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         toast("已記錄${if (buy) "買進" else "賣出"} $sym")
     }
 
+    /** 快速加入庫存（見 withQuickHoldings），可以復原；有開上網抓價就順便抓一次現價，沒有的話現價先用成本價 */
+    fun addQuickHoldings(accountId: Long, day: Long, items: List<QuickHolding>, rates: Map<String, Double>): Boolean {
+        val d = data
+        val after = d.withQuickHoldings(accountId, day, items, rates) ?: return false
+        val ids = after.trades.map { it.id }.toSet() - d.trades.map { it.id }.toSet()
+        commit(after)
+        _messages.tryEmit(UiMsg("已加入 ${items.size} 檔持股", "復原") {
+            val now = data
+            commit(now.copy(trades = now.trades.filter { it.id !in ids }))
+        })
+        if (data.prefs.priceFetch) refreshPrices(silent = true, accountId = accountId)
+        return true
+    }
+
     /** 修改一筆買賣（見 withTradeUpdated）；成功回傳 true */
     fun updateTrade(id: Long, day: Long, qty: Double, price: Double, fee: Long, cashAccountId: Long?, rate: Double = 0.0, feeNative: Double = 0.0): Boolean {
         val old = data.trades.firstOrNull { it.id == id } ?: return false

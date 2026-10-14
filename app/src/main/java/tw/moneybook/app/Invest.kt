@@ -172,6 +172,29 @@ fun AppData.renameHolding(
     return copy(trades = nt, prices = np)
 }
 
+/** 快速加入庫存的一檔：代號、股數、每股成本（單價的幣別由市場決定）、市場 */
+data class QuickHolding(val symbol: String, val qty: Double, val avgPrice: Double, val market: String)
+
+/**
+ * 一次加入現有的持股：每一檔記成一筆當天（day）的買進，不連動帳戶、手續費 0，所以不會動到任何帳戶餘額；
+ * 之後再按買進，平均成本會接著算。外幣市場（美股等）的匯率從 rates 取（幣別 → 1 單位外幣 = 幾元台幣），缺匯率回傳 null。
+ * 找不到帳戶、沒有任何一檔、或股數、成本不對也回傳 null。
+ */
+fun AppData.withQuickHoldings(accountId: Long, day: Long, items: List<QuickHolding>, rates: Map<String, Double>): AppData? {
+    if (accMap[accountId] == null || items.isEmpty()) return null
+    var next = nextId
+    val added = ArrayList<Trade>()
+    for (it in items) {
+        val sym = it.symbol.trim().uppercase()
+        if (sym.isEmpty() || it.qty <= 0.0 || it.avgPrice <= 0.0) return null
+        val cur = Markets.currencyOf(it.market)
+        val rate = if (cur.isEmpty()) 0.0 else rates[cur] ?: return null
+        if (cur.isNotEmpty() && rate <= 0.0) return null
+        added.add(Trade(next++, accountId, sym, "", day, true, it.qty, it.avgPrice, 0L, null, it.market, cur, rate))
+    }
+    return copy(trades = trades + added, nextId = next)
+}
+
 /** 買賣金額（不含手續費），四捨五入到元 */
 fun tradeAmount(qty: Double, price: Double): Long = (qty * price).roundToLong()
 
@@ -290,6 +313,16 @@ object Markets {
     }
 
     private val taiwan = Regex("^[0-9]{4,6}[A-Z]?$")
+
+    /** 快速加入庫存時，依代號猜市場：-USD 結尾是加密貨幣、含英文字母（又不是 00679B 這種債券 ETF）是美股，其他當台股；猜錯可以手動換 */
+    fun guess(symbol: String): String {
+        val s = symbol.trim().uppercase()
+        return when {
+            s.endsWith("-USD") -> "CRYPTO"
+            s.any { it in 'A'..'Z' } && !taiwan.matches(s) -> "US"
+            else -> "TW"
+        }
+    }
 
     /** 要依序嘗試的 Yahoo 代號；使用者自己已經帶了後綴（有「.」）就照用 */
     fun candidates(symbol: String, market: String): List<String> {
