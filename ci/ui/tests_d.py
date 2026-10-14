@@ -2675,7 +2675,7 @@ def t_quick_holdings_us():
     d.time.sleep(1.5)
     ns = d.shot("加入之後")
     d.check("持股列：10 股・均價 US$185.20（總成本除以股數）", any("10 股" in n.text and "均價 US$185.20" in n.text for n in ns), [n.text for n in ns if "股" in n.text])
-    d.check("市值 $58,338（用匯率換成台幣）", d.has(ns, "$58,338", True), [n.text for n in ns if "$" in n.text][:12])
+    d.check("市值 NT$58,338（用匯率換成台幣；有外幣時台幣標 NT$）", d.has(ns, "NT$58,338", True), [n.text for n in ns if "$" in n.text][:12])
 
 
 @case(D, "快速加入庫存：沒填完按全部加入，亮紅框與提示；已經有持股時入口是「快速加入庫存」小按鈕", visual=True)
