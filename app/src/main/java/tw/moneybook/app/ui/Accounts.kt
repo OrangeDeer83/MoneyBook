@@ -178,7 +178,7 @@ fun AccountDetailScreen(
     val running = remember(d, a.id) { d.runningBalances(a.id) }
 
     fun flow(t: Txn): Long = t.flowFor(a)
-    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.pay.flowFor(a) }
+    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.signedFlow(a) }
     val inflow = flows.filter { it > 0 }.sum()
     val outflow = -flows.filter { it < 0 }.sum()
 
@@ -327,7 +327,7 @@ fun AccountDetailScreen(
                         SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"], highlight = t.id == accHl) { onEdit(t.id) } }
                     } else {
                         val r = e.recv!!
-                        val b = running["p${r.t.id}_${r.idx}"]
+                        val b = running[r.runKey]
                         ReimbRecvRow(d, r, showAcc = false, amount = a.fmt(r.pay.flowFor(a)), balance = b?.let { "餘額 ${formatMoney(it)}" }, balanceNegative = (b ?: 0L) < 0)
                     }
                 }

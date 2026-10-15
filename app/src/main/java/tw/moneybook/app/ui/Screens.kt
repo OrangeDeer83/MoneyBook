@@ -59,12 +59,14 @@ import tw.moneybook.app.formatFx
 import tw.moneybook.app.fmt
 import tw.moneybook.app.fxNote
 import tw.moneybook.app.fxPendingList
+import tw.moneybook.app.debtGroups
 import tw.moneybook.app.isFxSpend
 import tw.moneybook.app.isDebt
 import tw.moneybook.app.debtRemainingTwd
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.TxType
 import tw.moneybook.app.ReimbPay
+import tw.moneybook.app.Account
 import tw.moneybook.app.Txn
 import tw.moneybook.app.expenseSum
 import tw.moneybook.app.billMonthFor
@@ -87,8 +89,20 @@ import kotlin.math.roundToInt
 
 // ───────────────────────── 共用：報銷收款也列在明細裡 ─────────────────────────
 
-/** 明細裡的一筆報銷收款（只顯示，不能點）：t 是原本那筆支出，pay 是這次收到的款，idx 是這筆支出所有收款裡的第幾筆 */
-data class ReimbRecv(val t: Txn, val who: String, val pay: ReimbPay, val idx: Int)
+/** 欠款還款在 ReimbRecv.idx 的起始編號（和 [tw.moneybook.app.AppData.runningBalances] 的順序一致：報銷收款在前，欠款還款接在後面） */
+const val DEBT_IDX = 499
+
+/**
+ * 明細裡的一筆報銷收款或欠款還款（只顯示，不能點）：t 是原本那筆支出，pay 是這次收到（或還出去）的款，
+ * idx 是這筆支出所有收款裡的第幾筆；debt＝true 是欠款的還款（idx 從 [DEBT_IDX] 起算），錢是從帳戶出去的
+ */
+data class ReimbRecv(val t: Txn, val who: String, val pay: ReimbPay, val idx: Int, val debt: Boolean = false) {
+    /** 在 runningBalances 裡的 key */
+    val runKey: String get() = if (debt) "d${t.id}_${idx - DEBT_IDX}" else "p${t.id}_$idx"
+
+    /** 讓帳戶 a 的餘額增加多少（欠款還款是負的） */
+    fun signedFlow(a: Account): Long = if (debt) -pay.flowFor(a) else pay.flowFor(a)
+}
 
 /** 明細列表的一列：一般記錄，或一筆報銷收款 */
 class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?) {
@@ -107,7 +121,8 @@ class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?) {
 
 /** 這些記錄底下所有的報銷收款 */
 fun reimbRecvsOf(txns: List<Txn>): List<ReimbRecv> = txns.flatMap { t ->
-    t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) }
+    t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) } +
+        t.debtPays.mapIndexed { i, p -> ReimbRecv(t, t.debtTo, ReimbPay(p.day, p.accountId, p.amount, p.time, p.fxAmount), DEBT_IDX + i, debt = true) }
 }
 
 /**
@@ -139,7 +154,7 @@ fun ReimbRecvRow(d: AppData, r: ReimbRecv, showAcc: Boolean, amount: String, bal
         CatBubble("img:acc_receipt", 2, 40.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text("報銷收款" + if (r.who.isNotBlank()) "・${r.who}" else "", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text((if (r.debt) "還款" else "報銷收款") + if (r.who.isNotBlank()) "・${r.who}" else "", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 listOf(catPath(d, r.t), note).filter { it.isNotEmpty() }.joinToString("・"),
                 style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -150,7 +165,7 @@ fun ReimbRecvRow(d: AppData, r: ReimbRecv, showAcc: Boolean, amount: String, bal
         }
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
-            Text("+$amount", color = cute.income, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text((if (r.debt) "-" else "+") + amount, color = if (r.debt) cute.expense else cute.income, fontWeight = FontWeight.SemiBold, maxLines = 1)
             if (balance != null) {
                 Text(balance, style = MaterialTheme.typography.labelSmall, color = if (balanceNegative) cute.expense else cute.sub, maxLines = 1)
             }
@@ -402,6 +417,7 @@ fun HomeScreen(
     onManageBooks: () -> Unit,
     onReimb: () -> Unit,
     onFxPending: () -> Unit = {},
+    onDebt: () -> Unit = {},
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -557,7 +573,8 @@ fun HomeScreen(
                 }
                 val pending = d.bookTxns.pendingReimb()
                 val fxPend = d.fxPendingList()
-                if (pending.isNotEmpty() || fxPend.isNotEmpty()) {
+                val debts = d.debtGroups()
+                if (pending.isNotEmpty() || fxPend.isNotEmpty() || debts.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     // 兩顆小標籤放不下時換行，每顆自己不折行
                     androidx.compose.foundation.layout.FlowRow(
@@ -590,6 +607,18 @@ fun HomeScreen(
                                 Spacer(Modifier.width(6.dp))
                                 // 顏色和旁邊的「待報銷」一樣
                                 Text("待請款外幣 ${fxPend.size} 筆  ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                            }
+                        }
+                        // 別人先墊、我還沒還的欠款
+                        if (debts.isNotEmpty()) {
+                            Row(
+                                Modifier.clip(CircleShape).background(cute.soft).clickable(onClick = onDebt)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconGlyph("vec:book", 16.sp)
+                                Spacer(Modifier.width(6.dp))
+                                Text("欠款 ${formatMoney(debts.sumOf { it.remainingTwd })}  ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                             }
                         }
                     }

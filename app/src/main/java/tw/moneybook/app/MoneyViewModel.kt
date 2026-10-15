@@ -359,6 +359,34 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    /** 還欠款（見 withDebtRepaid），可以復原；成功回傳 true */
+    fun repayDebt(who: String, currency: String, accountId: Long, day: Long, time: Int, units: Long, actualTwd: Long, settle: Boolean): Boolean {
+        val d = data
+        val after = d.withDebtRepaid(who, currency, accountId, day, time, units, actualTwd, settle) ?: run {
+            toast("還款的金額或帳戶不對")
+            return false
+        }
+        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        commit(after)
+        _messages.tryEmit(UiMsg("已還款給 $who", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { before[it.id] ?: it }))
+        })
+        return true
+    }
+
+    /** 刪掉某一筆還款，那筆欠款重新變成還欠著（見 withDebtPayRemoved），可以復原 */
+    fun deleteDebtPay(txnId: Long, index: Int) {
+        val d = data
+        val old = d.txns.firstOrNull { it.id == txnId } ?: return
+        val after = d.withDebtPayRemoved(txnId, index) ?: return
+        commit(after)
+        _messages.tryEmit(UiMsg("已刪除這筆還款", "復原") {
+            val now = data
+            if (now.txns.any { it.id == txnId }) commit(now.copy(txns = now.txns.map { if (it.id == txnId) old else it }))
+        })
+    }
+
     /** 修改一筆買賣（見 withTradeUpdated）；成功回傳 true */
     fun updateTrade(id: Long, day: Long, qty: Double, price: Double, fee: Long, cashAccountId: Long?, rate: Double = 0.0, feeNative: Double = 0.0): Boolean {
         val old = data.trades.firstOrNull { it.id == id } ?: return false

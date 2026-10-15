@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
+import tw.moneybook.app.debtOutstanding
 import tw.moneybook.app.BadgePreset
 import tw.moneybook.app.BadgePresets
 import tw.moneybook.app.Book
@@ -372,11 +373,16 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
         }
         item {
             // 外幣帳戶用目前匯率換成台幣再加總；還沒有匯率的外幣帳戶不算，並提醒
-            val total = d.visibleAccounts.sumOf { d.twdValue(it, bal[it.id] ?: 0L) ?: 0L }
+            // 還欠著的欠款先扣掉（那些錢還在帳戶裡，但已經是別人的）
+            val debtDue = d.debtOutstanding()
+            val total = d.visibleAccounts.sumOf { d.twdValue(it, bal[it.id] ?: 0L) ?: 0L } - debtDue
             val noRate = d.visibleAccounts.filter { it.isForeign && d.rateOf(it.currency) == null && (bal[it.id] ?: 0L) != 0L }
             CuteCard(Modifier.fillMaxWidth()) {
                 Text("總資產", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
+                if (debtDue > 0L) {
+                    Text("已扣掉欠款 ${formatMoney(debtDue)}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                }
                 if (noRate.isNotEmpty()) {
                     Text(
                         "${noRate.joinToString("、") { it.name }}還沒有匯率，沒有算進總資產（點進帳戶設定匯率）",
