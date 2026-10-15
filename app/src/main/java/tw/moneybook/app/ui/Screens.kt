@@ -60,6 +60,8 @@ import tw.moneybook.app.fmt
 import tw.moneybook.app.fxNote
 import tw.moneybook.app.fxPendingList
 import tw.moneybook.app.isFxSpend
+import tw.moneybook.app.isDebt
+import tw.moneybook.app.debtRemainingTwd
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.TxType
 import tw.moneybook.app.ReimbPay
@@ -252,7 +254,7 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (t.fxPending && t.isFxSpend) {
+                if (t.fxPending && t.isFxSpend && !t.isDebt) {
                     // 外幣刷卡還沒請款：金額是預估的
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -260,6 +262,24 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
                         style = MaterialTheme.typography.labelSmall,
                         color = cute.ink,
                         modifier = Modifier.clip(CircleShape).background(cute.accent2.copy(alpha = 0.4f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
+                if (t.isDebt) {
+                    // 欠款：還沒付、還了一部分（剩多少）、已還清
+                    Spacer(Modifier.width(6.dp))
+                    val open = !t.debtDone
+                    Text(
+                        when {
+                            t.debtDone -> "已還清・${t.debtTo}"
+                            t.debtPays.isEmpty() -> "還沒付・欠 ${t.debtTo}"
+                            else -> "欠 ${t.debtTo} 還剩 ${formatMoney(t.debtRemainingTwd)}"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (open) cute.expense else cute.income,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clip(CircleShape)
+                            .background((if (open) cute.expense else cute.income).copy(alpha = 0.14f))
+                            .padding(horizontal = 6.dp, vertical = 1.dp),
                     )
                 }
                 if (t.reimb != 0) {

@@ -96,6 +96,8 @@ import tw.moneybook.app.fxPlain
 import tw.moneybook.app.fxPlan
 import tw.moneybook.app.fxToTwd
 import tw.moneybook.app.impliedRate
+import tw.moneybook.app.isDebt
+import tw.moneybook.app.debtNames
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.parseFx
 import tw.moneybook.app.rateOf
@@ -217,6 +219,10 @@ fun EditScreen(
     var fxsCur by rememberSaveable { mutableStateOf(orig?.fxSpendCur ?: "") }
     var fxsMinor by rememberSaveable { mutableStateOf(orig?.fxSpendAmount ?: 0L) }
     var fxsPending by rememberSaveable { mutableStateOf(orig?.fxPending ?: false) }
+    // 欠款：別人先墊、我還沒付（見 Debt.kt）；開了就沒有帳戶，還款時才動帳戶。已經有還款記錄的不能改回一般、金額不能改
+    var debtWho by rememberSaveable { mutableStateOf(orig?.debtTo ?: "") }
+    val debtOn = debtWho.isNotBlank() && type == TxType.EXPENSE && !tplMode
+    val debtLocked = orig?.isDebt == true && orig.debtPays.isNotEmpty()
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -233,7 +239,7 @@ fun EditScreen(
     }
 
 
-    val plan = d.fxPlan(type, accId, if (type == TxType.TRANSFER) toAccId else null)
+    val plan = d.fxPlan(type, if (debtOn) null else accId, if (type == TxType.TRANSFER) toAccId else null)
     val fxAcc = plan.acc
     val dec = fxAcc?.cur?.decimals ?: 0
     // 計算機輸入的是外幣（消費、賣出、同幣別轉帳）還是台幣（一般記帳、買外幣付出的台幣）
@@ -270,7 +276,7 @@ fun EditScreen(
         FxMode.SELL -> impliedRate(amount, keyVal, dec)
         else -> null
     }
-    val fromFx = accId?.let { d.accMap[it] }?.isForeign == true
+    val fromFx = !debtOn && accId?.let { d.accMap[it] }?.isForeign == true
     val pending = Calc.hasOp(expr)
     val tags = tagsText.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
     val effDiscount = if (type == TxType.EXPENSE) discount else 0L
@@ -280,13 +286,13 @@ fun EditScreen(
         TxType.TRANSFER -> amount + fee
     }
     val reimbItems: List<ReimbItem> = when {
-        type != TxType.EXPENSE || !reimbOn -> emptyList()
+        type != TxType.EXPENSE || !reimbOn || debtOn -> emptyList()
         reimbFull -> listOf((origItems.singleOrNull() ?: ReimbItem("", 0L)).copy(who = reimbWho.trim(), amount = actual))
         // 上限跟著目前的金額走：先填報銷、後填金額時，金額還是 0，不能先把報銷金額截成 0
         else -> ReimbCodec.decode(reimbJson).map { if (amount + fee > 0L && it.pays.isEmpty() && !it.closed) it.copy(amount = it.amount.coerceAtMost(amount + fee)) else it }
     }
     // 信用卡的入帳月份：選的是設了結帳日的信用卡、而且是支出／收入才有
-    val cardAcc = accId?.let { d.accMap[it] }?.takeIf { it.type == tw.moneybook.app.AccountType.CARD && it.statementDay in 1..31 && type != TxType.TRANSFER && !tplMode }
+    val cardAcc = accId?.let { d.accMap[it] }?.takeIf { !debtOn && it.type == tw.moneybook.app.AccountType.CARD && it.statementDay in 1..31 && type != TxType.TRANSFER && !tplMode }
     var billMonth by rememberSaveable { mutableIntStateOf(orig?.billMonth ?: 0) }
     val billAuto: java.time.YearMonth? = cardAcc?.let { tw.moneybook.app.autoBillMonth(it.statementDay, LocalDate.ofEpochDay(day)) }
     val billManual = tw.moneybook.app.billMonthFromCode(billMonth)
@@ -297,8 +303,10 @@ fun EditScreen(
     val parent = cat?.let { d.topOf(it) }
     // 外幣消費：一般（非外幣、非投資）帳戶的支出才有，分期不支援
     val fxsAcc = accId?.let { d.accMap[it] }
-    val fxsEligible = !tplMode && type == TxType.EXPENSE && plan.mode == FxMode.NONE && fxsAcc != null && !fxsAcc.isForeign &&
-        fxsAcc.type != tw.moneybook.app.AccountType.INVEST && inst <= 1 && (orig == null || orig.instTotal <= 1)
+    // 欠款沒有帳戶，也可以是外幣欠款（朋友先墊外幣）
+    val fxsEligible = !tplMode && type == TxType.EXPENSE && plan.mode == FxMode.NONE &&
+        (debtOn || (fxsAcc != null && !fxsAcc.isForeign && fxsAcc.type != tw.moneybook.app.AccountType.INVEST)) &&
+        inst <= 1 && (orig == null || orig.instTotal <= 1) && !(debtLocked && debtOn)
     val fxsOn = fxsEligible && fxsCur.isNotEmpty() && fxsMinor > 0L
     val targetOk = when (type) {
         TxType.TRANSFER -> accId != null && toAccId != null && accId != toAccId
@@ -319,6 +327,7 @@ fun EditScreen(
                 Need("other", if (plan.mode == FxMode.BUY) "請輸入收到的外幣金額" else "請輸入收到的台幣金額")
             (plan.mode == FxMode.SPEND || plan.mode == FxMode.SAME) && keyVal > 0 && rate == null -> Need("rate", "請先設定匯率（點金額下面的字）")
             !hasValue -> Need("amount", if (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) "請輸入付出的金額" else "請先輸入金額")
+            debtLocked && debtOn && amount != orig?.amount -> Need("amount", "已有還款記錄，金額不能改；要改請先到「欠款」頁刪掉還款")
             else -> null
         },
     )
@@ -327,18 +336,19 @@ fun EditScreen(
     fun draft() = TxnDraft(
         type = type, amount = amount,
         categoryId = if (type == TxType.TRANSFER) null else catId,
-        accountId = accId,
+        accountId = if (debtOn) null else accId,
         toAccountId = if (type == TxType.TRANSFER) toAccId else null,
         day = day, note = note.trim(), tags = tags, time = if (tplMode) -1 else timeMin,
-        installments = if (orig == null && type == TxType.EXPENSE) inst else 1,
-        fee = fee,
-        discount = effDiscount,
+        installments = if (orig == null && type == TxType.EXPENSE && !debtOn) inst else 1,
+        fee = if (debtOn) 0L else fee,
+        discount = if (debtOn) 0L else effDiscount,
         reimbItems = reimbItems,
         fxAmount = fxMinor,
         billMonth = billSet,
         fxSpendAmount = if (fxsOn) fxsMinor else 0L,
         fxSpendCur = if (fxsOn) fxsCur else "",
-        fxPending = fxsOn && fxsPending,
+        fxPending = fxsOn && (fxsPending || debtOn),
+        debtTo = if (debtOn) debtWho.trim() else "",
     )
 
     val initialDraft = remember { draft() }
@@ -585,9 +595,13 @@ fun EditScreen(
             if (tplMode) CuteChip("名稱：" + tplName.ifBlank { "未命名" }, tplName.isNotBlank(), { dialog = "tplname" }, icon = "vec:pencil")
             if (!tplMode) CuteChip(dayLabel(day), false, { dialog = "date" }, icon = "vec:calendar")
             if (!tplMode) CuteChip(if (timeMin >= 0) tw.moneybook.app.formatTime(timeMin) else "未設定時間", false, { dialog = "time" }, icon = "vec:clock")
-            if (type != TxType.TRANSFER && accs.isNotEmpty()) {
+            if (type != TxType.TRANSFER && accs.isNotEmpty() && !debtOn) {
                 val a = accId?.let { d.accMap[it] }
                 CuteChip(a?.let { accLabel(it) } ?: "帳戶", false, { dialog = "from" }, icon = "vec:wallet")
+            }
+            // 欠款：別人先墊、我還沒付。開了就沒有帳戶（欠款和報銷、分期、手續費／優惠、外幣帳戶互斥）
+            if (type == TxType.EXPENSE && !tplMode && (orig == null || orig.instTotal <= 1) && inst <= 1 && (debtOn || reimbItems.isEmpty())) {
+                CuteChip(if (debtOn) "欠 ${debtWho.trim()}" else "欠款", debtOn, { dialog = "debt" }, icon = "vec:book")
             }
             if (billEff != null) {
                 CuteChip(
@@ -597,7 +611,7 @@ fun EditScreen(
             }
             if (fxsEligible) {
                 CuteChip(
-                    if (fxsOn) "外幣 $fxsCur" + (if (fxsPending) "・待請款" else "") else "外幣",
+                    if (fxsOn) "外幣 $fxsCur" + (if (fxsPending && !debtOn) "・待請款" else "") else "外幣",
                     fxsOn, { dialog = "fxs" }, icon = fxCoinIcon(if (fxsOn) fxsCur else ""),
                 )
             }
@@ -609,8 +623,8 @@ fun EditScreen(
                 type == TxType.EXPENSE -> "手續費／優惠"
                 else -> "手續費"
             }
-            if (!fromFx) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = "vec:fee")
-            if (type == TxType.EXPENSE && !tplMode) {
+            if (!fromFx && !debtOn) CuteChip(feeLabel, fee > 0 || effDiscount > 0, { dialog = "fee" }, icon = "vec:fee")
+            if (type == TxType.EXPENSE && !tplMode && !debtOn) {
                 val totalReimb = reimbItems.sumOf { it.effective }
                 val part = if (reimbItems.isNotEmpty() && totalReimb != actual) " ${formatMoney(totalReimb)}" else ""
                 val people = if (reimbItems.size > 1) "・${reimbItems.size} 人" else ""
@@ -625,10 +639,10 @@ fun EditScreen(
                     icon = if (reimbItems.isNotEmpty() && reimbItems.all { it.closed }) "vec:check" else "vec:receipt",
                 )
             }
-            if (orig == null && type == TxType.EXPENSE && !tplMode && plan.mode != FxMode.SPEND) {
+            if (orig == null && type == TxType.EXPENSE && !tplMode && plan.mode != FxMode.SPEND && !debtOn) {
                 CuteChip(if (inst > 1) "分 $inst 期" else "分期", inst > 1, { dialog = "inst" }, icon = "vec:repeat")
             }
-            if (orig == null && !tplMode && plan.mode == FxMode.NONE) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "vec:star")
+            if (orig == null && !tplMode && plan.mode == FxMode.NONE && !debtOn) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "vec:star")
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
 
@@ -644,7 +658,7 @@ fun EditScreen(
                         if (cat == null && type != TxType.TRANSFER) "請先選分類"
                         else if (fxsOn) formatFx(fxsMinor, fxsCur) +
                             (impliedRate(amount, fxsMinor, tw.moneybook.app.Currencies.of(fxsCur).decimals)?.let { " @ ${rateText(it)}" } ?: "") +
-                            (if (fxsPending) "（預估，待請款）" else "（已請款）")
+                            (if (debtOn) "（預估，還款時填實際台幣）" else if (fxsPending) "（預估，待請款）" else "（已請款）")
                         else "",
                         style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f),
                     )
@@ -744,6 +758,21 @@ fun EditScreen(
             },
             onClose = { dialog = "" },
         )
+        "debt" -> DebtWhoDialog(
+            names = d.debtNames(),
+            initial = debtWho,
+            locked = debtLocked,
+            onConfirm = { who ->
+                debtWho = who
+                reimbOn = false
+                fee = 0L
+                discount = 0L
+                inst = 1
+                dialog = ""
+            },
+            onClear = if (debtOn) ({ debtWho = ""; dialog = "" }) else null,
+            onDismiss = { dialog = "" },
+        )
         "unsaved" -> AlertDialog(
             onDismissRequest = { dialog = "" },
             title = { Text("要儲存修改嗎？") },
@@ -781,9 +810,10 @@ fun EditScreen(
                 init = FxSpendInit(
                     cur = fxsCur,
                     amount = if (fxsMinor > 0L && fxsCur.isNotEmpty()) fxPlain(fxsMinor, tw.moneybook.app.Currencies.of(fxsCur).decimals) else "",
-                    pending = if (fxsOn) fxsPending else true,
+                    pending = if (fxsOn) fxsPending || debtOn else true,
                     twd = if (fxsOn) amount else 0L,
                 ),
+                debt = debtOn,
                 hasValue = fxsOn,
                 onConfirm = { cur, minor, twd, isPending ->
                     fxsCur = cur

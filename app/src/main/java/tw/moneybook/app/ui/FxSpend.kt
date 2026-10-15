@@ -72,6 +72,8 @@ fun FxSpendDialog(
     onConfirm: (String, Long, Long, Boolean) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
+    /** 外幣欠款：一律是預估（還款時才填實際扣的台幣），不問請款了沒有 */
+    debt: Boolean = false,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -79,7 +81,7 @@ fun FxSpendDialog(
     var cur by remember { mutableStateOf(startCur) }
     var pickCur by remember { mutableStateOf(false) }
     var amountText by remember { mutableStateOf(init.amount) }
-    var pending by remember { mutableStateOf(init.pending) }
+    var pending by remember { mutableStateOf(init.pending || debt) }
     var rateStr by remember { mutableStateOf("") }
     var rateTouched by remember { mutableStateOf(false) }
     var twdText by remember { mutableStateOf(if (!init.pending && init.twd > 0L) init.twd.toString() else "") }
@@ -118,7 +120,7 @@ fun FxSpendDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("外幣消費") },
+        title = { Text(if (debt) "外幣欠款" else "外幣消費") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PickerButton(currencyLabel(code), { pickCur = true })
@@ -130,7 +132,7 @@ fun FxSpendDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!debt) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CuteChip("還沒請款（預估）", pending, { pending = true })
                     CuteChip("已請款（填實際台幣）", !pending, { pending = false })
                 }
@@ -155,7 +157,8 @@ fun FxSpendDialog(
                     )
                     if (estTwd > 0L) {
                         Text(
-                            "預估 ${formatMoney(estTwd)}（${formatFx(minor ?: 0L, code)} × ${rate?.let { rateText(it) }}）。請款後再填銀行實際的台幣金額。",
+                            "預估 ${formatMoney(estTwd)}（${formatFx(minor ?: 0L, code)} × ${rate?.let { rateText(it) }}）。" +
+                                if (debt) "還款時再填實際扣掉的台幣金額。" else "請款後再填銀行實際的台幣金額。",
                             style = MaterialTheme.typography.bodySmall, color = cute.sub,
                         )
                     }

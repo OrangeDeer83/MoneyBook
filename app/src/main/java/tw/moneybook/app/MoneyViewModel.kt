@@ -51,6 +51,8 @@ data class TxnDraft(
     val fxSpendAmount: Long = 0L,
     val fxSpendCur: String = "",
     val fxPending: Boolean = false,
+    /** 欠款：別人先墊、我還沒付，這裡是欠誰（空白＝一般記錄）；欠款沒有帳戶，還款時才動帳戶（見 Debt.kt） */
+    val debtTo: String = "",
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -180,39 +182,57 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val d = data
         if (editId != null) {
             val old = d.txns.firstOrNull { it.id == editId } ?: return
-            val t = old.copy(
+            // 已經有還款記錄的欠款：金額、幣別、還款都不動（畫面也不讓改），只改分類、日期、備註、標籤、欠誰
+            val locked = old.isDebt && old.debtPays.isNotEmpty() && dr.type == TxType.EXPENSE
+            val debt = dr.type == TxType.EXPENSE && dr.debtTo.isNotBlank()
+            var t = old.copy(
                 type = dr.type, amount = dr.amount, categoryId = dr.categoryId,
-                accountId = dr.accountId, toAccountId = dr.toAccountId, day = dr.day,
+                accountId = if (debt) null else dr.accountId, toAccountId = dr.toAccountId, day = dr.day,
                 note = dr.note, tags = dr.tags,
-                fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
+                fee = if (debt) 0L else dr.fee, discount = if (dr.type == TxType.EXPENSE && !debt) dr.discount else 0L,
                 adjust = old.adjust && dr.type != TxType.TRANSFER,
                 time = dr.time,
                 fxAmount = dr.fxAmount,
                 billMonth = dr.billMonth,
                 fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
-            ).let { it.withItems(if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems) else emptyList()) }
+                // 欠款：沒有還款記錄時，金額跟著改（記欠款時的金額 debtOrig）；變回一般記錄就清掉欠款的欄位
+                debtTo = if (debt) dr.debtTo.trim() else "",
+                debtOrig = if (debt) dr.amount else 0L,
+                debtDone = false,
+                debtPays = emptyList(),
+            ).let { it.withItems(if (dr.type == TxType.EXPENSE && !debt) capItems(it, dr.reimbItems) else emptyList()) }
+            if (locked) {
+                t = t.copy(
+                    amount = old.amount, debtOrig = old.debtOrig, debtDone = old.debtDone, debtPays = old.debtPays,
+                    fxSpendAmount = old.fxSpendAmount, fxSpendCur = old.fxSpendCur, fxPending = old.fxPending,
+                    accountId = null, fee = 0L, discount = 0L, debtTo = dr.debtTo.trim().ifBlank { old.debtTo },
+                )
+            }
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             savedTxnId = editId
             return
         }
         var next = d.nextId
         val bookId = d.currentBook.id
-        val n = if (dr.type == TxType.EXPENSE) dr.installments.coerceIn(1, 60) else 1
+        val debt = dr.type == TxType.EXPENSE && dr.debtTo.isNotBlank()
+        // 欠款不分期
+        val n = if (dr.type == TxType.EXPENSE && !debt) dr.installments.coerceIn(1, 60) else 1
         val list = ArrayList<Txn>()
         if (n == 1) {
             list.add(
                 Txn(
                     id = next++, bookId = bookId, type = dr.type, amount = dr.amount,
-                    categoryId = dr.categoryId, accountId = dr.accountId, toAccountId = dr.toAccountId,
+                    categoryId = dr.categoryId, accountId = if (debt) null else dr.accountId, toAccountId = dr.toAccountId,
                     day = dr.day, note = dr.note, tags = dr.tags, time = dr.time,
-                    fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
+                    fee = if (debt) 0L else dr.fee, discount = if (dr.type == TxType.EXPENSE && !debt) dr.discount else 0L,
                     fxAmount = dr.fxAmount,
                     billMonth = dr.billMonth,
                     // 分期（n > 1）不支援外幣消費：這裡只有單筆
                     fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
+                    debtTo = if (debt) dr.debtTo.trim() else "", debtOrig = if (debt) dr.amount else 0L,
                 ).let {
                     it.withItems(
-                        if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
+                        if (dr.type == TxType.EXPENSE && !debt) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
                         else emptyList()
                     )
                 }
