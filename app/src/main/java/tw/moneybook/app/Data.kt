@@ -74,6 +74,13 @@ data class Category(
 data class ReimbPay(val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L)
 
 /**
+ * 一次還款（落在某一筆欠款上）：amount 是這次從帳戶實際扣掉的台幣（還外幣欠款時是實際扣的台幣；用同幣別外幣帳戶還時是約當台幣），
+ * fxAmount 是外幣帳戶實際扣掉的外幣（最小單位，其他情況是 0），units 是這次沖掉的欠款（台幣欠款是台幣，外幣欠款是外幣最小單位；
+ * 還的比欠的多時，多出來的錢只算在 amount 裡）。
+ */
+data class DebtPay(val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L, val units: Long = 0L)
+
+/**
  * 一個報銷對象（例如幫 5 個人付款，每個人一項）：應收金額與實際收款紀錄。
  * 可以分次收款；收到的比應收少時，可以選擇繼續追，或結案不追了（不追的部分算自己的支出）。
  */
@@ -140,6 +147,16 @@ data class Txn(
     val fxSpendCur: String = "",
     /** 外幣消費還沒請款：amount 是預估的台幣 */
     val fxPending: Boolean = false,
+    /**
+     * 欠款：別人先墊、我還沒付的支出，這裡是欠誰（空白＝不是欠款）。欠款的 accountId 是 null：記的那天就算支出，
+     * 但沒有動任何帳戶，還款（debtPays）時才從帳戶扣。外幣欠款同時有 fxSpendAmount／fxSpendCur，還沒還清時 fxPending 是 true。
+     */
+    val debtTo: String = "",
+    /** 記欠款時的金額（台幣）；還清後 amount 會改成實際還的總額，刪掉還款要靠它還原 */
+    val debtOrig: Long = 0L,
+    /** 已經結清：不管實際還的比記的多或少，不會再追 */
+    val debtDone: Boolean = false,
+    val debtPays: List<DebtPay> = emptyList(),
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -295,6 +312,7 @@ data class AppData(
             t.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
             t.toAccountId?.let { id -> if (id != t.accountId) accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
             for (p in t.items.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + p.flowFor(a) } }
+            for (p in t.debtPays) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) - p.flowFor(a) } }
         }
         return m
     }
@@ -320,6 +338,10 @@ data class AppData(
             }
             t.items.flatMap { it.pays }.forEachIndexed { i, p ->
                 if (p.accountId == accountId) ev.add(Ev("p${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 1 + i, p.flowFor(a)))
+            }
+            // 欠款的還款接在報銷收款後面（編號從 500 起，兩邊不會撞）
+            t.debtPays.forEachIndexed { i, p ->
+                if (p.accountId == accountId) ev.add(Ev("d${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 500 + i, -p.flowFor(a)))
             }
         }
         ev.sortWith(compareBy({ it.day }, { it.time }, { it.order }))

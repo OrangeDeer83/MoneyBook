@@ -77,6 +77,8 @@ object Codec {
                         .put("reimbItems", ReimbCodec.toJson(t.reimbItems))
                         .put("adjust", t.adjust).put("time", t.time).put("fxAmount", t.fxAmount).put("billMonth", t.billMonth)
                         .put("fxSpendAmount", t.fxSpendAmount).put("fxSpendCur", t.fxSpendCur).put("fxPending", t.fxPending)
+                        .put("debtTo", t.debtTo).put("debtOrig", t.debtOrig).put("debtDone", t.debtDone)
+                        .put("debtPays", DebtCodec.toJson(t.debtPays))
                 )
             }
         })
@@ -192,6 +194,10 @@ object Codec {
                 fxSpendAmount = o.optLong("fxSpendAmount", 0L),
                 fxSpendCur = o.optString("fxSpendCur", ""),
                 fxPending = o.optBoolean("fxPending", false),
+                debtTo = o.optString("debtTo", ""),
+                debtOrig = o.optLong("debtOrig", 0L),
+                debtDone = o.optBoolean("debtDone", false),
+                debtPays = DebtCodec.fromJson(o.optJSONArray("debtPays")),
             )
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
@@ -422,7 +428,7 @@ object Calc {
 
 /** CSV 匯出與匯入 */
 object CsvIO {
-    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間", "外幣金額", "外幣幣別", "入帳月份", "刷外幣金額", "刷外幣幣別", "待請款")
+    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間", "外幣金額", "外幣幣別", "入帳月份", "刷外幣金額", "刷外幣幣別", "待請款", "欠款對象", "欠款狀態")
 
     private fun esc(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
@@ -485,6 +491,9 @@ object CsvIO {
                 if (t.isFxSpend) fxPlain(t.fxSpendAmount, Currencies.of(t.fxSpendCur).decimals) else "",
                 if (t.isFxSpend) t.fxSpendCur else "",
                 if (t.isFxSpend && t.fxPending) "是" else "",
+                // 欠款：欠誰、還欠著或已還清（還款記錄不匯出；匯入後欠款的金額是記的金額）
+                txt(t.debtTo),
+                if (!t.isDebt) "" else if (t.debtDone) "已還清" else "還欠著",
             )
             sb.append(row.joinToString(",") { esc(it) }).append('\n')
         }
@@ -550,6 +559,8 @@ object CsvIO {
         val cFxs = col("刷外幣金額")
         val cFxsCur = col("刷外幣幣別")
         val cFxsPend = col("待請款")
+        val cDebt = col("欠款對象")
+        val cDebtState = col("欠款狀態")
         if (cDate < 0 || cAmt < 0) return Pair(d0, 0)
 
         var d = d0
@@ -612,7 +623,9 @@ object CsvIO {
             // 外幣在哪一邊：消費／收入是這個帳戶；轉帳看轉出帳戶本來就是外幣帳戶，不是的話就是轉入那邊
             val fromName = get(cAcc)
             val fxOnFrom = fxRaw > 0L && (type != TxType.TRANSFER || accs.firstOrNull { it.name == fromName }?.isForeign == true)
-            val accId = findAcc(fromName, if (fxOnFrom) fxCur else "")
+            // 欠款：還沒從任何帳戶扣，帳戶是空的（不能補成預設帳戶）
+            val debtWho = if (type == TxType.EXPENSE && !isAdjust) get(cDebt).trim() else ""
+            val accId = if (debtWho.isNotEmpty()) null else findAcc(fromName, if (fxOnFrom) fxCur else "")
             val toId = if (type == TxType.TRANSFER) findAcc(get(cTo), if (fxRaw > 0L && !fxOnFrom) fxCur else "") else null
             val fxAcc = accs.firstOrNull { it.id == (if (fxOnFrom) accId else toId) }
             val fxVal = if (fxRaw > 0L && fxAcc != null && fxAcc.isForeign && fxAcc.currency == fxCur) fxRaw else 0L
@@ -636,6 +649,9 @@ object CsvIO {
                     adjust = isAdjust,
                     fxAmount = fxVal,
                     billMonth = if (type != TxType.TRANSFER && !isAdjust) runCatching { billCode(YearMonth.parse(get(cBill).trim())) }.getOrDefault(0) else 0,
+                    debtTo = debtWho,
+                    debtOrig = if (debtWho.isNotEmpty()) amount else 0L,
+                    debtDone = debtWho.isNotEmpty() && get(cDebtState) == "已還清",
                 ).let { t0 ->
                     // 台幣帳戶刷外幣：外幣金額、幣別、待請款
                     val sCur = get(cFxsCur).trim().uppercase().takeIf { Currencies.validCode(it) } ?: ""
@@ -654,6 +670,25 @@ object CsvIO {
             nextId = nextId,
         )
         return Pair(d, added.size)
+    }
+}
+
+/** 欠款還款記錄的 JSON 轉換 */
+object DebtCodec {
+    fun toJson(list: List<DebtPay>): JSONArray = JSONArray().apply {
+        list.forEach { p ->
+            put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount).put("time", p.time).put("fxAmount", p.fxAmount).put("units", p.units))
+        }
+    }
+
+    fun fromJson(arr: JSONArray?): List<DebtPay> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<DebtPay>()
+        for (n in 0 until arr.length()) {
+            val o = arr.getJSONObject(n)
+            out.add(DebtPay(o.optLong("day", 0L), if (o.isNull("accountId")) null else o.optLong("accountId"), o.optLong("amount", 0L), o.optInt("time", -1), o.optLong("fxAmount", 0L), o.optLong("units", 0L)))
+        }
+        return out
     }
 }
 
