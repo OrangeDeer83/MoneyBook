@@ -111,7 +111,7 @@ fun DebtWhoDialog(
 private fun debtAmountText(units: Long, twd: Long, currency: String): String =
     if (currency.isEmpty()) formatMoney(units) else formatFx(units, currency) + "（約 ${formatMoney(twd)}）"
 
-private fun shortDate(day: Long): String = LocalDate.ofEpochDay(day).let { "${it.monthValue}/${it.dayOfMonth}" }
+private fun debtDate(day: Long): String = LocalDate.ofEpochDay(day).let { "${it.monthValue}/${it.dayOfMonth}" }
 
 /**
  * 欠款頁：還欠著的錢依人分組（台幣欠款和外幣欠款分開還），每一組可以還款；每一筆下面列出還款記錄，可以刪掉；
@@ -133,7 +133,7 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
             Row(Modifier.fillMaxWidth().clickable { onEdit(t.id) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(what, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-                    Text(shortDate(t.day) + if (t.isFxSpend) "・${t.fxSpendNote()}" else "", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+                    Text(debtDate(t.day) + if (t.isFxSpend) "・${t.fxSpendNote()}" else "", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
                 }
                 Text(
                     when {
@@ -150,7 +150,7 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
                 val acc = p.accountId?.let { d.accMap[it] }
                 Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "已還 ${shortDate(p.day)}  -" + (if (acc != null) acc.fmt(if (acc.isForeign) p.fxAmount else p.amount) else formatMoney(p.amount)) +
+                        "已還 ${debtDate(p.day)}  -" + (if (acc != null) acc.fmt(if (acc.isForeign) p.fxAmount else p.amount) else formatMoney(p.amount)) +
                             (acc?.let { "・${it.name}" } ?: ""),
                         style = MaterialTheme.typography.labelSmall, color = cute.income, modifier = Modifier.weight(1f), maxLines = 1,
                     )
