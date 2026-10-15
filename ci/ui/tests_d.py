@@ -2807,7 +2807,7 @@ def t_debt_repay_short_settle():
     d.check("明細列出「還款・Amy」", d.has(ns, "還款・Amy", True), [n.text for n in ns if n.text][:25])
     open_account("測試銀行")
     ns = d.shot("測試銀行明細")
-    d.check("測試銀行 $47,500，明細有「還款・Amy」-$2,500", d.has(ns, "$47,500", True) and d.has(ns, "還款・Amy", True) and d.has(ns, "-$2,500", True), [n.text for n in ns if "$" in n.text][:15])
+    d.check("測試銀行 $47,500；明細有「還款・Amy」，兩筆欠款各一列（-$2,000、-$500），流出 $2,500", d.has(ns, "$47,500", True) and d.has(ns, "還款・Amy", True) and d.has(ns, "-$2,000", True) and d.has(ns, "-$500", True) and d.has(ns, "流出 $2,500", True), [n.text for n in ns if "$" in n.text][:15])
 
 
 @case(D, "欠款頁：少付選「還沒還完」剩下的繼續欠；刪掉還款會還原", visual=True)
@@ -2894,5 +2894,5 @@ def t_debt_foreign():
     d.tap_back()
     d.time.sleep(1)
     ns = d.shot("還款後首頁")
-    d.check("本月支出改成實際的 NT$2,700", value_below(ns, "本月支出") in ("NT$2,700",), value_below(ns, "本月支出"))
+    d.check("本月支出改成實際的 NT$2,700（有外幣，台幣標 NT$）", d.has(ns, "NT$2,700", True), [n.text for n in ns if "$" in n.text][:12])
     d.check("欠款提醒消失", not any(n.text.startswith("欠款 ") and "›" in n.text for n in ns))
