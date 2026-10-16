@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -584,6 +585,23 @@ private fun netText(net: Long): String = when {
     else -> "兩清"
 }
 
+/** 一行一個金額：標籤在左、金額靠右（金額太長時標籤縮短，不會擠成好幾行） */
+@Composable
+private fun AmountLine(label: String, value: String, color: androidx.compose.ui.graphics.Color, strong: Boolean = false) {
+    val cute = LocalCute.current
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 12.dp))
+        Text(value, style = if (strong) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium, color = color, maxLines = 1)
+    }
+}
+
+@Composable
+private fun AmountDivider() {
+    Spacer(Modifier.height(4.dp))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(LocalCute.current.soft))
+    Spacer(Modifier.height(4.dp))
+}
+
 @Composable
 private fun ReimbHome(
     vm: MoneyViewModel,
@@ -611,17 +629,12 @@ private fun ReimbHome(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    @Composable
-                    fun block(label: String, v: String, color: androidx.compose.ui.graphics.Color, m: Modifier) {
-                        CuteCard(m) {
-                            Text(label, style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            Text(v, style = MaterialTheme.typography.titleMedium, color = color, maxLines = 1)
-                        }
-                    }
-                    block("別人欠我", formatMoney(oweMe), cute.income, Modifier.weight(1f))
-                    block("我欠別人", formatMoney(iOwe), cute.expense, Modifier.weight(1f))
-                    block(if (oweMe >= iOwe) "淨收" else "淨欠", formatMoney(kotlin.math.abs(oweMe - iOwe)), cute.ink, Modifier.weight(1f))
+                // 一行一個金額：標籤在左、金額靠右，數字再大也放得下
+                CuteCard(Modifier.fillMaxWidth()) {
+                    AmountLine("別人欠我", formatMoney(oweMe), cute.income)
+                    AmountLine("我欠別人", formatMoney(iOwe), cute.expense)
+                    AmountDivider()
+                    AmountLine(if (oweMe >= iOwe) "淨收" else "淨欠", formatMoney(kotlin.math.abs(oweMe - iOwe)), cute.ink, strong = true)
                 }
             }
             item { PillSegment(listOf("依對象", "依帳單", "紀錄"), tab, { tab = it }, Modifier.fillMaxWidth(), equal = true) }
@@ -1152,32 +1165,28 @@ private fun ReimbPersonPage(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CuteCard(Modifier.weight(1f)) {
-                        Text("還欠你", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                        Text(formatMoney(owed), style = MaterialTheme.typography.titleLarge, color = cute.expense)
-                    }
-                    CuteCard(Modifier.weight(1f)) {
-                        Text("已收", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                        Text(formatMoney(claims.sumOf { it.item.received }), style = MaterialTheme.typography.titleLarge, color = cute.income)
-                    }
+                // 一行一個金額：還欠你、已收、你欠他（每種幣別一行）、淨額（外幣用預估匯率換成台幣）
+                CuteCard(Modifier.fillMaxWidth()) {
+                    AmountLine("${ownerLabel(who)}還欠你", formatMoney(owed), cute.expense)
+                    AmountLine("已收", formatMoney(claims.sumOf { it.item.received }), cute.income)
                     if (debtRefs.isNotEmpty()) {
-                        CuteCard(Modifier.weight(1f)) {
-                            Text("你欠他", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            Text(formatMoney(iOwe), style = MaterialTheme.typography.titleLarge, color = cute.expense)
+                        if (groups.isEmpty()) AmountLine("你欠他", formatMoney(0L), cute.expense)
+                        groups.sortedBy { if (it.currency.isEmpty()) 0 else 1 }.forEach { g ->
+                            if (g.currency.isEmpty()) AmountLine("你欠他", formatMoney(g.remainingTwd), cute.expense)
+                            else AmountLine("你欠他（${Currencies.of(g.currency).name}）", "${formatFx(g.remainingUnits, g.currency)}（約 ${formatMoney(g.remainingTwd)}）", cute.expense)
                         }
+                        // 兩個方向都有時，寫淨額
+                        AmountDivider()
+                        AmountLine(
+                            "淨額",
+                            when {
+                                net > 0L -> "${ownerLabel(who)}還欠你 ${formatMoney(net)}"
+                                net < 0L -> "你還欠${ownerLabel(who)} ${formatMoney(-net)}"
+                                else -> "兩清"
+                            },
+                            if (net >= 0L) cute.income else cute.expense, strong = true,
+                        )
                     }
-                }
-                // 兩個方向都有時，寫淨額
-                if (debtRefs.isNotEmpty()) {
-                    Text(
-                        when {
-                            net > 0L -> "${ownerLabel(who)}還欠你 ${formatMoney(net)}（已扣掉你欠他的）"
-                            net < 0L -> "你還欠${ownerLabel(who)} ${formatMoney(-net)}" + if (owed > 0L) "（已扣掉他欠你的）" else ""
-                            else -> "兩清"
-                        },
-                        style = MaterialTheme.typography.titleMedium, color = if (net >= 0L) cute.income else cute.expense,
-                    )
                 }
                 if (claims.isNotEmpty()) {
                     Text("${ownerLabel(who)}欠我（報銷）", style = MaterialTheme.typography.titleMedium)
