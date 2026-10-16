@@ -31,18 +31,15 @@ def money_after(ns, label):
 
 def reimb_total():
     ns = d.nodes()
-    return money_after(ns, "還沒收到的報銷款")
+    return money_after(ns, "別人欠我")
 
 
 def open_edit_reimb_switch_on(multi=False):
     """記一筆 → 報銷整頁，把開關打開"""
     f.chip_scroll("報銷", "新增標籤")
-    d.wait_text("這筆的報銷", timeout=15)
-    ns = d.nodes()
-    sw = [n for n in ns if n.checkable]
-    if sw and not sw[0].checked:
-        d.tap(sw[0])
-    # 報銷頁已經沒有「一人・全額／分給多人」分頁：一律是對象列表，預設一列、全額
+    d.wait_text("這筆的報銷／欠款", timeout=15)
+    # 沒有開關了：有人、有金額就是報銷；第一列先填滿實付（以前打開開關的預設）
+    f.reimb_fill_full()
 
 
 def fill_rows(rows):
@@ -50,7 +47,7 @@ def fill_rows(rows):
     for i, (who, amt) in enumerate(rows):
         if i >= 1:
             d.hide_ime()
-            d.tap_text("新增對象", exact=False)
+            d.tap_text("加一個人", exact=False)
         ed = d.edits()
         d.fill(ed[2 * i], who)
         ed = d.edits()
@@ -64,8 +61,8 @@ def done_reimb():
 
 
 def to_reimb_home():
-    f.me_page("報銷")
-    d.wait_text("還沒收到的報銷款", timeout=15)
+    f.me_page("報銷／欠款")
+    d.wait_text("別人欠我", timeout=15)
 
 
 def month_spent(ns):
@@ -138,7 +135,7 @@ def t_page_keep():
     fill_rows([("Ming", 500), ("Hua", 700)])
     done_reimb()
     f.chip_scroll("待報銷", "新增標籤")
-    d.wait_text("這筆的報銷", timeout=15)
+    d.wait_text("這筆的報銷／欠款", timeout=15)
     ns = d.shot("再次開啟報銷整頁")
     t = [n.text for n in d.edits()]
     d.check("對象與金額都還在", "Ming" in t and "Hua" in t and "500" in t and "700" in t, t)
@@ -257,8 +254,7 @@ def t_oldest_only():
 
 def receive_page(who):
     to_reimb_home()
-    d.tap(d.wait(lambda n: n.text == who, 10, who))
-    d.wait_text("這次收到多少", timeout=15)
+    f.to_receive(who)
 
 
 def confirm_receive():
@@ -275,7 +271,7 @@ def t_receive_full():
     confirm_receive()
     ns = d.shot("確認後")
     d.check("回到總覽，Hua 已不在待收清單", not d.has(ns, "Hua", True))
-    d.tap_text("已收款", exact=True)
+    d.tap_text("紀錄", exact=True)
     d.time.sleep(1)
     ns = d.shot("已收款分頁")
     d.check("已收款出現 +$800", d.has(ns, "+$800", True))
@@ -328,7 +324,7 @@ def t_short_giveup():
     d.time.sleep(1.5)
     ns = d.shot("選不追了後")
     d.check("Hua 已不在待收清單", not d.has(ns, "Hua", True))
-    d.tap_text("已收款", exact=True)
+    d.tap_text("紀錄", exact=True)
     d.time.sleep(1)
     ns = d.shot("已收款分頁")
     row = next((n for n in ns if "Hua" in n.text), None)
@@ -366,7 +362,7 @@ def t_overpay():
     confirm_receive()
     d.shot("確認後")
     f.tab("統計") if False else None
-    d.check("流程完成沒有閃退", d.has(d.nodes(), "還沒收到的報銷款"))
+    d.check("流程完成沒有閃退", d.has(d.nodes(), "別人欠我"))
 
 
 @case(B, "收款存到不同帳戶", visual=True)
@@ -376,7 +372,7 @@ def t_other_account():
     f.pick_from_list("測試銀行", anchor="存進哪個帳戶")
     d.shot("選測試銀行")
     confirm_receive()
-    d.tap_text("已收款", exact=True)
+    d.tap_text("紀錄", exact=True)
     d.time.sleep(1)
     ns = d.shot("已收款分頁")
     d.check("收款存入「測試銀行」", d.has(ns, "存入 測試銀行"))
@@ -399,11 +395,11 @@ def t_zero_receive():
 
 def go_person(who):
     to_reimb_home()
-    d.tap_text("已收款", exact=True)
+    d.tap_text("紀錄", exact=True)
     d.time.sleep(1)
     row = d.wait(lambda n: who in n.text, 8, who)
     d.tap(row)
-    d.wait_text("收款紀錄", timeout=10)
+    d.wait_text("紀錄", timeout=10)
 
 
 @case(B, "修改收款紀錄")
@@ -462,7 +458,7 @@ def t_home_bar():
         d.tap(bar)
         d.time.sleep(1.5)
         ns = d.shot("點提示條後")
-        d.check("進入報銷頁", d.has(ns, "還沒收到的報銷款"))
+        d.check("進入報銷頁", d.has(ns, "別人欠我"))
 
 
 @case(B, "沒有報銷時的空狀態")
@@ -603,7 +599,7 @@ def split_page_with_three():
     d.fill(d.edits()[0], "Amy")
     d.hide_ime()
     for who in ("Bob", "Cat"):
-        d.tap_text("新增對象", exact=False)
+        d.tap_text("加一個人", exact=False)
         d.time.sleep(0.6)
         ed = d.edits()
         d.fill(ed[-2], who)
@@ -673,7 +669,7 @@ def t_reimb_default_single():
     ns = d.shot("打開報銷")
     d.check("不再有「一人・全額」「分給多人」分頁", not d.has(ns, "一人・全額") and not d.has(ns, "分給多人"), [n.text for n in ns if n.text][:30])
     d.check("預設一列：對象空白、金額是實付 400", len(d.edits()) == 2 and d.edits()[1].text == "400", [e.text for e in d.edits()])
-    d.check("有「＋ 新增對象」與「平分」", d.has(ns, "＋ 新增對象") and d.has(ns, "平分", False))
+    d.check("有「＋ 新增對象」與「平分」", d.has(ns, "＋ 加一個人") and d.has(ns, "平分", False))
     d.fill(d.edits()[0], "Zed")
     d.hide_ime()
     done_reimb()
@@ -713,7 +709,7 @@ def t_receive_select():
     d.check("合計變成 1 筆 $500", d.has(ns, "這次勾選 1 筆，合計") and d.has(ns, "$500", True), [n.text for n in ns if n.text][:30])
     d.check("收到金額跟著變成 500", "500" in [e.text for e in d.edits()], [e.text for e in d.edits()])
     d.tap_text("確認收款", exact=False)
-    d.wait_text("還沒收到的報銷款", timeout=15)      # 收完回到報銷總覽
+    d.wait_text("別人欠我", timeout=15)      # 收完回到報銷總覽
     d.time.sleep(1)
     ns = d.shot("收完之後的報銷總覽")
     d.check("Ming 還欠 $1,000（沒勾選的那一筆）", d.has(ns, "Ming", True) and d.has(ns, "$1,000", True), [n.text for n in ns if n.text.startswith("$") or n.text == "Ming"])

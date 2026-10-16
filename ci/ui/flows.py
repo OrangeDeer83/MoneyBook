@@ -146,8 +146,31 @@ def reimb_row_texts():
 
 
 def open_reimb_home():
-    me_page("報銷")
-    d.wait_text("還沒收到的報銷款", timeout=15)
+    me_page("報銷／欠款")
+    d.wait_text("別人欠我", timeout=15)
+
+
+def to_receive(who):
+    """報銷／欠款總覽：點人名進他的頁面，再按下面的「收款」"""
+    d.tap(d.wait(lambda n: n.text == who, 10, who))
+    d.wait_text("紀錄", timeout=10)
+    d.time.sleep(0.6)
+    d.tap_text("收款", exact=True, lowest=True)
+    d.wait_text("這次收到多少", timeout=15)
+
+
+def reimb_fill_full():
+    """記一筆的報銷／欠款頁沒有開關了：第一列金額填滿實付（等於以前打開開關後的預設：一列、全額）"""
+    import re as _re
+    ns = d.nodes()
+    lab = d.first(ns, "實付", True)
+    vals = [n for n in ns if lab and n.cy > lab.cy and _re.fullmatch(r"(NT)?\$[0-9,]+", n.text)]
+    v = min(vals, key=lambda n: n.cy).text if vals else ""
+    digits = _re.sub(r"[^0-9]", "", v)
+    if digits and digits != "0":
+        ed = d.edits()
+        d.fill(ed[1], digits)
+        d.hide_ime()
 
 
 def swipe_row_left(node):

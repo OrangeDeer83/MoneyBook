@@ -9,7 +9,7 @@ from runner import case
 
 C = "c"
 APK = os.environ.get("APK", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "app", "build", "outputs", "apk", "debug", "app-debug.apk"))
-SUB_PAGES = ["帳本管理", "分類管理", "報銷", "常用記帳", "外觀與吉祥物", "備份與匯入匯出"]
+SUB_PAGES = ["帳本管理", "分類管理", "報銷／欠款", "常用記帳", "外觀與吉祥物", "備份與匯入匯出"]
 
 
 def safe(label, fn):
@@ -112,13 +112,12 @@ def t_dark_edit():
 def t_dark_reimb():
     s = S.with_reimb(f.today(), dark=2)
     d.fresh(s.json())
-    f.me_page("報銷")
-    d.wait_text("還沒收到的報銷款", timeout=15)
+    f.me_page("報銷／欠款")
+    d.wait_text("別人欠我", timeout=15)
     d.shot("深色：報銷總覽", contrast=True)
 
     def receive():
-        d.tap(d.wait(lambda n: n.text == "Hua", 8, "Hua"))
-        d.wait_text("這次收到多少", timeout=10)
+        f.to_receive("Hua")
         d.shot("深色：收款頁", contrast=True)
         d.fill(d.edits()[0], "500")
         d.hide_ime()
@@ -136,7 +135,7 @@ def t_dark_reimb():
         f.open_add()
         f.keypad("1000")
         f.chip_scroll("報銷", "新增標籤")
-        d.wait_text("這筆的報銷", timeout=10)
+        d.wait_text("這筆的報銷／欠款", timeout=10)
         d.shot("深色：報銷整頁（記一筆）", contrast=True)
     safe("報銷整頁", edit)
 
@@ -370,8 +369,8 @@ def t_old_format():
     d.fresh(S.old_format(f.today()))
     ns = d.shot("舊格式資料載入後", contrast=False)
     d.check("舊格式資料載入成功（帳目在）", d.has(ns, "-$120", True))
-    f.me_page("報銷")
-    d.wait_text("還沒收到的報銷款", timeout=15)
+    f.me_page("報銷／欠款")
+    d.wait_text("別人欠我", timeout=15)
     ns = d.shot("舊格式的報銷頁")
     d.check("舊的單一報銷顯示正常", d.has(ns, "沒填對象", True))
 
@@ -407,13 +406,13 @@ def t_interrupted():
 @case(C, "旋轉與背景返回時頁面堆疊正常")
 def t_stack_rotate():
     d.fresh(f.base_seed())
-    f.me_page("報銷")
-    d.wait_text("還沒收到的報銷款", timeout=15)
+    f.me_page("報銷／欠款")
+    d.wait_text("別人欠我", timeout=15)
     d.sh("input keyevent 3")
     d.time.sleep(2)
     d.launch()
     ns = d.shot("按 Home 後回來")
-    d.check("停在報銷頁", d.has(ns, "還沒收到的報銷款"))
+    d.check("停在報銷頁", d.has(ns, "別人欠我"))
     d.sh("settings put system accelerometer_rotation 0")
     d.sh("settings put system user_rotation 1")
     d.time.sleep(2.5)
@@ -421,7 +420,7 @@ def t_stack_rotate():
     d.sh("settings put system user_rotation 0")
     d.time.sleep(2.5)
     ns = d.shot("轉回直向")
-    d.check("轉回後仍在報銷頁", d.has(ns, "還沒收到的報銷款"))
+    d.check("轉回後仍在報銷頁", d.has(ns, "別人欠我"))
     d.tap_back()
     d.time.sleep(1.2)
     ns = d.shot("返回")
@@ -449,7 +448,7 @@ def t_font_scale():
     f.open_add()
     d.shot("字體 160%：記一筆")
     d.tap(d.first(d.nodes(), "關閉"))
-    f.me_page("報銷")
+    f.me_page("報銷／欠款")
     d.shot("字體 160%：報銷")
 
 
