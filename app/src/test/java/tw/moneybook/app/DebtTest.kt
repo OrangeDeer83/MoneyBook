@@ -222,6 +222,59 @@ class DebtTest {
         assertEquals(setOf("Amy", "Ken"), d.debtNames().toSet())
     }
 
+    /** Amy 欠我：午餐 1000（報銷）、機票 1000（報銷，已收 500）；我欠 Amy：晚餐 800（欠款） */
+    private fun mutual(): AppData {
+        val lunch = Txn(1, 1L, TxType.EXPENSE, 1000, null, 10L, null, 3, "午餐", emptyList()).withItems(listOf(ReimbItem("Amy", 1000)))
+        val flight = Txn(2, 1L, TxType.EXPENSE, 1000, null, 10L, null, 10, "機票", emptyList())
+            .withItems(listOf(ReimbItem("Amy", 1000, listOf(ReimbPay(12, 10L, 500)))))
+        return base(lunch, flight, debt(3, 800, 15, note = "晚餐"))
+    }
+
+    @Test
+    fun offsetUsesSmallerSideOldestFirstWithoutTouchingAccounts() {
+        val d0 = mutual()
+        val bal = d0.balances()[10]
+        val d = d0.withOffset("Amy", setOf(1L to 0, 2L to 0), setOf(3L to 0), 20, -1)!!
+        // 她欠我 1500、我欠她 800 → 抵 800：午餐先抵 800（還剩 200），機票不動
+        assertEquals(200L, d.t(1).items[0].remaining)
+        assertEquals(500L, d.t(2).items[0].remaining)
+        assertTrue(d.item(3).done)
+        assertEquals(bal, d.balances()[10])                          // 不動任何帳戶
+        assertEquals(d0.txns.expenseSum(), d.txns.expenseSum())      // 不改變支出
+        assertEquals(0L, d.debtOutstanding())
+        val oid = d.t(1).items[0].pays.last().offsetId
+        assertTrue(oid != 0L)
+        assertEquals(oid, d.item(3).pays.single().offsetId)
+        assertEquals(d0.nextId + 1, d.nextId)
+    }
+
+    @Test
+    fun offsetOnlyChosenItemsAndClosesFullyCovered() {
+        val d = mutual().withOffset("Amy", setOf(2L to 0), setOf(3L to 0), 20, -1)!!
+        // 只勾機票（剩 500）→ 抵 500：機票收齊、晚餐還欠 300
+        assertTrue(d.t(2).items[0].closed)
+        assertEquals(1000L, d.t(1).items[0].remaining)
+        assertEquals(300L, d.item(3).remainingUnits)
+        assertNull(mutual().withOffset("Amy", emptySet(), setOf(3L to 0), 20, -1))
+        assertNull(mutual().withOffset("Ken", setOf(1L to 0), setOf(3L to 0), 20, -1))
+    }
+
+    @Test
+    fun removingOffsetRestoresBothSides() {
+        val d0 = mutual()
+        val d = d0.withOffset("Amy", setOf(2L to 0), setOf(3L to 0), 20, -1)!!
+        val oid = d.item(3).pays.single().offsetId
+        val back = d.withOffsetRemoved(oid)!!
+        assertEquals(500L, back.t(2).items[0].remaining)
+        assertFalse(back.t(2).items[0].closed)
+        assertEquals(800L, back.item(3).remainingUnits)
+        assertFalse(back.item(3).done)
+        assertNull(back.withOffsetRemoved(oid))
+        val again = Codec.decode(Codec.encode(d))
+        assertEquals(oid, again.item(3).pays.single().offsetId)
+        assertEquals(oid, again.t(2).items[0].pays.last().offsetId)
+    }
+
     @Test
     fun debtFieldsSurviveSaveAndLoad() {
         val d = base(split(1, 300, 10, 100, "A" to 100L, "B" to 100L)).withDebtRepaid("A", "", 10, 20, 600, 100, 0, false)!!

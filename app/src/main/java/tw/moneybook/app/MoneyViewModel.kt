@@ -393,6 +393,34 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         })
     }
 
+    /** 互相抵銷（見 withOffset），可以復原；成功回傳 true */
+    fun offsetDebts(who: String, reimbKeys: Set<Pair<Long, Int>>, debtKeys: Set<Pair<Long, Int>>, day: Long, time: Int): Boolean {
+        val d = data
+        val after = d.withOffset(who, reimbKeys, debtKeys, day, time) ?: run {
+            toast("兩邊都要勾選還沒結清的帳才能抵銷")
+            return false
+        }
+        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        commit(after)
+        _messages.tryEmit(UiMsg("已和 $who 互相抵銷", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { before[it.id] ?: it }))
+        })
+        return true
+    }
+
+    /** 刪掉一次互相抵銷（兩邊一起），可以復原 */
+    fun deleteOffset(offsetId: Long) {
+        val d = data
+        val after = d.withOffsetRemoved(offsetId) ?: return
+        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        commit(after)
+        _messages.tryEmit(UiMsg("已刪除這次抵銷", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { before[it.id] ?: it }))
+        })
+    }
+
     /** 修改一筆買賣（見 withTradeUpdated）；成功回傳 true */
     fun updateTrade(id: Long, day: Long, qty: Double, price: Double, fee: Long, cashAccountId: Long?, rate: Double = 0.0, feeNative: Double = 0.0): Boolean {
         val old = data.trades.firstOrNull { it.id == id } ?: return false

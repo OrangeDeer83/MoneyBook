@@ -71,7 +71,11 @@ data class Category(
  * amount 是這筆收款沖掉的台幣金額（統計用）；收到的是外幣、存進外幣帳戶時，fxAmount 是實際入帳的外幣金額（最小單位），
  * 外幣帳戶的餘額用它；其他情況是 0。
  */
-data class ReimbPay(val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L)
+data class ReimbPay(
+    val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L,
+    /** 互相抵銷產生的（不是真的收到錢，沒有帳戶）：同一次抵銷的報銷和欠款兩邊用同一個編號，刪除時一起刪；0 是一般收款 */
+    val offsetId: Long = 0L,
+)
 
 /**
  * 欠一個人的錢：amount 是記的時候欠多少（台幣；外幣欠款是預估的台幣），units 是外幣欠款欠的外幣（最小單位；台幣欠款是 0），
@@ -84,7 +88,11 @@ data class DebtItem(val who: String, val amount: Long, val units: Long = 0L, val
  * fxAmount 是外幣帳戶實際扣掉的外幣（最小單位，其他情況是 0），units 是這次沖掉的欠款（台幣欠款是台幣，外幣欠款是外幣最小單位；
  * 還的比欠的多時，多出來的錢只算在 amount 裡）。
  */
-data class DebtPay(val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L, val units: Long = 0L)
+data class DebtPay(
+    val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L, val units: Long = 0L,
+    /** 互相抵銷產生的（見 ReimbPay.offsetId）；0 是一般還款 */
+    val offsetId: Long = 0L,
+)
 
 /**
  * 一個報銷對象（例如幫 5 個人付款，每個人一項）：應收金額與實際收款紀錄。

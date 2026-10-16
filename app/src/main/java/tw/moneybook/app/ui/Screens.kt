@@ -127,7 +127,9 @@ class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?) {
 fun reimbRecvsOf(txns: List<Txn>): List<ReimbRecv> = txns.flatMap { t ->
     t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) } +
         t.debtItems.flatMap { i -> i.pays.map { i.who to it } }
-            .mapIndexed { k, (who, p) -> ReimbRecv(t, who, ReimbPay(p.day, p.accountId, p.amount, p.time, p.fxAmount), DEBT_IDX + k, debt = true) }
+            .mapIndexed { k, (who, p) -> ReimbRecv(t, who, ReimbPay(p.day, p.accountId, p.amount, p.time, p.fxAmount, p.offsetId), DEBT_IDX + k, debt = true) }
+            // 互相抵銷只列一次（報銷那一邊），欠款那一邊不重複列
+            .filter { it.pay.offsetId == 0L }
 }
 
 /** 報銷結案時少收的金額（不追了的部分） */
@@ -214,7 +216,8 @@ fun ReimbRecvRow(d: AppData, r: ReimbRecv, showAcc: Boolean, amount: String, bal
         CatBubble("img:acc_receipt", 2, 40.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text((if (r.debt) "還款" else "報銷收款") + if (r.who.isNotBlank()) "・${r.who}" else "", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val off = r.pay.offsetId != 0L
+            Text((if (off) "互相抵銷" else if (r.debt) "還款" else "報銷收款") + if (r.who.isNotBlank()) "・${r.who}" else "", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 listOf(catPath(d, r.t), note).filter { it.isNotEmpty() }.joinToString("・"),
                 style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -225,7 +228,9 @@ fun ReimbRecvRow(d: AppData, r: ReimbRecv, showAcc: Boolean, amount: String, bal
         }
         Spacer(Modifier.width(8.dp))
         Column(horizontalAlignment = Alignment.End) {
-            Text((if (r.debt) "-" else "+") + amount, color = if (r.debt) cute.expense else cute.income, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            // 互相抵銷沒有動帳戶：不寫正負號、用灰色
+            if (r.pay.offsetId != 0L) Text(amount, color = cute.sub, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            else Text((if (r.debt) "-" else "+") + amount, color = if (r.debt) cute.expense else cute.income, fontWeight = FontWeight.SemiBold, maxLines = 1)
             if (balance != null) {
                 Text(balance, style = MaterialTheme.typography.labelSmall, color = if (balanceNegative) cute.expense else cute.sub, maxLines = 1)
             }

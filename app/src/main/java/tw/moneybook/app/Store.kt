@@ -688,7 +688,7 @@ object CsvIO {
 object DebtCodec {
     fun toJson(list: List<DebtPay>): JSONArray = JSONArray().apply {
         list.forEach { p ->
-            put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount).put("time", p.time).put("fxAmount", p.fxAmount).put("units", p.units))
+            put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount).put("time", p.time).put("fxAmount", p.fxAmount).put("units", p.units).put("offsetId", p.offsetId))
         }
     }
 
@@ -697,7 +697,7 @@ object DebtCodec {
         val out = ArrayList<DebtPay>()
         for (n in 0 until arr.length()) {
             val o = arr.getJSONObject(n)
-            out.add(DebtPay(o.optLong("day", 0L), if (o.isNull("accountId")) null else o.optLong("accountId"), o.optLong("amount", 0L), o.optInt("time", -1), o.optLong("fxAmount", 0L), o.optLong("units", 0L)))
+            out.add(DebtPay(o.optLong("day", 0L), if (o.isNull("accountId")) null else o.optLong("accountId"), o.optLong("amount", 0L), o.optInt("time", -1), o.optLong("fxAmount", 0L), o.optLong("units", 0L), o.optLong("offsetId", 0L)))
         }
         return out
     }
@@ -744,7 +744,7 @@ object ReimbCodec {
                         "pays",
                         JSONArray().apply {
                             i.pays.forEach { p ->
-                                put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount).put("time", p.time).put("fxAmount", p.fxAmount))
+                                put(JSONObject().put("day", p.day).put("accountId", p.accountId ?: JSONObject.NULL).put("amount", p.amount).put("time", p.time).put("fxAmount", p.fxAmount).put("offsetId", p.offsetId))
                             }
                         },
                     )
@@ -761,7 +761,7 @@ object ReimbCodec {
             val pays = ArrayList<ReimbPay>()
             if (pa != null) for (k in 0 until pa.length()) {
                 val po = pa.getJSONObject(k)
-                pays.add(ReimbPay(po.optLong("day", 0L), if (po.isNull("accountId")) null else po.getLong("accountId"), po.optLong("amount", 0L), po.optInt("time", -1), po.optLong("fxAmount", 0L)))
+                pays.add(ReimbPay(po.optLong("day", 0L), if (po.isNull("accountId")) null else po.getLong("accountId"), po.optLong("amount", 0L), po.optInt("time", -1), po.optLong("fxAmount", 0L), po.optLong("offsetId", 0L)))
             }
             out.add(ReimbItem(o.optString("who", ""), o.optLong("amount", 0L), pays, o.optBoolean("closed", false)))
         }

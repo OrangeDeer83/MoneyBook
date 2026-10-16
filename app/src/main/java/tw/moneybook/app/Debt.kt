@@ -159,3 +159,75 @@ fun splitDebtUnits(items: List<DebtItem>, totalTwd: Long, fxTotal: Long): List<D
         it.copy(units = u)
     }
 }
+
+/**
+ * 互相抵銷：同一個人，他欠我的（報銷還沒收的）和我欠他的（台幣欠款還沒還的）對沖，不動任何帳戶、不算收入或支出。
+ * reimbKeys：要抵的報銷（txn id 到第幾個報銷對象）；debtKeys：要抵的欠款（txn id 到第幾項）。外幣欠款不能抵（要用實際台幣還）。
+ * 抵的金額是兩邊勾選的合計比較小的那一個；兩邊都由舊到新分配，抵完的那一項就結清（報銷是收齊、欠款是還清）。
+ * 兩邊的紀錄用同一個編號（用掉一個 nextId），刪除時一起刪（見 withOffsetRemoved）。抵不了回傳 null。
+ */
+fun AppData.withOffset(who: String, reimbKeys: Set<Pair<Long, Int>>, debtKeys: Set<Pair<Long, Int>>, day: Long, time: Int): AppData? {
+    val name = who.trim()
+    val byDay = txns.sortedWith(compareBy({ it.day }, { it.id }))
+    val rRefs = byDay.flatMap { t -> t.items.indices.map { t to it } }
+        .filter { (t, i) -> t.type == TxType.EXPENSE && (t.id to i) in reimbKeys && t.items[i].who.trim() == name && t.items[i].remaining > 0L }
+    val dRefs = byDay.filter { it.isDebt && it.debtCurrency.isEmpty() }.debtRefs()
+        .filter { it.key in debtKeys && it.who == name && it.item.remainingUnits > 0L }
+    val x = minOf(rRefs.sumOf { (t, i) -> t.items[i].remaining }, dRefs.sumOf { it.item.remainingUnits })
+    if (x <= 0L) return null
+    val oid = nextId
+    val newReimb = HashMap<Long, MutableList<ReimbItem>>()
+    var left = x
+    for ((t, i) in rRefs) {
+        if (left <= 0L) break
+        val list = newReimb.getOrPut(t.id) { t.items.toMutableList() }
+        val it = list[i]
+        val a = minOf(it.remaining, left)
+        left -= a
+        val pays = it.pays + ReimbPay(day, null, a, time, 0L, oid)
+        list[i] = it.copy(pays = pays, closed = it.closed || pays.sumOf { p -> p.amount } >= it.amount)
+    }
+    val newDebt = HashMap<Long, MutableList<DebtItem>>()
+    left = x
+    for (r in dRefs) {
+        if (left <= 0L) break
+        val list = newDebt.getOrPut(r.t.id) { r.t.debtItems.toMutableList() }
+        val it = list[r.index]
+        val a = minOf(it.remainingUnits, left)
+        left -= a
+        list[r.index] = it.copy(pays = it.pays + DebtPay(day, null, a, time, 0L, a, oid), done = it.remainingUnits - a <= 0L)
+    }
+    return copy(
+        txns = txns.map { t ->
+            var n = t
+            newReimb[t.id]?.let { n = n.withItems(it) }
+            newDebt[t.id]?.let { n = n.copy(debtItems = it) }
+            n
+        },
+        nextId = nextId + 1,
+    )
+}
+
+/** 刪掉一次互相抵銷：兩邊的紀錄一起刪，抵完而結清的報銷、欠款重新變成還沒結清 */
+fun AppData.withOffsetRemoved(offsetId: Long): AppData? {
+    if (offsetId == 0L) return null
+    var found = false
+    val out = txns.map { t ->
+        var n = t
+        if (t.items.any { i -> i.pays.any { it.offsetId == offsetId } }) {
+            found = true
+            n = n.withItems(t.items.map { i ->
+                if (i.pays.none { it.offsetId == offsetId }) i
+                else i.pays.filter { it.offsetId != offsetId }.let { ps -> i.copy(pays = ps, closed = i.closed && ps.sumOf { it.amount } >= i.amount) }
+            })
+        }
+        if (t.debtItems.any { i -> i.pays.any { it.offsetId == offsetId } }) {
+            found = true
+            n = n.copy(debtItems = t.debtItems.map { i ->
+                if (i.pays.none { it.offsetId == offsetId }) i else i.copy(pays = i.pays.filter { it.offsetId != offsetId }, done = false)
+            })
+        }
+        n
+    }
+    return if (found) copy(txns = out) else null
+}
