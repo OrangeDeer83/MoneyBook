@@ -128,10 +128,12 @@ def t_dark_reimb():
     safe("收款頁", receive)
 
     def edit():
-        d.tap_back()
-        d.time.sleep(1)
-        d.tap_back()
-        d.time.sleep(1)
+        # 收款頁 → 人頁 → 報銷／欠款總覽 → 主畫面（返回幾次看停在哪）
+        for _ in range(4):
+            if any(n.desc == "記一筆" for n in d.nodes()):
+                break
+            d.tap_back()
+            d.time.sleep(1)
         f.open_add()
         f.keypad("1000")
         f.chip_scroll("報銷", "新增標籤")

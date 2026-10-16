@@ -231,14 +231,14 @@ def t_tabs_equal():
     d.fresh(reimb_seed())
     to_reimb_home()
     ns = d.shot("報銷總覽")
-    a, b, c = d.first(ns, "依對象"), d.first(ns, "依帳單"), d.first(ns, "已收款")
+    a, b, c = d.first(ns, "依對象"), d.first(ns, "依帳單"), d.first(ns, "紀錄")
     d.check("找到三個分頁", all([a, b, c]))
     d1, d2 = b.cx - a.cx, c.cx - b.cx
     d.check("三個分頁中心等距（等寬）", abs(d1 - d2) <= 10, f"{d1} / {d2}")
     d.tap(b)
     d.shot("依帳單")
     d.tap(c)
-    d.shot("已收款")
+    d.shot("紀錄")
 
 
 @case(B, "依對象：每人只列欠最久的一筆")
@@ -435,8 +435,9 @@ def t_delete_pay():
 @case(B, "刪除含報銷的帳目後復原")
 def t_delete_reimb_txn():
     d.fresh(reimb_seed())
-    row = d.first(d.nodes(), "-$700", True)
-    d.check("首頁找得到今天的報銷帳目", row is not None, [n.text for n in d.nodes() if n.text.startswith("-$")])
+    # 全額報銷的帳目：粗體是實際支出 -$0，旁邊灰色是總額 700
+    row = d.first(d.nodes(), "700", True)
+    d.check("首頁找得到今天的報銷帳目（灰色總額 700）", row is not None, [n.text for n in d.nodes() if n.text.startswith("-$") or n.text.isdigit()])
     if row:
         f.swipe_row_left(row)
         d.tap_text("刪除", exact=True)
@@ -452,8 +453,8 @@ def t_delete_reimb_txn():
 def t_home_bar():
     d.fresh(f.base_seed())
     ns = d.shot("首頁", contrast=True)
-    bar = next((n for n in ns if n.text.startswith("待報銷") and "筆" in n.text), None)
-    d.check("首頁有待報銷提示條", bar is not None, [n.text for n in ns if n.text.startswith("待報銷")])
+    bar = next((n for n in ns if n.text.startswith("報銷／欠款")), None)
+    d.check("首頁有「報銷／欠款」提示條", bar is not None, [n.text for n in ns if "報銷" in n.text])
     if bar:
         d.tap(bar)
         d.time.sleep(1.5)
@@ -466,7 +467,7 @@ def t_reimb_empty():
     d.fresh(None)
     to_reimb_home()
     ns = d.shot("報銷空狀態")
-    d.check("顯示「沒有待報銷的項目」", d.has(ns, "沒有待報銷的項目"))
+    d.check("顯示「沒有待報銷或欠款」", d.has(ns, "沒有待報銷或欠款"))
 
 
 # ───────── 統計

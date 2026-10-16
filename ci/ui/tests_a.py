@@ -357,7 +357,7 @@ def t_long_title():
     ns = d.shot("長標題", contrast=True)
     # 標籤文字以「待報銷」開頭；頂端摘要條是「待報銷 N 筆…」，要排除
     d.check("待報銷標籤仍顯示", any(n.text.startswith("待報銷") and "筆" not in n.text for n in ns), [n.text for n in ns if n.text.startswith("待報銷")])
-    d.check("金額 -$1,234 沒有被擠掉", d.has(ns, "-$1,234", True))
+    d.check("金額沒有被擠掉：實際支出 -$0、灰色總額 1,234", d.has(ns, "-$0", True) and d.has(ns, "1,234", True), [n.text for n in ns if "$" in n.text or "1,234" in n.text])
 
 
 # ───────── 導覽

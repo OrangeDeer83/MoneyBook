@@ -188,6 +188,9 @@ internal class ReimbRow(val locked: ReimbItem?, who: String, amt: String, val lo
     /** 「平分剩下的」模式下，這一列的金額由系統自動算（使用者手動改過就變固定） */
     var auto by mutableStateOf(false)
 
+    /** 使用者自己改過金額（包括清空）：填名字時就不再自動填滿 */
+    var amtTouched by mutableStateOf(false)
+
     val isLocked: Boolean get() = locked != null || lockedDebt != null
     val lockedEffective: Long get() = locked?.effective ?: lockedDebt?.effective ?: 0L
 }
@@ -255,13 +258,16 @@ fun ReimbEditPage(
 
     fun finish() {
         // 欠款：有金額就要有名字；合計不能超過實付
-        val dl = drows.filter { it.isLocked || rowTwd(it) > 0L }
+        // 還沒輸入帳目金額時，只有一個有名字的人＝整筆（金額之後跟著帳目走）
+        fun pending1(list: List<ReimbRow>) = actual <= 0L && list.count { !it.isLocked } == 1 && list.any { !it.isLocked && it.who.isNotBlank() && rowTwd(it) <= 0L }
+        val dl = drows.filter { it.isLocked || rowTwd(it) > 0L || (pending1(drows) && it.who.isNotBlank()) }
         if (debtAllowed && dl.any { !it.isLocked && it.who.isBlank() }) { tab = 1; err = "欠款要填欠誰"; return }
         if (debtAllowed && actual > 0L && debtTotal > actual) { tab = 1; err = "欠款合計 ${formatMoney(debtTotal)} 超過實付 ${formatMoney(actual)}"; return }
         val debtList = if (!debtAllowed) emptyList() else dl.map { r -> r.lockedDebt ?: DebtItem(r.who.trim(), rowTwd(r)) }
         val dj = DebtCodec.encode(debtList)
         val rl = rows.filter { it.isLocked || rowTwd(it) > 0L }
         when {
+            rl.isEmpty() && pending1(rows) -> onDone(true, true, initJson, rows.first { !it.isLocked && it.who.isNotBlank() }.who.trim(), dj)
             rl.isEmpty() -> onDone(false, true, "", "", dj)
             // 只有一個人、而且是全額：存成「一人・全額」，之後帳目金額改了，報銷金額跟著走
             rl.size == 1 && !rl[0].isLocked && rowTwd(rl[0]) == actual -> onDone(true, true, initJson, rl[0].who.trim(), dj)
@@ -410,7 +416,7 @@ fun ReimbEditPage(
                                     { v ->
                                         r.who = v.take(12); err = ""
                                         // 只有一個人、還沒填金額：金額預設填滿（報銷是實付，欠款是整筆，之後可以改）
-                                        if (v.isNotBlank() && r.amt.isBlank() && cur.count { !it.isLocked } == 1) {
+                                        if (v.isNotBlank() && r.amt.isBlank() && !r.amtTouched && cur.count { !it.isLocked } == 1) {
                                             val pool = (actual - lockedSum).coerceAtLeast(0L)
                                             if (pool > 0L) r.amt = amtText(pool)
                                         }
@@ -418,7 +424,7 @@ fun ReimbEditPage(
                                     if (tab == 0) "對象（選填）" else "欠誰", Modifier.weight(1f),
                                 )
                                 CompactField(
-                                    r.amt, { v -> r.auto = false; err = ""; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
+                                    r.amt, { v -> r.auto = false; r.amtTouched = true; err = ""; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
                                     "金額", Modifier.width(if (fxOn) 132.dp else 112.dp), number = true, decimal = fxOn && fdec > 0,
                                     prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else tw.moneybook.app.Money.twd,
                                 )
@@ -542,9 +548,9 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             onRepay = { w, c -> fromPerson = null; page = ReimbPage.Repay(w, c) },
             onOffset = { fromPerson = null; page = ReimbPage.Offset(it) },
         )
-        is ReimbPage.Receive -> ReimbReceivePage(vm, p.who, onBack = { back() }, onDone = { back() })
-        is ReimbPage.Repay -> DebtRepayPage(vm, p.who, p.currency, onBack = { back() }, onDone = { back() })
-        is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { back() })
+        is ReimbPage.Receive -> ReimbReceivePage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
+        is ReimbPage.Repay -> DebtRepayPage(vm, p.who, p.currency, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
+        is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Person -> ReimbPersonPage(
             vm, p.who, onBack = { fromPerson = null; page = ReimbPage.Home },
             onReceive = { fromPerson = p.who; page = ReimbPage.Receive(p.who) },
@@ -634,13 +640,19 @@ private fun ReimbHome(
                                 ) { Text(if (m.who.isBlank()) "?" else m.who.take(1), style = MaterialTheme.typography.titleMedium) }
                                 Spacer(Modifier.width(12.dp))
                                 Text(ownerLabel(m.who), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
-                                Text(netText(m.net), style = MaterialTheme.typography.titleMedium, color = if (m.net >= 0L) cute.income else cute.expense)
+                                Text(if (m.net > 0L) "淨收 " else if (m.net < 0L) "淨欠 " else "兩清", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                if (m.net != 0L) Text(formatMoney(kotlin.math.abs(m.net)), style = MaterialTheme.typography.titleMedium, color = if (m.net > 0L) cute.income else cute.expense)
                                 Spacer(Modifier.width(4.dp))
                                 Icon(AppIcons.ChevronRight, contentDescription = null, tint = cute.sub)
                             }
                             Spacer(Modifier.height(6.dp))
                             if (m.claims.isNotEmpty()) {
+                                val oldest = m.claims.minWith(compareBy({ it.txn.day }, { it.txn.id }))
                                 Text("${ownerLabel(m.who)}欠我 ${formatMoney(m.oweMe)}（${m.claims.size} 筆）", style = MaterialTheme.typography.bodyMedium, color = cute.income)
+                                Text(
+                                    "欠最久：${billLabel(d, oldest.txn)} ${formatMoney(oldest.item.remaining)}" + if (m.claims.size > 1) "（另有 ${m.claims.size - 1} 筆）" else "",
+                                    style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                                )
                             }
                             m.debts.forEach { g ->
                                 Text(
@@ -717,7 +729,7 @@ private fun ReimbHome(
                         CuteCard(Modifier.fillMaxWidth().clickable { onPerson(r.who) }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("${dayTimeLabel(r.day, r.time)}　${r.title}・${ownerLabel(r.who)}", style = MaterialTheme.typography.bodyLarge)
+                                    Text("${dayTimeLabel(r.day, r.time)}　${r.title}", style = MaterialTheme.typography.bodyLarge)
                                     Text(r.sub, style = MaterialTheme.typography.labelMedium, color = cute.sub)
                                 }
                                 Text(r.amount, style = MaterialTheme.typography.titleMedium, color = r.color(cute))
@@ -730,10 +742,14 @@ private fun ReimbHome(
     }
 }
 
-/** 收款、還款、互相抵銷的一筆紀錄（紀錄分頁與人頁共用） */
+/**
+ * 收款、還款、互相抵銷的一筆紀錄。總覽的「紀錄」分頁：title（對象）、sub、amount；
+ * 人頁：line（「收到 $800」「還款 $500」「互相抵銷 $300」）、sub。
+ */
 private class Rec(
     val who: String, val day: Long, val time: Int, val title: String, val sub: String, val amount: String,
     val kind: Int, // 0 收款、1 還款、2 抵銷
+    val line: String, val personSub: String,
     val onDelete: (MoneyViewModel) -> Unit,
     /** 收款可以修改：報銷的哪一筆、第幾筆收款 */
     val claim: Claim? = null, val payIndex: Int = -1, val pay: ReimbPay? = null,
@@ -748,8 +764,17 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
         c.item.pays.forEachIndexed { n, pay ->
             val acc = pay.accountId?.let { d.accMap[it] }
             out.add(
-                if (pay.offsetId != 0L) Rec(c.who, pay.day, pay.time, "互相抵銷", "${billLabel(d, c.txn)}・不動帳戶", formatMoney(pay.amount), 2, { vm -> vm.deleteOffset(pay.offsetId) })
-                else Rec(c.who, pay.day, pay.time, "收款", "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}", "+" + payText(d, pay), 0, { vm -> vm.deleteReimbPay(c.txn.id, c.index, n) }, c, n, pay)
+                if (pay.offsetId != 0L) Rec(
+                    c.who, pay.day, pay.time, "和${ownerLabel(c.who)}互相抵銷", "${billLabel(d, c.txn)}・不動帳戶", formatMoney(pay.amount), 2,
+                    "互相抵銷 ${formatMoney(pay.amount)}", "${billLabel(d, c.txn)}・不動帳戶", { vm -> vm.deleteOffset(pay.offsetId) },
+                )
+                else Rec(
+                    c.who, pay.day, pay.time, ownerLabel(c.who),
+                    "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}" + if (acc != null && acc.isForeign && pay.fxAmount > 0L) "（${formatFx(pay.fxAmount, acc.currency)}）" else "",
+                    "+" + formatMoney(pay.amount), 0,
+                    "收到 ${payText(d, pay)}", "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}",
+                    { vm -> vm.deleteReimbPay(c.txn.id, c.index, n) }, c, n, pay,
+                )
             )
         }
     }
@@ -760,7 +785,10 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
                 if (p.offsetId != 0L) return@forEachIndexed
                 val acc = p.accountId?.let { d.accMap[it] }
                 val amt = if (acc != null && acc.isForeign) acc.fmt(p.fxAmount) else formatMoney(p.amount)
-                out.add(Rec(item.who.trim(), p.day, p.time, "還款", "${billLabel(d, t)}・從 ${acc?.name ?: "未指定帳戶"}", "-$amt", 1, { vm -> vm.deleteDebtPay(t.id, i, n) }))
+                out.add(Rec(
+                    item.who.trim(), p.day, p.time, "還款給${ownerLabel(item.who.trim())}", "${billLabel(d, t)}・從 ${acc?.name ?: "未指定帳戶"}", "-$amt", 1,
+                    "還款 $amt", "${billLabel(d, t)}・從 ${acc?.name ?: "未指定帳戶"}", { vm -> vm.deleteDebtPay(t.id, i, n) },
+                ))
             }
         }
     }
@@ -1123,17 +1151,32 @@ private fun ReimbPersonPage(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                CuteCard(Modifier.fillMaxWidth()) {
-                    Text("淨額", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CuteCard(Modifier.weight(1f)) {
+                        Text("還欠你", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Text(formatMoney(owed), style = MaterialTheme.typography.titleLarge, color = cute.expense)
+                    }
+                    CuteCard(Modifier.weight(1f)) {
+                        Text("已收", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Text(formatMoney(claims.sumOf { it.item.received }), style = MaterialTheme.typography.titleLarge, color = cute.income)
+                    }
+                    if (debtRefs.isNotEmpty()) {
+                        CuteCard(Modifier.weight(1f)) {
+                            Text("你欠他", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            Text(formatMoney(iOwe), style = MaterialTheme.typography.titleLarge, color = cute.expense)
+                        }
+                    }
+                }
+                // 兩個方向都有時，寫淨額
+                if (debtRefs.isNotEmpty()) {
                     Text(
                         when {
-                            net > 0L -> "${ownerLabel(who)}還欠你 ${formatMoney(net)}"
-                            net < 0L -> "你還欠${ownerLabel(who)} ${formatMoney(-net)}"
+                            net > 0L -> "${ownerLabel(who)}還欠你 ${formatMoney(net)}（已扣掉你欠他的）"
+                            net < 0L -> "你還欠${ownerLabel(who)} ${formatMoney(-net)}" + if (owed > 0L) "（已扣掉他欠你的）" else ""
                             else -> "兩清"
                         },
-                        style = MaterialTheme.typography.titleLarge, color = if (net >= 0L) cute.income else cute.expense,
+                        style = MaterialTheme.typography.titleMedium, color = if (net >= 0L) cute.income else cute.expense,
                     )
-                    Text("${ownerLabel(who)}欠你 ${formatMoney(owed)}・你欠${ownerLabel(who)} ${formatMoney(iOwe)}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                 }
                 if (claims.isNotEmpty()) {
                     Text("${ownerLabel(who)}欠我（報銷）", style = MaterialTheme.typography.titleMedium)
@@ -1186,14 +1229,14 @@ private fun ReimbPersonPage(
                     Text("點右邊的 ⋯ 可以修改或刪除", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
                 if (recs.isEmpty()) {
-                    Text("還沒有收款、還款紀錄", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                    Text(if (debtRefs.isEmpty()) "還沒有收款紀錄" else "還沒有收款、還款紀錄", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                 }
                 recs.forEachIndexed { n, r ->
                     CuteCard(Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("${dayTimeLabel(r.day, r.time)}　${r.title} ${r.amount}", style = MaterialTheme.typography.bodyLarge, color = r.color(cute))
-                                Text(r.sub, style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                Text("${dayTimeLabel(r.day, r.time)}　${r.line}", style = MaterialTheme.typography.bodyLarge)
+                                Text(r.personSub, style = MaterialTheme.typography.labelMedium, color = cute.sub)
                             }
                             Box {
                                 TextButton(onClick = { menuFor = n }) { Text("⋯", style = MaterialTheme.typography.titleLarge) }

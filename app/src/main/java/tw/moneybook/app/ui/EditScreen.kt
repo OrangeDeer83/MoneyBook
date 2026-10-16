@@ -243,7 +243,7 @@ fun EditScreen(
 
 
     // 金額要先知道才能判斷是不是全部別人先付；用目前輸入的數字粗估（外幣帳戶不能記欠款，所以這裡不用換算）
-    val debtAll = debtOn && debtList.sumOf { it.amount } >= (Calc.eval(expr) - discount + fee).coerceAtLeast(1L)
+    val debtAll = debtOn && ((debtList.size == 1 && debtList[0].amount <= 0L) || debtList.sumOf { it.amount } >= (Calc.eval(expr) - discount + fee).coerceAtLeast(1L))
     val plan = d.fxPlan(type, if (debtAll) null else accId, if (type == TxType.TRANSFER) toAccId else null)
     val fxAcc = plan.acc
     val dec = fxAcc?.cur?.decimals ?: 0
@@ -356,7 +356,8 @@ fun EditScreen(
         fxSpendAmount = if (fxsOn) fxsMinor else 0L,
         fxSpendCur = if (fxsOn) fxsCur else "",
         fxPending = fxsOn && fxsPending,
-        debtItems = debtList,
+        // 先填欠款、後填金額：只有一個人、金額是 0 時就是整筆
+        debtItems = if (debtList.size == 1 && debtList[0].amount <= 0L && debtList[0].pays.isEmpty()) listOf(debtList[0].copy(amount = actual)) else debtList,
     )
 
     val initialDraft = remember { draft() }
