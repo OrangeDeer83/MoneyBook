@@ -702,6 +702,11 @@ object DebtCodec {
         return out
     }
 
+    /** 記一筆畫面暫存欠款名單用的文字 */
+    fun encode(list: List<DebtItem>): String = if (list.isEmpty()) "" else itemsToJson(list).toString()
+
+    fun decode(s: String): List<DebtItem> = if (s.isBlank()) emptyList() else try { itemsFromJson(JSONArray(s)) } catch (e: Exception) { emptyList() }
+
     fun itemsToJson(list: List<DebtItem>): JSONArray = JSONArray().apply {
         list.forEach { i -> put(JSONObject().put("who", i.who).put("amount", i.amount).put("units", i.units).put("done", i.done).put("pays", toJson(i.pays))) }
     }

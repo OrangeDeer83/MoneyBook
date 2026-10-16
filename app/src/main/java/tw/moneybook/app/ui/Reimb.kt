@@ -80,6 +80,10 @@ import tw.moneybook.app.twdToFxAt
 import tw.moneybook.app.ReimbReceipt
 import tw.moneybook.app.TxType
 import tw.moneybook.app.Txn
+import tw.moneybook.app.DebtItem
+import tw.moneybook.app.DebtCodec
+import tw.moneybook.app.effective
+import tw.moneybook.app.remainingTwd
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.pendingReimb
 import java.time.LocalDate
@@ -164,37 +168,48 @@ private fun billLabel(d: AppData, t: Txn): String {
 
 private fun daysSince(day: Long): Long = ChronoUnit.DAYS.between(LocalDate.ofEpochDay(day), LocalDate.now()).coerceAtLeast(0L)
 
-// ───────────────────────── 記一筆：這筆的報銷（整頁） ─────────────────────────
+// ───────────────────────── 記一筆：這筆的報銷／欠款（整頁） ─────────────────────────
 
-/** 這一列可能是還能編輯的對象，也可能是已有收款、只能看的（locked） */
-internal class ReimbRow(val locked: ReimbItem?, who: String, amt: String) {
+/** 這一列可能是還能編輯的對象，也可能是已有收款（報銷）或還款（欠款）、只能看的（locked／lockedDebt） */
+internal class ReimbRow(val locked: ReimbItem?, who: String, amt: String, val lockedDebt: DebtItem? = null) {
     var who by mutableStateOf(who)
     var amt by mutableStateOf(amt)
 
     /** 「平分剩下的」模式下，這一列的金額由系統自動算（使用者手動改過就變固定） */
     var auto by mutableStateOf(false)
+
+    val isLocked: Boolean get() = locked != null || lockedDebt != null
+    val lockedEffective: Long get() = locked?.effective ?: lockedDebt?.effective ?: 0L
 }
 
+/**
+ * 這筆的報銷／欠款：上面是這筆的分配摘要（我付、別人先付、可報銷、自己負擔），下面切換兩份名單，各自保留。
+ * 報銷＝別人要還我（我先付了）；欠款＝別人先幫我付、我要還他（那部分先不從帳戶扣）。有人、有金額就算，不用另外開開關。
+ * debtAllowed＝false 時（外幣帳戶的消費、分期）欠款那邊不能填。
+ */
 @Composable
 fun ReimbEditPage(
     title: String,
     actual: Long,
     cap: Long,
-    /** 外幣消費：幣別與這筆的外幣金額（最小單位）；分給多人時直接用外幣輸入每個人的金額，台幣用這筆的匯率換算。台幣消費不用填 */
+    /** 外幣消費：幣別與這筆的外幣金額（最小單位）；每個人的金額直接用外幣輸入，台幣用這筆的匯率換算。台幣消費不用填 */
     fxCur: String = "",
     fxActual: Long = 0L,
     origItems: List<ReimbItem>,
-    initOn: Boolean,
     initFull: Boolean,
     initJson: String,
     initWho: String,
     names: List<String>,
-    onDone: (on: Boolean, full: Boolean, json: String, who: String) -> Unit,
+    /** 欠款：目前的名單（JSON 文字，見 DebtCodec.encode）、以前欠過的人、能不能記欠款、一開始顯示哪一邊 */
+    initDebtJson: String = "",
+    debtNames: List<String> = emptyList(),
+    debtAllowed: Boolean = true,
+    debtNotAllowedWhy: String = "",
+    startOnDebt: Boolean = false,
+    onDone: (on: Boolean, full: Boolean, json: String, who: String, debtJson: String) -> Unit,
     onClose: () -> Unit,
 ) {
     val cute = LocalCute.current
-    var on by remember { mutableStateOf(initOn) }
-    val hasPays = origItems.any { it.pays.isNotEmpty() }
     // 外幣消費：每個人的金額用外幣輸入（r.amt 是外幣），換算台幣用「這一筆」的匯率（外幣金額 ÷ 台幣實付）
     val fxOn = fxCur.isNotEmpty() && fxActual > 0L && actual > 0L
     val fdec = Currencies.of(fxCur).decimals
@@ -202,40 +217,64 @@ fun ReimbEditPage(
     fun twdOf(fx: Long): Long = if (fx == fxActual) actual else scaleRound(fx, actual, fxActual)
     fun rowTwd(r: ReimbRow): Long = if (fxOn) twdOf(parseFx(r.amt, fdec) ?: 0L) else (r.amt.toLongOrNull() ?: 0L)
     fun amtText(twd: Long): String = if (fxOn) fxExpr(fxOf(twd), fdec) else twd.toString()
+    // 報銷名單
     val rows = remember {
         mutableStateListOf<ReimbRow>().apply {
             val src = if (initFull) origItems.map { if (it.pays.isEmpty() && !it.closed) it.copy(amount = actual) else it } else ReimbCodec.decode(initJson)
-            // 新增、或原本是「一人・全額」：一列、預設全額給這個人（對象沿用原本填的）
-            if (src.isEmpty()) add(ReimbRow(null, initWho, amtText(actual)))
-            else src.forEach { add(if (it.pays.isNotEmpty() || it.closed) ReimbRow(it, it.who, it.amount.toString()) else ReimbRow(null, it.who, amtText(it.amount))) }
+            src.forEach { add(if (it.pays.isNotEmpty() || it.closed) ReimbRow(it, it.who, it.amount.toString()) else ReimbRow(null, it.who, amtText(it.amount))) }
+            // 還沒有報銷：先放一列空的，填了名字和金額才算
+            if (isEmpty()) add(ReimbRow(null, initWho, ""))
         }
     }
-    val lockedAny = rows.any { it.locked != null }
-    val total = rows.sumOf { it.locked?.effective ?: rowTwd(it) }
+    // 欠款名單
+    val drows = remember {
+        mutableStateListOf<ReimbRow>().apply {
+            DebtCodec.decode(initDebtJson).forEach {
+                add(if (it.pays.isNotEmpty() || it.done) ReimbRow(null, it.who, it.amount.toString(), lockedDebt = it) else ReimbRow(null, it.who, amtText(it.amount)))
+            }
+            if (isEmpty()) add(ReimbRow(null, "", ""))
+        }
+    }
+    var tab by remember { mutableStateOf(if (startOnDebt && debtAllowed) 1 else 0) }
+    val cur = if (tab == 0) rows else drows
+    val reimbTotal = rows.sumOf { if (it.isLocked) it.lockedEffective else rowTwd(it) }
+    val debtTotal = drows.sumOf { if (it.isLocked) it.lockedDebt!!.amount else rowTwd(it) }
+    val reimbCount = rows.count { it.isLocked || rowTwd(it) > 0L }
+    val debtCount = drows.count { it.isLocked || rowTwd(it) > 0L }
+    var err by remember { mutableStateOf("") }
 
     fun finish() {
-        if (!on) {
-            onDone(false, true, "", "")
-        } else if (rows.size == 1 && rows[0].locked == null && rowTwd(rows[0]) == actual) {
+        // 欠款：有金額就要有名字；合計不能超過實付
+        val dl = drows.filter { it.isLocked || rowTwd(it) > 0L }
+        if (debtAllowed && dl.any { !it.isLocked && it.who.isBlank() }) { tab = 1; err = "欠款要填欠誰"; return }
+        if (debtAllowed && actual > 0L && debtTotal > actual) { tab = 1; err = "欠款合計 ${formatMoney(debtTotal)} 超過實付 ${formatMoney(actual)}"; return }
+        val debtList = if (!debtAllowed) emptyList() else dl.map { r -> r.lockedDebt ?: DebtItem(r.who.trim(), rowTwd(r)) }
+        val dj = DebtCodec.encode(debtList)
+        val rl = rows.filter { it.isLocked || rowTwd(it) > 0L }
+        when {
+            rl.isEmpty() -> onDone(false, true, "", "", dj)
             // 只有一個人、而且是全額：存成「一人・全額」，之後帳目金額改了，報銷金額跟著走
-            onDone(true, true, initJson, rows[0].who.trim())
-        } else {
-            val list = rows.mapNotNull { r ->
-                r.locked ?: rowTwd(r).takeIf { it > 0L }?.let { a -> ReimbItem(r.who.trim(), a) }
-            }
-            if (list.isEmpty()) onDone(false, true, "", "") else onDone(true, false, ReimbCodec.encode(list), "")
+            rl.size == 1 && !rl[0].isLocked && rowTwd(rl[0]) == actual -> onDone(true, true, initJson, rl[0].who.trim(), dj)
+            else -> onDone(true, false, ReimbCodec.encode(rl.map { r -> r.locked ?: ReimbItem(r.who.trim(), rowTwd(r)) }), "", dj)
         }
     }
 
     fun addName(name: String) {
-        val blank = rows.firstOrNull { it.locked == null && it.who.isBlank() }
-        if (blank != null) blank.who = name else rows.add(ReimbRow(null, name, ""))
+        val blank = cur.firstOrNull { !it.isLocked && it.who.isBlank() }
+        if (blank != null) blank.who = name else cur.add(ReimbRow(null, name, ""))
+        // 只有一個人時金額預設填滿（報銷：實付；欠款：還沒分出去的）
+        val editable = cur.filter { !it.isLocked }
+        if (editable.size == 1 && rowTwd(editable[0]) <= 0L) {
+            val pool = (actual - cur.sumOf { if (it.isLocked) it.lockedEffective else 0L }).coerceAtLeast(0L)
+            if (pool > 0L) editable[0].amt = amtText(pool)
+        }
     }
 
     var splitMenu by remember { mutableStateOf(false) }
-    // 「平分剩下的」模式：沒填金額的人由系統自動分剩下的（含自己），手動改過金額的人就固定
+    // 「平分剩下的」模式：沒填金額的人由系統自動分剩下的（含自己），手動改過金額的人就固定；只用在目前這一邊
     var restMode by remember { mutableStateOf(false) }
-    val lockedSum = rows.sumOf { it.locked?.effective ?: 0L }
+    LaunchedEffect(tab) { restMode = false }
+    val lockedSum = cur.sumOf { if (it.isLocked) it.lockedEffective else 0L }
 
     /** 把 poolTwd 分給 targets 這幾列；外幣消費時用外幣金額分、小數位照幣別 */
     fun fillRows(targets: List<ReimbRow>, includeSelf: Boolean, poolTwd: Long) {
@@ -249,7 +288,7 @@ fun ReimbEditPage(
     }
 
     fun splitAll(includeSelf: Boolean) {
-        val editable = rows.filter { it.locked == null }
+        val editable = cur.filter { !it.isLocked }
         if (editable.isEmpty()) return
         restMode = false
         editable.forEach { it.auto = false }
@@ -257,13 +296,13 @@ fun ReimbEditPage(
     }
 
     fun startRest() {
-        rows.filter { it.locked == null }.forEach { it.auto = rowTwd(it) <= 0L }
+        cur.filter { !it.isLocked }.forEach { it.auto = rowTwd(it) <= 0L }
         restMode = true
     }
 
     // 平分剩下的：固定金額的人不動，自動那幾列每次都依「剩下的」重算
-    val restAuto = if (restMode) rows.filter { it.locked == null && it.auto } else emptyList()
-    val restFixed = rows.filter { it.locked == null && !it.auto }.sumOf { rowTwd(it) }
+    val restAuto = if (restMode) cur.filter { !it.isLocked && it.auto } else emptyList()
+    val restFixed = cur.filter { !it.isLocked && !it.auto }.sumOf { rowTwd(it) }
     val restPool = (actual - lockedSum - restFixed).coerceAtLeast(0L)
     LaunchedEffect(restMode, restAuto.size, restPool) {
         if (restMode) {
@@ -281,13 +320,14 @@ fun ReimbEditPage(
         ) {
             Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(AppIcons.ChevronLeft, contentDescription = "返回") }
-                Text("這筆的報銷", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Text("這筆的報銷／欠款", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 Button(onClick = { finish() }) { Text("完成") }
             }
             Column(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                // 這筆的分配摘要：一直看得到
                 CuteCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
@@ -297,39 +337,84 @@ fun ReimbEditPage(
                             if (fxOn) Text(formatFx(fxActual, fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
+                    Spacer(Modifier.height(6.dp))
+                    @Composable
+                    fun line(label: String, v: Long, color: androidx.compose.ui.graphics.Color = cute.ink) {
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text(label, style = MaterialTheme.typography.bodyMedium, color = cute.sub, modifier = Modifier.weight(1f))
+                            Text(formatMoney(v), style = MaterialTheme.typography.bodyMedium, color = color)
+                        }
+                    }
+                    line("我付（從帳戶扣）", (actual - debtTotal).coerceAtLeast(0L))
+                    line("別人先付（欠款）", debtTotal)
+                    line("可報銷（別人要還我）", reimbTotal, cute.income)
+                    line("自己負擔（算進支出）", (actual - reimbTotal).coerceAtLeast(0L), MaterialTheme.colorScheme.primary)
+                    if (cap <= 0L) {
+                        // 先填報銷、後填帳目金額：金額還沒輸入時不用提醒上限，儲存時才會依金額限制
+                        Text("還沒輸入帳目金額，報銷金額之後不會超過實付。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    } else if (reimbTotal > cap) {
+                        Text("報銷合計超過上限 ${formatMoney(cap)}，超過的部分不會算。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+                    } else if (reimbTotal > actual) {
+                        Text("報銷比實付多 ${formatMoney(reimbTotal - actual)}，多的部分收到後算成報銷回饋收入。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    }
+                    if (actual > 0L && debtTotal > actual) {
+                        Text("欠款合計超過實付 ${formatMoney(debtTotal - actual)}，請改小一點。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+                    }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
-                    Text("這筆可以報銷", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Switch(checked = on, onCheckedChange = { on = it }, enabled = !hasPays)
-                }
-                if (on) {
-                    rows.forEachIndexed { i, r ->
-                        val lk = r.locked
-                        if (lk != null) {
+                if (err.isNotEmpty()) Text(err, style = MaterialTheme.typography.bodyMedium, color = cute.expense)
+                PillSegment(
+                    listOf("報銷" + if (reimbCount > 0) " $reimbCount 人" else "", "欠款" + if (debtCount > 0) " $debtCount 人" else ""),
+                    tab, { tab = it; err = "" }, Modifier.fillMaxWidth(), equal = true,
+                )
+                if (tab == 1 && !debtAllowed) {
+                    Text(debtNotAllowedWhy, style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                } else {
+                    Text(
+                        if (tab == 0) "誰要還我（我先幫他付的）" else "我欠誰（別人先幫我付的，先不從帳戶扣，還款時才扣）",
+                        style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                    )
+                    cur.forEachIndexed { i, r ->
+                        if (r.isLocked) {
                             Row(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft).padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(lk.who.ifBlank { "（沒填對象）" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                                    Text(r.who.ifBlank { "（沒填對象）" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                                    val lk = r.locked
+                                    val ld = r.lockedDebt
                                     Text(
-                                        "已收 ${formatMoney(lk.received)}" + if (lk.closed) "・已結案" else "・還剩 ${formatMoney(lk.remaining)}",
+                                        if (lk != null) "已收 ${formatMoney(lk.received)}" + if (lk.closed) "・已結案" else "・還剩 ${formatMoney(lk.remaining)}"
+                                        else "已還 ${formatMoney(ld!!.pays.sumOf { it.amount })}" + if (ld.done) "・已還清" else "・還剩 ${formatMoney(ld.remainingTwd)}",
                                         style = MaterialTheme.typography.labelSmall, color = cute.sub,
                                     )
                                 }
-                                Text(formatMoney(lk.amount), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
+                                Text(formatMoney(r.locked?.amount ?: r.lockedDebt!!.amount), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
                             }
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                CompactField(r.who, { r.who = it.take(12) }, "對象（選填）", Modifier.weight(1f))
                                 CompactField(
-                                    r.amt, { v -> r.auto = false; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
+                                    r.who,
+                                    { v ->
+                                        r.who = v.take(12); err = ""
+                                        // 只有一個人、還沒填金額：金額預設填滿（報銷是實付，欠款是整筆，之後可以改）
+                                        if (v.isNotBlank() && r.amt.isBlank() && cur.count { !it.isLocked } == 1) {
+                                            val pool = (actual - lockedSum).coerceAtLeast(0L)
+                                            if (pool > 0L) r.amt = amtText(pool)
+                                        }
+                                    },
+                                    if (tab == 0) "對象（選填）" else "欠誰", Modifier.weight(1f),
+                                )
+                                CompactField(
+                                    r.amt, { v -> r.auto = false; err = ""; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
                                     "金額", Modifier.width(if (fxOn) 132.dp else 112.dp), number = true, decimal = fxOn && fdec > 0,
                                     prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else tw.moneybook.app.Money.twd,
                                 )
                                 Text(
                                     "✕", color = cute.sub, style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.clip(CircleShape).clickable { rows.removeAt(i) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.clip(CircleShape).clickable { cur.removeAt(i) }.padding(horizontal = 8.dp, vertical = 4.dp),
                                 )
                             }
                             if (fxOn && rowTwd(r) > 0L) {
@@ -344,54 +429,30 @@ fun ReimbEditPage(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CuteChip("＋ 新增對象", false, { rows.add(ReimbRow(null, "", "")) })
-                        val n = rows.count { it.locked == null }
+                        CuteChip("＋ 加一個人", false, { cur.add(ReimbRow(null, "", "")) })
+                        val n = cur.count { !it.isLocked }
                         if (n >= 1) CuteChip("平分 ▾", restMode, { splitMenu = true })
                     }
-                    val used = rows.map { it.who.trim() }.toSet()
-                    val suggest = names.filter { it !in used }.take(8)
+                    val used = cur.map { it.who.trim() }.toSet()
+                    val suggest = (if (tab == 0) names else debtNames).filter { it !in used }.take(8)
                     if (suggest.isNotEmpty()) {
-                        Text("常用對象，點一下加入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Text(if (tab == 0) "常用對象，點一下加入" else "以前欠過的人，點一下加入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             suggest.forEach { nm -> CuteChip(nm, false, { addName(nm) }) }
                         }
                     }
-                    val frac = if (actual > 0L) (total.toFloat() / actual.toFloat()).coerceIn(0f, 1f) else 0f
-                    CuteCard(Modifier.fillMaxWidth()) {
-                        Box(Modifier.fillMaxWidth().height(12.dp).clip(CircleShape).background(cute.soft)) {
-                            Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Row {
-                            Column(Modifier.weight(1f)) {
-                                Text("可報銷", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                                Text(formatMoney(total), style = MaterialTheme.typography.titleLarge, color = cute.income)
-                                if (fxOn) Text(formatFx(fxOf(total), fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("自己負擔（算進支出）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                                Text(formatMoney((actual - total).coerceAtLeast(0L)), style = MaterialTheme.typography.titleLarge)
-                                if (fxOn) Text(formatFx(fxOf((actual - total).coerceAtLeast(0L)), fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            }
-                        }
-                        if (cap <= 0L) {
-                            // 先填報銷、後填帳目金額：金額還沒輸入時不用提醒上限，儲存時才會依金額限制
-                            Text("還沒輸入帳目金額，報銷金額之後不會超過實付。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                        } else if (total > cap) {
-                            Text("合計超過上限 ${formatMoney(cap)}，超過的部分不會算。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
-                        } else if (total > actual) {
-                            Text("比實付多 ${formatMoney(total - actual)}，多的部分收到後算成報銷回饋收入。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                        }
-                    }
-                    if (lockedAny) {
-                        Text("已有收款的對象不能在這裡改，請到「我的 → 報銷」處理。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    if (cur.any { it.isLocked }) {
+                        Text(
+                            if (tab == 0) "已有收款的對象不能在這裡改，請到「報銷／欠款」頁處理。" else "已有還款的對象不能在這裡改，請到「報銷／欠款」頁處理。",
+                            style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                        )
                     }
                 }
                 Spacer(Modifier.height(16.dp))
             }
         }
         if (splitMenu) {
-            val editable = rows.filter { it.locked == null }
+            val editable = cur.filter { !it.isLocked }
             val nE = editable.size
             fun fmt(v: Long) = if (fxOn) formatFx(v, fxCur) else formatMoney(v)
             val poolAll = (actual - lockedSum).coerceAtLeast(0L)
@@ -408,11 +469,11 @@ fun ReimbEditPage(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SplitOption(
-                            "平分給 $nE 人", "我只是幫忙付，不含我自己",
+                            "平分給 $nE 人", if (tab == 0) "我只是幫忙付，不含我自己" else "全部都是別人先付的，我沒有自己付",
                             "每人 ${fmt(a1.amounts.firstOrNull() ?: 0L)}", true,
                         ) { splitAll(false); splitMenu = false }
                         SplitOption(
-                            "平分給 ${nE + 1} 人（含我）", "我也分一份，除不盡的零頭算我自己",
+                            "平分給 ${nE + 1} 人（含我）", if (tab == 0) "我也分一份，除不盡的零頭算我自己" else "我也付一份（從帳戶扣），除不盡的零頭算我自己",
                             "每人 ${fmt(a2.amounts.firstOrNull() ?: 0L)}・我 ${fmt(a2.self)}", true,
                         ) { splitAll(true); splitMenu = false }
                         SplitOption(
