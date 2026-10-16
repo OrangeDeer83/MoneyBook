@@ -63,6 +63,10 @@ import tw.moneybook.app.debtGroups
 import tw.moneybook.app.isFxSpend
 import tw.moneybook.app.isDebt
 import tw.moneybook.app.debtRemainingTwd
+import tw.moneybook.app.debtCurrency
+import tw.moneybook.app.debtTotal
+import tw.moneybook.app.effective
+import tw.moneybook.app.totalUnits
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.TxType
 import tw.moneybook.app.ReimbPay
@@ -124,6 +128,54 @@ fun reimbRecvsOf(txns: List<Txn>): List<ReimbRecv> = txns.flatMap { t ->
     t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) } +
         t.debtItems.flatMap { i -> i.pays.map { i.who to it } }
             .mapIndexed { k, (who, p) -> ReimbRecv(t, who, ReimbPay(p.day, p.accountId, p.amount, p.time, p.fxAmount), DEBT_IDX + k, debt = true) }
+}
+
+/** 報銷結案時少收的金額（不追了的部分） */
+private fun reimbShort(t: Txn): Long = t.items.filter { it.closed }.sumOf { (it.amount - it.received).coerceAtLeast(0L) }
+
+/** 名單的簡短寫法：一個人寫名字；多人時名字加起來不超過 8 個字就全列（A、B），太長就寫「3 人」 */
+private fun namesLabel(names: List<String>): String {
+    val list = names.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    val joined = list.joinToString("、")
+    return if (list.size <= 1 || joined.length <= 8) joined else "${list.size} 人"
+}
+
+/**
+ * 欠款那一行小字（明細列）：還沒還時寫「我付 $100（現金）・欠 A、B 共 $200」；還了一部分寫「總欠・已還・還剩」；
+ * 結清寫「欠 誰 $x・已還 $y」（多付、免掉時寫「實際還」）；同時有報銷再接「報銷 C、D 共 $300」。
+ */
+fun debtInfo(d: AppData, t: Txn): String {
+    val items = t.debtItems
+    val cur = t.debtCurrency
+    val names = items.map { it.who }
+    val many = names.map { it.trim() }.distinct().size > 1
+    val who = namesLabel(names)
+    val owe = if (cur.isNotEmpty()) formatFx(items.sumOf { it.totalUnits }, cur) else formatMoney(t.debtTotal)
+    val back = items.sumOf { it.pays.sumOf { p -> p.amount } }
+    val parts = ArrayList<String>()
+    when {
+        items.all { it.done } -> {
+            parts.add("欠 $who ${if (many) "共 " else ""}$owe")
+            parts.add((if (items.sumOf { it.effective } == t.debtTotal) "已還 " else "實際還 ") + formatMoney(back))
+        }
+        items.any { it.pays.isNotEmpty() } -> {
+            parts.add("總欠 $owe")
+            parts.add("已還 ${formatMoney(back)}")
+            parts.add("還剩 ${formatMoney(t.debtRemainingTwd)}")
+        }
+        else -> {
+            val acc = t.accountId?.let { d.accMap[it] }
+            parts.add("我付 ${formatMoney(t.debtSelf)}" + (acc?.let { "（${it.name}）" } ?: ""))
+            parts.add("欠 $who ${if (many) "共 " else ""}$owe")
+        }
+    }
+    if (t.items.isNotEmpty()) {
+        val rNames = t.items.map { it.who }
+        val rMany = rNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct().size > 1
+        val rWho = namesLabel(rNames)
+        parts.add("報銷" + (if (rWho.isNotEmpty()) " $rWho" else "") + " " + (if (rMany) "共 " else "") + formatMoney(t.items.sumOf { it.amount }))
+    }
+    return parts.joinToString("・")
 }
 
 /** 欠款對象的簡短寫法：一個人寫名字；多人時名字加起來不超過 8 個字就全列（A、B），太長就寫「3 人」 */
@@ -195,7 +247,8 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     val chips = ArrayList<String>()
     val fees = ArrayList<String>()
     // 在某個帳戶的明細裡（signedFor 有值）已經知道是哪個帳戶，不用再標帳戶
-    val showAcc = acc != null && d.accounts.size > 1 && signedFor == null
+    // 有欠款的那一筆：帳戶寫在分配那行小字裡，不另外用膠囊
+    val showAcc = acc != null && d.accounts.size > 1 && signedFor == null && !t.isDebt
     if (t.adjust) {
         title = androidx.compose.ui.text.AnnotatedString("餘額調整")
         emoji = "img:ui_ledger"
@@ -233,6 +286,15 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     val notes = ArrayList<String>()
     if (t.note.isNotBlank()) notes.add(t.note.lineSequence().first())
     d.fxNote(t, inForeign)?.let { notes.add(it) }
+    // 欠款：列裡多一行寫分配（我付多少、欠誰多少…），帳戶明細不顯示
+    val info: String? = if (t.isDebt && signedFor == null) debtInfo(d, t) else null
+    // 首頁／日曆／搜尋：粗體是實際支出（總額 − 報銷），灰色小字是總額（兩者不一樣時才有）
+    val actualMode = signedFor == null && t.type == TxType.EXPENSE && !t.adjust
+    // 帳戶明細：粗體是這個帳戶動了多少，實際支出不一樣時寫在小字
+    if (signedAcc != null && !inForeign && t.type == TxType.EXPENSE && !t.adjust) {
+        val flow = kotlin.math.abs(t.flowFor(signedAcc))
+        if (t.spent != flow) notes.add(0, "實際支出 ${formatMoney(t.spent)}")
+    }
 
     // 高亮：剛出現時深一點（淺色 50%、深色 45%），約 1 秒後定格（淺色 30%、深色 24%）
     val hlAnim = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -277,7 +339,7 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (t.fxPending && t.isFxSpend && !t.isDebt) {
+                if (t.fxPending && t.isFxSpend) {
                     // 外幣刷卡還沒請款：金額是預估的
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -292,10 +354,16 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
                     Spacer(Modifier.width(6.dp))
                     val open = t.debtItems.any { !it.done }
                     val who = debtWhoLabel(t)
+                    // 結清時多付（多還了）或被免掉的差額
+                    val diff = t.debtItems.sumOf { it.effective } - t.debtTotal
                     Text(
                         when {
-                            !open -> "已還清・$who"
-                            t.debtItems.all { it.pays.isEmpty() } -> "還沒付・欠 $who"
+                            !open -> "已還清・$who" + when {
+                                diff > 0L -> " 多付 ${formatMoney(diff)}"
+                                diff < 0L -> " 免 ${formatMoney(-diff)}"
+                                else -> ""
+                            }
+                            t.debtItems.all { it.pays.isEmpty() } -> if (t.debtSelf > 0L) "欠 $who ${formatMoney(t.debtTotal)}" else "還沒付・欠 $who"
                             else -> "欠 $who 還剩 ${formatMoney(t.debtRemainingTwd)}"
                         },
                         style = MaterialTheme.typography.labelSmall,
@@ -311,6 +379,9 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
                     Text(
                         (if (t.reimb == 1) "待報銷" else "已報銷") + when {
                             t.reimb == 1 && t.reimbOutstanding < t.reimbAmount -> " 剩${formatMoney(t.reimbOutstanding)}"
+                            // 結案時收得比較多（回饋算收入）或比較少（不追了）
+                            t.reimb == 2 && t.reimbGain > 0L -> " ${formatMoney(t.reimbAmount)}・回饋 +${formatMoney(t.reimbGain)}"
+                            t.reimb == 2 && reimbShort(t) > 0L -> " ${formatMoney(t.reimbAmount)}・少收 ${formatMoney(reimbShort(t))}"
                             t.reimbAmount < t.paid -> " ${formatMoney(t.reimbAmount)}"
                             // 待報銷：全額也標出金額；已報銷全額不另外標
                             t.reimb == 1 -> " ${formatMoney(t.reimbAmount)}"
@@ -333,6 +404,9 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (info != null) {
+                Text(info, style = MaterialTheme.typography.bodySmall, color = cute.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             if (chips.isNotEmpty() || t.tags.isNotEmpty()) {
                 Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     // 第一個膠囊（通常是帳戶，名字可能很長）可以縮短，後面的照原樣
@@ -352,16 +426,27 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
         val shown = when {
             inForeign && signedAcc != null -> kotlin.math.abs(t.flowFor(signedAcc))
             t.type == TxType.TRANSFER && signedFor != null && t.accountId == signedFor -> t.amount + t.fee
+            // 帳戶明細：這個帳戶實際扣了多少（有欠款時只有自己付的那一份）
+            signedAcc != null && t.type == TxType.EXPENSE -> kotlin.math.abs(t.flowFor(signedAcc))
+            actualMode -> t.spent
             else -> t.paid
         }
         val shownText = if (inForeign && signedAcc != null) formatFx(shown, signedAcc.currency) else formatMoney(shown)
+        val gray = if (actualMode && t.recorded != shown) formatMoney(t.recorded).removePrefix(tw.moneybook.app.Money.twd) else null
         // 金額下面小字：這一筆做完之後這個帳戶的餘額（只有帳戶明細會帶 balance），和左邊的標題／備註一大一小
         Column(horizontalAlignment = Alignment.End) {
             if (fees.isNotEmpty()) {
                 Text(fees.joinToString("・"), style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
             }
-            Text(sign + shownText, color = c, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            if (t.fxPending && t.isFxSpend) Text("預估", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (gray != null) {
+                    Text(gray, color = cute.sub.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                    Spacer(Modifier.width(8.dp))
+                }
+                // 實際支出是 0（全額報銷）也照寫，顏色淡一點
+                Text(sign + shownText, color = if (actualMode && shown == 0L) c.copy(alpha = 0.5f) else c, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            if ((t.fxPending && t.isFxSpend) || (t.isFxSpend && t.debtItems.any { !it.done })) Text("預估", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
             if (balance != null) {
                 Text(
                     "餘額 ${signedAcc?.fmt(balance) ?: formatMoney(balance)}", style = MaterialTheme.typography.labelSmall,
