@@ -275,6 +275,58 @@ class DebtTest {
         assertEquals(oid, again.t(2).items[0].pays.last().offsetId)
     }
 
+    /** Ken 欠我午餐 1000（報銷）；我欠 Ken：晚餐 300（台幣欠款）、拉麵 ¥12,000（預估 2,640） */
+    private fun mutualFx(): AppData {
+        val lunch = Txn(1, 1L, TxType.EXPENSE, 1000, null, 10L, null, 3, "午餐", emptyList()).withItems(listOf(ReimbItem("Ken", 1000)))
+        return base(lunch, debt(2, 300, 5, who = "Ken"), fxDebt(3, 2640, 12_000, 4))
+    }
+
+    @Test
+    fun offsetForeignDebtAfterTwdAtEstimatedRate() {
+        val d0 = mutualFx()
+        val bal = d0.balances()[10]
+        val d = d0.withOffset("Ken", setOf(1L to 0), setOf(2L to 0, 3L to 0), 20, -1)!!
+        // 抵 1000：先抵台幣晚餐 300，剩 700 抵日圓；照預估 0.22 → ¥3,182
+        assertTrue(d.item(2).done)
+        val p = d.item(3).pays.single()
+        assertEquals(700L, p.amount)
+        assertEquals(3182L, p.units)
+        assertEquals(12_000L - 3182, d.item(3).remainingUnits)
+        assertTrue(d.t(1).items[0].closed)
+        assertEquals(bal, d.balances()[10])                          // 不動任何帳戶
+        assertEquals(p.offsetId, d.t(1).items[0].pays.single().offsetId)
+        assertEquals(mapOf("JPY" to 700L), offsetFxTwd(1000, d0.debtGroups().flatMap { it.refs }.sortedBy { it.t.day }))
+    }
+
+    @Test
+    fun offsetForeignDebtWithChosenUnitsAndSpendingUsesOffsetTwd() {
+        val d0 = mutualFx()
+        // 說好抵掉 ¥4,500（匯率變成 700 / 4500）
+        val d = d0.withOffset("Ken", setOf(1L to 0), setOf(2L to 0, 3L to 0), 20, -1, mapOf("JPY" to 4_500L))!!
+        assertEquals(4_500L, d.item(3).pays.single().units)
+        assertEquals(700L, d.item(3).pays.single().amount)
+        // 剩下的 ¥7,500 用台幣帳戶還，實際扣 1,700：這筆支出＝抵掉的 700＋實際 1,700
+        val paid = d.withDebtRepaid("Ken", "JPY", 10, 21, -1, 7_500, 1_700, false)!!
+        assertTrue(paid.item(3).done)
+        assertEquals(2_400L, paid.t(3).paid)
+        // 外幣不能抵得比還欠的多
+        assertNull(d0.withOffset("Ken", setOf(1L to 0), setOf(3L to 0), 20, -1, mapOf("JPY" to 12_001L)))
+        // 刪掉抵銷：兩邊一起還原
+        val back = d.withOffsetRemoved(d.item(3).pays.single().offsetId)!!
+        assertEquals(12_000L, back.item(3).remainingUnits)
+        assertEquals(300L, back.item(2).remainingUnits)
+        assertEquals(1000L, back.t(1).items[0].remaining)
+    }
+
+    @Test
+    fun offsetOnlyForeignDebtWhenItIsSmaller() {
+        // 只勾日圓：我欠 ¥12,000（約 2,640）、他欠 1000 → 抵 1000
+        val d = mutualFx().withOffset("Ken", setOf(1L to 0), setOf(3L to 0), 20, -1)!!
+        assertEquals(1000L, d.item(3).pays.single().amount)
+        assertEquals(4_545L, d.item(3).pays.single().units)
+        assertEquals(300L, d.item(2).remainingUnits)
+    }
+
     @Test
     fun debtFieldsSurviveSaveAndLoad() {
         val d = base(split(1, 300, 10, 100, "A" to 100L, "B" to 100L)).withDebtRepaid("A", "", 10, 20, 600, 100, 0, false)!!

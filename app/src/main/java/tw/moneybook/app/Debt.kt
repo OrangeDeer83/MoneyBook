@@ -175,20 +175,92 @@ fun splitDebtUnits(items: List<DebtItem>, totalTwd: Long, fxTotal: Long): List<D
 }
 
 /**
- * 互相抵銷：同一個人，他欠我的（報銷還沒收的）和我欠他的（台幣欠款還沒還的）對沖，不動任何帳戶、不算收入或支出。
- * reimbKeys：要抵的報銷（txn id 到第幾個報銷對象）；debtKeys：要抵的欠款（txn id 到第幾項）。外幣欠款不能抵（要用實際台幣還）。
- * 抵的金額是兩邊勾選的合計比較小的那一個；兩邊都由舊到新分配，抵完的那一項就結清（報銷是收齊、欠款是還清）。
- * 兩邊的紀錄用同一個編號（用掉一個 nextId），刪除時一起刪（見 withOffsetRemoved）。抵不了回傳 null。
+ * 互相抵銷時，抵的台幣 x 怎麼分到欠款上：先抵台幣欠款，剩下的由舊到新抵外幣欠款（外幣欠款用預估台幣算）。
+ * 回傳每一項分到的台幣（和 debts 對齊；debts 要先照日期排好）。
  */
-fun AppData.withOffset(who: String, reimbKeys: Set<Pair<Long, Int>>, debtKeys: Set<Pair<Long, Int>>, day: Long, time: Int): AppData? {
+fun offsetDebtTwd(x: Long, debts: List<DebtRef>): LongArray {
+    val out = LongArray(debts.size)
+    var left = x
+    for (fxPass in listOf(false, true)) {
+        for (i in debts.indices) {
+            val r = debts[i]
+            if ((r.currency.isNotEmpty()) != fxPass || left <= 0L) continue
+            val a = minOf(r.item.remainingTwd, left)
+            out[i] = a
+            left -= a
+        }
+    }
+    return out
+}
+
+/** 互相抵銷時每種外幣分到的台幣（照第一次出現的順序），只列有分到的 */
+fun offsetFxTwd(x: Long, debts: List<DebtRef>): Map<String, Long> {
+    val twd = offsetDebtTwd(x, debts)
+    val out = LinkedHashMap<String, Long>()
+    debts.forEachIndexed { i, r -> if (r.currency.isNotEmpty() && twd[i] > 0L) out[r.currency] = (out[r.currency] ?: 0L) + twd[i] }
+    return out
+}
+
+/** 外幣欠款分到 twd 台幣時，照記的時候的預估匯率要抵掉多少外幣（由舊到新，最後一項部分抵） */
+fun offsetFxDefaultUnits(twd: Long, refs: List<DebtRef>): Long {
+    var left = twd
+    var units = 0L
+    for (r in refs) {
+        if (left <= 0L) break
+        val rem = r.item.remainingTwd
+        val a = minOf(rem, left)
+        left -= a
+        units += if (a >= rem) r.item.remainingUnits else scaleRound(r.item.remainingUnits, a, rem)
+    }
+    return units
+}
+
+/**
+ * 互相抵銷：同一個人，他欠我的（報銷還沒收的）和我欠他的（欠款還沒還的）對沖，不動任何帳戶、不算收入或支出。
+ * reimbKeys：要抵的報銷（txn id 到第幾個報銷對象）；debtKeys：要抵的欠款（txn id 到第幾項）。
+ * 抵的金額是兩邊勾選的合計比較小的那一個（外幣欠款用預估台幣比）；報銷由舊到新分配，欠款先抵台幣、再由舊到新抵外幣（見 offsetDebtTwd）。
+ * 外幣欠款：fxUnits 是每種外幣這次抵掉多少（最小單位；沒給就照預估匯率算），不能超過勾選的還欠的。
+ * 那幾項記一筆台幣是抵掉的台幣、外幣是抵掉的外幣的紀錄，所以還清後支出＝抵掉的台幣＋之後實際還的台幣。
+ * 抵完的那一項就結清（報銷是收齊、欠款是還清）。兩邊的紀錄用同一個編號（用掉一個 nextId），刪除時一起刪（見 withOffsetRemoved）。抵不了回傳 null。
+ */
+fun AppData.withOffset(
+    who: String, reimbKeys: Set<Pair<Long, Int>>, debtKeys: Set<Pair<Long, Int>>, day: Long, time: Int,
+    fxUnits: Map<String, Long> = emptyMap(),
+): AppData? {
     val name = who.trim()
     val byDay = txns.sortedWith(compareBy({ it.day }, { it.id }))
     val rRefs = byDay.flatMap { t -> t.items.indices.map { t to it } }
         .filter { (t, i) -> t.type == TxType.EXPENSE && (t.id to i) in reimbKeys && t.items[i].who.trim() == name && t.items[i].remaining > 0L }
-    val dRefs = byDay.filter { it.isDebt && it.debtCurrency.isEmpty() }.debtRefs()
+    val dRefs = byDay.filter { it.isDebt }.debtRefs()
         .filter { it.key in debtKeys && it.who == name && it.item.remainingUnits > 0L }
-    val x = minOf(rRefs.sumOf { (t, i) -> t.items[i].remaining }, dRefs.sumOf { it.item.remainingUnits })
+    val x = minOf(rRefs.sumOf { (t, i) -> t.items[i].remaining }, dRefs.sumOf { it.item.remainingTwd })
     if (x <= 0L) return null
+    val twd = offsetDebtTwd(x, dRefs)
+
+    // 每一項欠款這次抵掉多少（欠款單位）和多少台幣
+    val units = LongArray(dRefs.size)
+    val twdOf = LongArray(dRefs.size)
+    dRefs.forEachIndexed { i, r -> if (r.currency.isEmpty()) { units[i] = twd[i]; twdOf[i] = twd[i] } }
+    for ((c, tc) in offsetFxTwd(x, dRefs)) {
+        val idx = dRefs.indices.filter { dRefs[it].currency == c }
+        val refs = idx.map { dRefs[it] }
+        val uc = fxUnits[c] ?: offsetFxDefaultUnits(tc, refs)
+        if (uc <= 0L || uc > refs.sumOf { it.item.remainingUnits }) return null
+        var leftU = uc
+        val got = ArrayList<Int>()
+        for (i in idx) {
+            if (leftU <= 0L) break
+            val a = minOf(dRefs[i].item.remainingUnits, leftU)
+            units[i] = a
+            leftU -= a
+            got.add(i)
+        }
+        var leftT = tc
+        got.forEachIndexed { n, i ->
+            twdOf[i] = if (n == got.lastIndex) leftT else scaleRound(tc, units[i], uc).also { v -> leftT -= v }
+        }
+    }
+
     val oid = nextId
     val newReimb = HashMap<Long, MutableList<ReimbItem>>()
     var left = x
@@ -202,14 +274,11 @@ fun AppData.withOffset(who: String, reimbKeys: Set<Pair<Long, Int>>, debtKeys: S
         list[i] = it.copy(pays = pays, closed = it.closed || pays.sumOf { p -> p.amount } >= it.amount)
     }
     val newDebt = HashMap<Long, MutableList<DebtItem>>()
-    left = x
-    for (r in dRefs) {
-        if (left <= 0L) break
+    dRefs.forEachIndexed { i, r ->
+        if (units[i] <= 0L) return@forEachIndexed
         val list = newDebt.getOrPut(r.t.id) { r.t.debtItems.toMutableList() }
         val it = list[r.index]
-        val a = minOf(it.remainingUnits, left)
-        left -= a
-        list[r.index] = it.copy(pays = it.pays + DebtPay(day, null, a, time, 0L, a, oid), done = it.remainingUnits - a <= 0L)
+        list[r.index] = it.copy(pays = it.pays + DebtPay(day, null, twdOf[i], time, 0L, units[i], oid), done = it.remainingUnits - units[i] <= 0L)
     }
     return copy(
         txns = txns.map { t ->

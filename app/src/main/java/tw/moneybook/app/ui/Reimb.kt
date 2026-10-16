@@ -87,6 +87,9 @@ import tw.moneybook.app.DebtRef
 import tw.moneybook.app.debtCurrency
 import tw.moneybook.app.debtGroups
 import tw.moneybook.app.DebtRepayPart
+import tw.moneybook.app.offsetDebtTwd
+import tw.moneybook.app.offsetFxTwd
+import tw.moneybook.app.offsetFxDefaultUnits
 import tw.moneybook.app.fmt
 import tw.moneybook.app.fxPlain
 import tw.moneybook.app.isDebt
@@ -567,8 +570,8 @@ private class Mutual(val who: String, val claims: List<Claim>, val debts: List<D
     val oweMe: Long get() = claims.sumOf { it.item.remaining }
     val iOwe: Long get() = debts.sumOf { it.remainingTwd }
     val net: Long get() = oweMe - iOwe
-    /** 可以互相抵銷：他欠我、我也欠他台幣 */
-    val canOffset: Boolean get() = oweMe > 0L && debts.any { it.currency.isEmpty() && it.remainingUnits > 0L }
+    /** 可以互相抵銷：他欠我、我也欠他（台幣或外幣） */
+    val canOffset: Boolean get() = oweMe > 0L && debts.any { it.remainingUnits > 0L }
     val oldestDay: Long get() = minOf(claims.minOfOrNull { it.txn.day } ?: Long.MAX_VALUE, debts.minOfOrNull { g -> g.refs.minOf { it.t.day } } ?: Long.MAX_VALUE)
 }
 
@@ -774,13 +777,19 @@ private class Rec(
 /** 某些報銷帳與欠款的收款／還款／抵銷紀錄，新的在前；抵銷兩邊只列一次 */
 private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<Rec> {
     val out = ArrayList<Rec>()
+    // 互相抵銷抵到外幣欠款時，紀錄寫抵掉多少外幣
+    val fxOff = HashMap<Long, MutableList<String>>()
+    d.bookTxns.filter { it.isDebt && it.debtCurrency.isNotEmpty() }.forEach { t ->
+        t.debtItems.forEach { item -> item.pays.forEach { p -> if (p.offsetId != 0L) fxOff.getOrPut(p.offsetId) { ArrayList() }.add(formatFx(p.units, t.debtCurrency)) } }
+    }
+    fun offFx(id: Long): String = fxOff[id]?.let { "・抵掉 " + it.joinToString("＋") } ?: ""
     claims.filter { who == null || it.who == who }.forEach { c ->
         c.item.pays.forEachIndexed { n, pay ->
             val acc = pay.accountId?.let { d.accMap[it] }
             out.add(
                 if (pay.offsetId != 0L) Rec(
-                    c.who, pay.day, pay.time, "和${ownerLabel(c.who)}互相抵銷", "${billLabel(d, c.txn)}・不動帳戶", formatMoney(pay.amount), 2,
-                    "互相抵銷 ${formatMoney(pay.amount)}", "${billLabel(d, c.txn)}・不動帳戶", { vm -> vm.deleteOffset(pay.offsetId) },
+                    c.who, pay.day, pay.time, "和${ownerLabel(c.who)}互相抵銷", "${billLabel(d, c.txn)}・不動帳戶" + offFx(pay.offsetId), formatMoney(pay.amount), 2,
+                    "互相抵銷 ${formatMoney(pay.amount)}", "${billLabel(d, c.txn)}・不動帳戶" + offFx(pay.offsetId), { vm -> vm.deleteOffset(pay.offsetId) },
                 )
                 else Rec(
                     c.who, pay.day, pay.time, ownerLabel(c.who),
@@ -1272,7 +1281,7 @@ private fun ReimbPersonPage(
                     if (owed > 0L) Button(onClick = onReceive, modifier = Modifier.weight(1f)) { Text("收款") }
                     // 按鈕固定最多三顆：幣別再多也只有一顆「還款」，進去一頁還完全部幣別
                     if (groups.isNotEmpty()) Button(onClick = onRepay, modifier = Modifier.weight(1f)) { Text("還款") }
-                    if (owed > 0L && groups.any { it.currency.isEmpty() }) Button(onClick = onOffset, modifier = Modifier.weight(1f)) { Text("抵銷") }
+                    if (owed > 0L && groups.isNotEmpty()) Button(onClick = onOffset, modifier = Modifier.weight(1f)) { Text("抵銷") }
                 }
             }
         }
@@ -1579,25 +1588,65 @@ private fun DebtRepayPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, o
 
 // ───────────────────────── 互相抵銷 ─────────────────────────
 
+/** 互相抵銷頁裡的一種外幣：匯率和抵掉的外幣兩格，改一格另一格跟著算（都是 null＝用記的時候的預估匯率） */
+private class OffsetFx {
+    var rate by mutableStateOf<String?>(null)
+    var units by mutableStateOf<String?>(null)
+}
+
 /**
- * 和某個人互相抵銷：兩邊各自勾選要抵的帳（他欠我的報銷、我欠他的台幣欠款），抵的金額是兩邊合計比較小的那一個，
- * 由舊到新分配，不動任何帳戶、不算收入或支出（見 withOffset）。
+ * 和某個人互相抵銷：兩邊各自勾選要抵的帳（他欠我的報銷、我欠他的欠款），抵的金額是兩邊合計比較小的那一個（外幣欠款用預估台幣比），
+ * 不動任何帳戶、不算收入或支出（見 withOffset）。先抵台幣欠款，剩下的抵外幣欠款；外幣欠款要決定抵掉多少外幣：
+ * 匯率先帶記的時候的預估值，可以改匯率或直接填外幣，兩格互相連動；抵掉的台幣固定。
  */
 @Composable
 private fun OffsetPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDone: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
     val claims = claimsOf(d.bookTxns).filter { it.who == who && !it.item.closed && it.item.remaining > 0L }.sortedWith(compareBy({ it.txn.day }, { it.txn.id }))
-    val refs = d.debtGroups().firstOrNull { it.who == who && it.currency.isEmpty() }?.refs ?: emptyList()
+    // 畫面上台幣欠款在前、外幣欠款在後
+    val refs = d.debtGroups().filter { it.who == who }.flatMap { it.refs }
+        .sortedWith(compareBy({ if (it.currency.isEmpty()) 0 else 1 }, { it.currency }, { it.t.day }, { it.t.id }, { it.index }))
     val selR = remember { mutableStateMapOf<String, Boolean>() }
     val selD = remember { mutableStateMapOf<Pair<Long, Int>, Boolean>() }
     val onR = claims.filter { selR[it.key] != false }
-    val onD = refs.filter { selD[it.key] != false }
+    // 分配照日期由舊到新（和 withOffset 一樣）
+    val onD = refs.filter { selD[it.key] != false }.sortedWith(compareBy({ it.t.day }, { it.t.id }, { it.index }))
     val sumR = onR.sumOf { it.item.remaining }
-    val sumD = onD.sumOf { it.item.remainingUnits }
+    val sumD = onD.sumOf { it.item.remainingTwd }
     val x = minOf(sumR, sumD)
+    val twdAlloc = offsetDebtTwd(x, onD)
+    val fxTwd = offsetFxTwd(x, onD)
+    val fxState = remember { HashMap<String, OffsetFx>() }
+    // 勾選變了，匯率和外幣都回到預估
+    val selKey = onR.joinToString(",") { it.key } + "|" + onD.joinToString(",") { "${it.key}" }
+    LaunchedEffect(selKey) { fxState.values.forEach { it.rate = null; it.units = null } }
     var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
     var pickDate by remember { mutableStateOf(false) }
+
+    /** 一種外幣這次的計算：抵掉的台幣、外幣（預設照預估匯率）、上限 */
+    class FxCalc(val c: String, val twd: Long) {
+        val dec = Currencies.of(c).decimals
+        val mine = onD.filter { it.currency == c }
+        val st = fxState.getOrPut(c) { OffsetFx() }
+        val maxUnits = mine.sumOf { it.item.remainingUnits }
+        val defUnits = offsetFxDefaultUnits(twd, mine)
+        val units = st.units?.let { parseFx(it, dec) } ?: if (st.units == null) defUnits else 0L
+        val estRate = tw.moneybook.app.impliedRate(mine.sumOf { it.item.remainingTwd }, maxUnits, dec)
+        val rateShown = st.rate ?: (if (st.units == null) estRate else tw.moneybook.app.impliedRate(twd, units, dec))?.let { tw.moneybook.app.rateText(it) } ?: ""
+        val unitsShown = st.units ?: fxPlain(defUnits, dec)
+    }
+    val fxCalcs = fxTwd.map { (c, t) -> FxCalc(c, t) }
+
+    val tries = rememberNeedTries()
+    val need = if (x <= 0L) Need("pick", "兩邊都要勾選還沒結清的帳") else fxCalcs.firstNotNullOfOrNull { f ->
+        when {
+            f.units <= 0L -> Need("fx${f.c}", "請輸入抵掉的${Currencies.of(f.c).name}")
+            f.units > f.maxUnits -> Need("fx${f.c}", "不能超過勾選的還欠的 ${formatFx(f.maxUnits, f.c)}")
+            else -> null
+        }
+    }
+    val nv = NeedView(need, tries.count)
 
     SubPage("互相抵銷・${ownerLabel(who)}", onBack) {
         Column(Modifier.fillMaxSize()) {
@@ -1608,15 +1657,30 @@ private fun OffsetPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDo
                 CuteCard(Modifier.fillMaxWidth()) {
                     Text("這次抵銷", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     Text(formatMoney(x), style = MaterialTheme.typography.headlineMedium)
-                    Text("取兩邊勾選的合計比較小的：${formatMoney(sumR)} 和 ${formatMoney(sumD)}。不動任何帳戶、不算收入或支出。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                    Text(
+                        "取兩邊勾選的合計比較小的：${formatMoney(sumR)} 和 ${formatMoney(sumD)}" + (if (fxTwd.isNotEmpty() || onD.any { it.currency.isNotEmpty() }) "（外幣欠款用預估台幣）" else "") +
+                            "。不動任何帳戶、不算收入或支出。",
+                        style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                    )
                     if (x > 0L) {
+                        // 抵銷後還欠的：台幣一個數字，外幣各寫外幣
+                        val twdLeft = refs.filter { it.currency.isEmpty() }.sumOf { it.item.remainingUnits } -
+                            onD.indices.filter { onD[it].currency.isEmpty() }.sumOf { twdAlloc[it] }
+                        val parts = buildList {
+                            if (twdLeft > 0L) add(formatMoney(twdLeft))
+                            refs.map { it.currency }.filter { it.isNotEmpty() }.distinct().forEach { c ->
+                                val left = refs.filter { it.currency == c }.sumOf { it.item.remainingUnits } - (fxCalcs.firstOrNull { it.c == c }?.units ?: 0L)
+                                if (left > 0L) add(formatFx(left, c))
+                            }
+                        }
                         Text(
-                            "抵銷後：${ownerLabel(who)}還欠你 ${formatMoney(claims.sumOf { it.item.remaining } - x)}・你還欠${ownerLabel(who)} ${formatMoney(refs.sumOf { it.item.remainingUnits } - x)}",
+                            "抵銷後：${ownerLabel(who)}還欠你 ${formatMoney(claims.sumOf { it.item.remaining } - x)}・你還欠${ownerLabel(who)} " + parts.joinToString("＋").ifEmpty { formatMoney(0L) },
                             style = MaterialTheme.typography.bodySmall, color = cute.ink,
                         )
                     }
                 }
                 CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
+                nv.Message("pick")
                 Text("${ownerLabel(who)}欠我（勾選要抵的）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 claims.forEach { c ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.card).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1625,22 +1689,76 @@ private fun OffsetPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDo
                         Text("剩 ${formatMoney(c.item.remaining)}", style = MaterialTheme.typography.bodyMedium, color = cute.income)
                     }
                 }
-                Text("我欠${ownerLabel(who)}（勾選要抵的，外幣欠款不能抵）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                Text("我欠${ownerLabel(who)}（勾選要抵的，先抵台幣欠款）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                 refs.forEach { r ->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.card).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.Checkbox(checked = selD[r.key] != false, onCheckedChange = { selD[r.key] = it })
-                        Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text("剩 ${formatMoney(r.item.remainingUnits)}", style = MaterialTheme.typography.bodyMedium, color = cute.expense)
+                        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                            Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyMedium)
+                            if (r.currency.isNotEmpty()) {
+                                Text("剩 ${formatFx(r.item.remainingUnits, r.currency)}（預估約 ${formatMoney(r.item.remainingTwd)}）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                            }
+                        }
+                        Text(
+                            if (r.currency.isEmpty()) "剩 ${formatMoney(r.item.remainingUnits)}" else formatFx(r.item.remainingUnits, r.currency),
+                            style = MaterialTheme.typography.bodyMedium, color = cute.expense,
+                        )
+                    }
+                }
+                // 抵到外幣欠款：每種外幣一張，匯率和外幣兩格互相連動
+                fxCalcs.forEach { f ->
+                    val name = Currencies.of(f.c).name
+                    CuteCard(Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${name}欠款：這次抵掉多少", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                            Text("抵 ${formatMoney(f.twd)}", style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("匯率（1 ${f.c} = 幾元台幣）", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+                                Spacer(Modifier.height(4.dp))
+                                CompactField(
+                                    f.rateShown,
+                                    { v ->
+                                        val t = fxInput(v, 6)
+                                        f.st.rate = t
+                                        val r = t.toDoubleOrNull()
+                                        if (r != null && r > 0.0) f.st.units = fxPlain(tw.moneybook.app.twdToFx(f.twd, f.dec, r), f.dec)
+                                    },
+                                    "匯率", Modifier.fillMaxWidth(), number = true, decimal = true,
+                                )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text("抵掉的$name", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+                                Spacer(Modifier.height(4.dp))
+                                CompactField(
+                                    f.unitsShown,
+                                    { v ->
+                                        val t = fxInput(v, f.dec)
+                                        f.st.units = t
+                                        f.st.rate = parseFx(t, f.dec)?.let { u -> tw.moneybook.app.impliedRate(f.twd, u, f.dec) }?.let { tw.moneybook.app.rateText(it) } ?: ""
+                                    },
+                                    "金額", Modifier.fillMaxWidth().needInView(nv, "fx${f.c}"), number = true, decimal = f.dec > 0,
+                                    prefix = Currencies.of(f.c).symbol.trim(), error = nv.on("fx${f.c}"),
+                                )
+                            }
+                        }
+                        nv.Message("fx${f.c}")
+                        Spacer(Modifier.height(6.dp))
+                        Text("匯率先帶記的時候的預估值；改匯率，${name}跟著重算；直接填${name}，匯率跟著變。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        Text("抵掉的台幣固定是 ${formatMoney(f.twd)}，那幾筆的支出就照這個算；${name}不能超過勾選的還欠的 ${formatFx(f.maxUnits, f.c)}。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                     }
                 }
             }
             Box(Modifier.fillMaxWidth().background(cute.card).padding(horizontal = 16.dp, vertical = 10.dp)) {
                 Button(
                     onClick = {
+                        if (need != null) { tries.count++; return@Button }
                         val t = LocalTime.now()
-                        if (vm.offsetDebts(who, onR.map { it.txn.id to it.index }.toSet(), onD.map { it.key }.toSet(), day, t.hour * 60 + t.minute)) onDone()
+                        val units = fxCalcs.associate { it.c to it.units }
+                        if (vm.offsetDebts(who, onR.map { it.txn.id to it.index }.toSet(), onD.map { it.key }.toSet(), day, t.hour * 60 + t.minute, units)) onDone()
                     },
-                    enabled = x > 0L,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("確認抵銷 ${formatMoney(x)}") }
             }

@@ -394,10 +394,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 互相抵銷（見 withOffset），可以復原；成功回傳 true */
-    fun offsetDebts(who: String, reimbKeys: Set<Pair<Long, Int>>, debtKeys: Set<Pair<Long, Int>>, day: Long, time: Int): Boolean {
+    fun offsetDebts(who: String, reimbKeys: Set<Pair<Long, Int>>, debtKeys: Set<Pair<Long, Int>>, day: Long, time: Int, fxUnits: Map<String, Long> = emptyMap()): Boolean {
         val d = data
-        val after = d.withOffset(who, reimbKeys, debtKeys, day, time) ?: run {
-            toast("兩邊都要勾選還沒結清的帳才能抵銷")
+        val after = d.withOffset(who, reimbKeys, debtKeys, day, time, fxUnits) ?: run {
+            toast("兩邊都要勾選還沒結清的帳才能抵銷，外幣不能抵得比還欠的多")
             return false
         }
         val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
