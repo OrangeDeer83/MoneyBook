@@ -30,8 +30,13 @@ def money_after(ns, label):
 
 
 def reimb_total():
+    """報銷／欠款總覽頂端「別人欠我」同一行右邊的金額（一行一個金額）"""
     ns = d.nodes()
-    return money_after(ns, "別人欠我")
+    lb = d.first(ns, "別人欠我", exact=True)
+    if not lb:
+        return None
+    row = [n for n in ns if n.text.startswith("$") and abs(n.cy - lb.cy) < 30 and n.x1 > lb.x1]
+    return min(row, key=lambda n: n.x1).text if row else None
 
 
 def open_edit_reimb_switch_on(multi=False):
