@@ -2899,7 +2899,7 @@ def t_debt_foreign():
     ns = d.shot("首頁")
     d.check("明細標「還沒付・欠 Ken」，不是「待請款」", d.has(ns, "還沒付・欠 Ken", True) and not d.has(ns, "待請款", False), [n.text for n in ns if n.text][:25])
     open_reimb_debt_home()
-    open_repay("Ken", "還款 JPY")
+    open_repay("Ken")
     ed = d.edits()
     d.check("有「還了多少外幣」與「實際扣掉的台幣」，台幣預設預估 2640", len(ed) >= 2 and ed[0].text == "12000" and ed[1].text == "2640", [e.text for e in ed])
     d.fill(ed[1], "2700")
@@ -2991,3 +2991,46 @@ def t_debt_offset():
     acc_tab()
     ns = d.shot("帳戶分頁")
     d.check("帳戶都沒動：銀行 $50,000、現金 $0（午餐 1000 是現金付的）", d.has(ns, "$50,000", True) and d.has(ns, "$0", True), [n.text for n in ns if "$" in n.text][:12])
+
+
+def debt_multi_seed():
+    """欠 Ken 兩種幣別：台幣晚餐 800、日圓拉麵 ¥12,000（預估 0.22 → 2,640）"""
+    s = empty_seed()
+    t = s.expense(0, 800, S.C_DINNER, acc=None, note="晚餐")
+    t.update(debtItems=[dict(who="Ken", amount=800, units=0, done=False, pays=[])], debtSelf=0)
+    t = s.expense(0, 2640, S.C_FOOD, acc=None, note="ramen")
+    t.update(fxSpendAmount=12000, fxSpendCur="JPY", debtItems=[dict(who="Ken", amount=2640, units=12000, done=False, pays=[])], debtSelf=0)
+    return s
+
+
+@case(D, "還款：一頁還完台幣和外幣，每種幣別一區，一顆確認一起還", visual=True)
+def t_debt_repay_multi_currency():
+    d.fresh(debt_multi_seed().json())
+    open_reimb_debt_home()
+    ns = d.shot("總覽：Ken 只有一顆「還款」")
+    d.check("Ken 的卡片只有一顆「還款」（沒有「還款（JPY）」）", d.has(ns, "還款", True) and not any(n.text.startswith("還款（") or n.text == "還款 JPY" for n in ns), [n.text for n in ns if "還款" in n.text])
+    open_repay("Ken")
+    ns = d.shot("還款頁：台幣、日圓各一區")
+    d.check("總結一行一種幣別：台幣 NT$800、日圓 ¥12,000（約 NT$2,640）",
+            d.has(ns, "台幣", True) and d.has(ns, "日圓 JPY", True) and any("¥12,000（約 NT$2,640" in n.text for n in ns), [n.text for n in ns if n.text][:30])
+    d.check("台幣區金額預設 800", d.edits() and d.edits()[0].text == "800", [e.text for e in d.edits()])
+    btn = next((n.text for n in ns if n.text.startswith("確認還款")), "")
+    d.check("按鈕寫「確認還款 NT$800＋¥12,000」", "800" in btn and "＋¥12,000" in btn, btn)
+    for _ in range(4):
+        if d.has(d.nodes(), "實際扣掉的台幣", False) and len(d.edits()) >= 2 and d.edits()[-1].text == "2640":
+            break
+        d.swipe(540, 1500, 540, 700, 600)
+        d.time.sleep(0.6)
+    ed = d.edits()
+    d.check("日圓區：還了 12000，實際扣掉的台幣預設 2640", len(ed) >= 2 and ed[-2].text == "12000" and ed[-1].text == "2640", [e.text for e in ed])
+    d.fill(ed[-1], "2700")
+    d.hide_ime()
+    d.tap_text("確認還款", exact=False)
+    d.time.sleep(1.5)
+    ns = d.shot("還款之後（回到總覽）")
+    d.check("兩種都還清：總覽沒有 Ken", not d.has(ns, "Ken", True) and d.has(ns, "沒有待報銷或欠款", False), [n.text for n in ns if n.text][:20])
+    d.tap_back()
+    d.time.sleep(1)
+    ns = d.shot("首頁")
+    d.check("本月支出 NT$3,500（800＋實際 2,700）", d.has(ns, "NT$3,500", True), [n.text for n in ns if "$" in n.text][:12])
+    d.check("提醒消失", not any(n.text.startswith("報銷／欠款") for n in ns))

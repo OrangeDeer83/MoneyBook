@@ -365,10 +365,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    /** 還欠款（見 withDebtRepaid），可以復原；成功回傳 true */
-    fun repayDebt(who: String, currency: String, accountId: Long, day: Long, time: Int, units: Long, actualTwd: Long, settle: Boolean, only: Set<Pair<Long, Int>>? = null): Boolean {
+    /** 還欠款，一次可以還好幾種幣別（見 withDebtsRepaid），一起復原；成功回傳 true */
+    fun repayDebts(who: String, parts: List<DebtRepayPart>, day: Long, time: Int): Boolean {
         val d = data
-        val after = d.withDebtRepaid(who, currency, accountId, day, time, units, actualTwd, settle, only = only) ?: run {
+        val after = d.withDebtsRepaid(who, parts, day, time) ?: run {
             toast("還款的金額或帳戶不對")
             return false
         }

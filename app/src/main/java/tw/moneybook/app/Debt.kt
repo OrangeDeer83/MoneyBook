@@ -136,6 +136,20 @@ fun AppData.withDebtRepaid(
     return copy(txns = txns.map { t -> newItems[t.id]?.let { t.copy(debtItems = it) } ?: t })
 }
 
+/** 一次還款裡的一種幣別（還款頁每種幣別一區，各自的帳戶、金額；見 withDebtRepaid） */
+class DebtRepayPart(
+    val currency: String, val accountId: Long, val units: Long, val actualTwd: Long, val settle: Boolean,
+    val only: Set<Pair<Long, Int>>? = null,
+)
+
+/** 一次還好幾種幣別（同一天同一時間）；任何一種還不了就整個不算，回傳 null */
+fun AppData.withDebtsRepaid(who: String, parts: List<DebtRepayPart>, day: Long, time: Int, bookId: Long = currentBook.id): AppData? {
+    if (parts.isEmpty()) return null
+    var out = this
+    for (p in parts) out = out.withDebtRepaid(who, p.currency, p.accountId, day, time, p.units, p.actualTwd, p.settle, bookId, p.only) ?: return null
+    return out
+}
+
 /** 刪掉某一項欠款的某一筆還款：那一項重新變成還沒結清（回到記的金額）；找不到回傳 null */
 fun AppData.withDebtPayRemoved(txnId: Long, itemIndex: Int, payIndex: Int): AppData? {
     val t = txns.firstOrNull { it.id == txnId && it.isDebt } ?: return null

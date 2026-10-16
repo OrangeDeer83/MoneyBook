@@ -302,6 +302,24 @@ class DebtTest {
     }
 
     @Test
+    fun repayManyCurrenciesAtOnce() {
+        val d0 = base(debt(1, 894, 10, who = "Ken"), fxDebt(2, 2640, 12_000, 11))
+        val parts = listOf(
+            DebtRepayPart("", 10, 894, 0, false),
+            DebtRepayPart("JPY", 10, 12_000, 2700, false),
+        )
+        val d = d0.withDebtsRepaid("Ken", parts, 20, 600)!!
+        assertTrue(d.item(1).done)
+        assertTrue(d.item(2).done)
+        assertEquals(2700L, d.t(2).paid)                             // 外幣那筆改成實際扣的台幣
+        assertEquals(50_000L - 894 - 2700, d.balances()[10])
+        assertEquals(0L, d.debtOutstanding())
+        // 只要其中一種還不了（外幣還得比欠的多），整個不算
+        assertNull(d0.withDebtsRepaid("Ken", listOf(parts[0], DebtRepayPart("JPY", 10, 13_000, 2800, false)), 20, 600))
+        assertNull(d0.withDebtsRepaid("Ken", emptyList(), 20, 600))
+    }
+
+    @Test
     fun csvKeepsDebtPeopleAndSelfPart() {
         val d = base(debt(1, 800, 10, note = "晚餐"), split(2, 300, 11, 100, "A" to 100L, "B" to 100L))
         val csv = String(CsvIO.export(d), Charsets.UTF_8)

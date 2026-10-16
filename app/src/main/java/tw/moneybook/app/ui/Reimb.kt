@@ -85,6 +85,7 @@ import tw.moneybook.app.DebtGroup
 import tw.moneybook.app.DebtRef
 import tw.moneybook.app.debtCurrency
 import tw.moneybook.app.debtGroups
+import tw.moneybook.app.DebtRepayPart
 import tw.moneybook.app.fmt
 import tw.moneybook.app.fxPlain
 import tw.moneybook.app.isDebt
@@ -526,7 +527,7 @@ private sealed class ReimbPage {
     object Home : ReimbPage()
     class Receive(val who: String) : ReimbPage()
     class Person(val who: String) : ReimbPage()
-    class Repay(val who: String, val currency: String) : ReimbPage()
+    class Repay(val who: String) : ReimbPage()
     class Offset(val who: String) : ReimbPage()
 }
 
@@ -545,16 +546,16 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             vm, onEdit, onBack,
             onReceive = { fromPerson = null; page = ReimbPage.Receive(it) },
             onPerson = { page = ReimbPage.Person(it) },
-            onRepay = { w, c -> fromPerson = null; page = ReimbPage.Repay(w, c) },
+            onRepay = { fromPerson = null; page = ReimbPage.Repay(it) },
             onOffset = { fromPerson = null; page = ReimbPage.Offset(it) },
         )
         is ReimbPage.Receive -> ReimbReceivePage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
-        is ReimbPage.Repay -> DebtRepayPage(vm, p.who, p.currency, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
+        is ReimbPage.Repay -> DebtRepayPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Person -> ReimbPersonPage(
             vm, p.who, onBack = { fromPerson = null; page = ReimbPage.Home },
             onReceive = { fromPerson = p.who; page = ReimbPage.Receive(p.who) },
-            onRepay = { c -> fromPerson = p.who; page = ReimbPage.Repay(p.who, c) },
+            onRepay = { fromPerson = p.who; page = ReimbPage.Repay(p.who) },
             onOffset = { fromPerson = p.who; page = ReimbPage.Offset(p.who) },
         )
     }
@@ -590,7 +591,7 @@ private fun ReimbHome(
     onBack: () -> Unit,
     onReceive: (String) -> Unit,
     onPerson: (String) -> Unit,
-    onRepay: (String, String) -> Unit,
+    onRepay: (String) -> Unit,
     onOffset: (String) -> Unit,
 ) {
     val d = vm.data
@@ -668,7 +669,7 @@ private fun ReimbHome(
                             Spacer(Modifier.height(6.dp))
                             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (m.claims.isNotEmpty()) SoftButton("收款", { onReceive(m.who) }, compact = true)
-                                m.debts.forEach { g -> SoftButton(if (g.currency.isEmpty()) "還款" else "還款（${g.currency}）", { onRepay(m.who, g.currency) }, compact = true) }
+                                if (m.debts.isNotEmpty()) SoftButton("還款", { onRepay(m.who) }, compact = true)
                                 if (m.canOffset) SoftButton("互相抵銷", { onOffset(m.who) }, compact = true)
                             }
                         }
@@ -705,7 +706,7 @@ private fun ReimbHome(
                             t.debtItems.forEach { item ->
                                 if (item.remainingUnits > 0L) {
                                     Row(
-                                        Modifier.fillMaxWidth().padding(start = 12.dp).clickable { onRepay(item.who.trim(), t.debtCurrency) },
+                                        Modifier.fillMaxWidth().padding(start = 12.dp).clickable { onRepay(item.who.trim()) },
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Text("欠 " + item.who.trim(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -1130,7 +1131,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
 @Composable
 private fun ReimbPersonPage(
     vm: MoneyViewModel, who: String, onBack: () -> Unit, onReceive: () -> Unit,
-    onRepay: (String) -> Unit, onOffset: () -> Unit,
+    onRepay: () -> Unit, onOffset: () -> Unit,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -1260,7 +1261,8 @@ private fun ReimbPersonPage(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (owed > 0L) Button(onClick = onReceive, modifier = Modifier.weight(1f)) { Text("收款") }
-                    groups.forEach { g -> Button(onClick = { onRepay(g.currency) }, modifier = Modifier.weight(1f)) { Text(if (g.currency.isEmpty()) "還款" else "還款 ${g.currency}") } }
+                    // 按鈕固定最多三顆：幣別再多也只有一顆「還款」，進去一頁還完全部幣別
+                    if (groups.isNotEmpty()) Button(onClick = onRepay, modifier = Modifier.weight(1f)) { Text("還款") }
                     if (owed > 0L && groups.any { it.currency.isEmpty() }) Button(onClick = onOffset, modifier = Modifier.weight(1f)) { Text("抵銷") }
                 }
             }
@@ -1356,140 +1358,189 @@ private fun ReimbPayEditDialog(vm: MoneyViewModel, entry: Triple<Claim, Int, Rei
 
 // ───────────────────────── 還款（勾選要還的帳） ─────────────────────────
 
+/** 還款頁裡的一種幣別：用哪個帳戶還、還多少（沒自己改過就跟著勾選的合計）、實際扣掉的台幣、少還時算不算還清 */
+private class RepaySec(accId: Long?) {
+    var accId by mutableStateOf(accId)
+    var amountText by mutableStateOf<String?>(null)
+    var twdInput by mutableStateOf<String?>(null)
+    var settle by mutableStateOf(false)
+}
+
+/** 台幣欠款只能用台幣帳戶還；外幣欠款也可以用同幣別的外幣帳戶還。投資帳戶不能拿來還錢 */
+private fun repayAccounts(d: AppData, currency: String): List<Account> =
+    d.visibleAccounts.filter { it.type != AccountType.INVEST && (!it.isForeign || (currency.isNotEmpty() && it.currency == currency)) }
+
+/** 幣別的名字：台幣、日圓 JPY */
+private fun currencyName(c: String): String = if (c.isEmpty()) "台幣" else "${Currencies.of(c).name} $c"
+
+/** 還款頁一種幣別的計算結果 */
+private class RepayCalc(d: AppData, val g: DebtGroup, val s: RepaySec, isOn: (DebtRef) -> Boolean) {
+    val currency = g.currency
+    val fx = currency.isNotEmpty()
+    val dec = Currencies.of(currency).decimals
+    val active = g.refs.filter(isOn)
+    val selUnits = active.sumOf { it.item.remainingUnits }
+    val selTwd = active.sumOf { it.item.remainingTwd }
+    val accounts = repayAccounts(d, currency)
+    val acc = s.accId?.let { d.accMap[it] }
+    val shown = s.amountText ?: if (selUnits <= 0L) "" else if (fx) fxPlain(selUnits, dec) else selUnits.toString()
+    val units = if (fx) (parseFx(shown, dec) ?: 0L) else (shown.filter { it.isDigit() }.toLongOrNull() ?: 0L)
+    val estTwd = if (selUnits > 0L) scaleRound(selTwd, units.coerceAtMost(selUnits), selUnits) else 0L
+    val twdAsk = fx && acc != null && !acc.isForeign
+    val twd = s.twdInput?.filter { it.isDigit() }?.toLongOrNull() ?: estTwd
+    val short = units in 1 until selUnits
+    val over = !fx && units > selUnits
+
+    /** 這一區這次要還：有勾選、金額大於 0（全部不勾或金額清成 0 就跳過） */
+    val on = active.isNotEmpty() && units > 0L
+    fun unitText(v: Long) = if (fx) formatFx(v, currency) else formatMoney(v)
+    fun part() = DebtRepayPart(currency, s.accId!!, units, if (twdAsk) twd else 0L, short && s.settle, active.map { it.key }.toSet())
+}
+
 /**
- * 還款給某個人（同一種幣別）：做法和收款頁一樣，勾選這次要還的帳、金額預設是勾選的合計（可以改）。
+ * 還款給某個人：一頁還完全部幣別，每種幣別一區（做法和收款頁一樣，勾選這次要還的帳、金額預設是勾選的合計，可以改），
+ * 每一區各自選帳戶；日期時間共用。不想還的那一區全部不勾，或金額清成 0 就跳過。
  * 還得比勾選的少：選「繼續欠」或「這樣就算還清」；台幣欠款還得比較多：算還清，多的加在最後一項的支出上。
  * 用台幣帳戶還外幣欠款要填實際扣掉的台幣；用同幣別的外幣帳戶還就直接扣外幣（見 withDebtRepaid）。
  */
 @Composable
-private fun DebtRepayPage(vm: MoneyViewModel, who: String, currency: String, onBack: () -> Unit, onDone: () -> Unit) {
+private fun DebtRepayPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDone: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
-    val fx = currency.isNotEmpty()
-    val dec = Currencies.of(currency).decimals
-    val refs = d.debtGroups().firstOrNull { it.who == who && it.currency == currency }?.refs ?: emptyList()
+    // 台幣排最前面，外幣照欠最久的順序
+    val groups = d.debtGroups().filter { it.who == who }.sortedBy { if (it.currency.isEmpty()) 0 else 1 }
     val selected = remember { mutableStateMapOf<Pair<Long, Int>, Boolean>() }
     fun isOn(r: DebtRef) = selected[r.key] != false
-    val active = refs.filter { isOn(it) }
-    val selUnits = active.sumOf { it.item.remainingUnits }
-    val selTwd = active.sumOf { it.item.remainingTwd }
-    // 台幣欠款只能用台幣帳戶還；外幣欠款也可以用同幣別的外幣帳戶還。投資帳戶不能拿來還錢
-    val accounts = d.visibleAccounts.filter { it.type != AccountType.INVEST && (!it.isForeign || (fx && it.currency == currency)) }
-    var accId by remember { mutableStateOf(d.frequentAccounts(5).firstOrNull { f -> accounts.any { it.id == f.id } }?.id ?: accounts.firstOrNull()?.id) }
-    var pickAcc by remember { mutableStateOf(false) }
+    val secs = remember(groups.joinToString(",") { it.currency }) {
+        groups.associate { g ->
+            val accs = repayAccounts(d, g.currency)
+            g.currency to RepaySec(d.frequentAccounts(5).firstOrNull { f -> accs.any { it.id == f.id } }?.id ?: accs.firstOrNull()?.id)
+        }
+    }
+    val calcs = groups.map { g -> RepayCalc(d, g, secs.getValue(g.currency)) { isOn(it) } }
+    val parts = calcs.filter { it.on }
+    var pickAccFor by remember { mutableStateOf<String?>(null) }
     var day by remember { mutableStateOf(LocalDate.now().toEpochDay()) }
     var timeMin by remember { mutableStateOf(LocalTime.now().let { it.hour * 60 + it.minute }) }
     var pickDate by remember { mutableStateOf(false) }
     var pickTime by remember { mutableStateOf(false) }
-    // 還的金額：沒有自己改過就跟著勾選的合計
-    var amountText by remember { mutableStateOf<String?>(null) }
-    var twdInput by remember { mutableStateOf<String?>(null) }
-    var settle by remember { mutableStateOf(false) }
-    val acc = accId?.let { d.accMap[it] }
-    val shownAmount = amountText ?: if (fx) fxPlain(selUnits, dec) else selUnits.toString()
-    val units = if (fx) (parseFx(shownAmount, dec) ?: 0L) else (shownAmount.filter { it.isDigit() }.toLongOrNull() ?: 0L)
-    val estTwd = if (selUnits > 0L) scaleRound(selTwd, units.coerceAtMost(selUnits), selUnits) else 0L
-    val twdAsk = fx && acc != null && !acc.isForeign
-    val twd = twdInput?.filter { it.isDigit() }?.toLongOrNull() ?: estTwd
-    val short = units in 1 until selUnits
-    val over = !fx && units > selUnits
-    val unitText: (Long) -> String = { if (fx) formatFx(it, currency) else formatMoney(it) }
 
     val tries = rememberNeedTries()
-    val need = firstNeed(
-        if (active.isEmpty()) Need("amount", "請先勾選這次要還的帳") else null,
-        if (units <= 0L) Need("amount", "請輸入還了多少") else null,
-        if (fx && units > selUnits) Need("amount", "外幣不能還得比勾選的多（${formatFx(selUnits, currency)}）") else null,
-        if (acc == null) Need("acc", "請選擇帳戶") else null,
-        if (twdAsk && twd <= 0L) Need("twd", "請輸入實際扣掉的台幣金額") else null,
-    )
+    val need = when {
+        calcs.isEmpty() -> null
+        calcs.all { it.active.isEmpty() } -> Need("amount${calcs.first().currency}", "請先勾選這次要還的帳")
+        parts.isEmpty() -> Need("amount${calcs.first { it.active.isNotEmpty() }.currency}", "請輸入還了多少")
+        else -> parts.firstNotNullOfOrNull { c ->
+            firstNeed(
+                if (c.fx && c.units > c.selUnits) Need("amount${c.currency}", "外幣不能還得比勾選的多（${formatFx(c.selUnits, c.currency)}）") else null,
+                if (c.acc == null) Need("acc${c.currency}", "請選擇帳戶") else null,
+                if (c.twdAsk && c.twd <= 0L) Need("twd${c.currency}", "請輸入實際扣掉的台幣金額") else null,
+            )
+        }
+    }
     val nv = NeedView(need, tries.count)
 
-    SubPage("還款・${ownerLabel(who)}" + if (fx) "（$currency）" else "", onBack) {
+    SubPage("還款・${ownerLabel(who)}", onBack) {
         Column(Modifier.fillMaxSize()) {
             Column(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                // 總結：一行一種幣別
                 CuteCard(Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("我還欠${ownerLabel(who)}（${refs.size} 筆）", style = MaterialTheme.typography.bodyLarge, color = cute.sub, modifier = Modifier.weight(1f))
-                        Text(unitText(refs.sumOf { it.item.remainingUnits }), style = MaterialTheme.typography.titleLarge, color = cute.expense)
+                    Text("我還欠${ownerLabel(who)}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    Spacer(Modifier.height(4.dp))
+                    calcs.forEach { c ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(currencyName(c.currency), style = MaterialTheme.typography.bodyLarge, color = cute.sub, modifier = Modifier.weight(1f))
+                            Text(
+                                c.unitText(c.g.remainingUnits) + (if (c.fx) "（約 ${formatMoney(c.g.remainingTwd)}・${c.g.refs.size} 筆）" else "（${c.g.refs.size} 筆）"),
+                                style = MaterialTheme.typography.bodyLarge, color = cute.expense,
+                            )
+                        }
                     }
-                    Spacer(Modifier.height(10.dp))
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("這次勾選 ${active.size} 筆，合計", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        Text(unitText(selUnits), style = MaterialTheme.typography.titleLarge, color = cute.expense)
-                    }
+                    if (calcs.isEmpty()) Text("沒有要還的欠款", style = MaterialTheme.typography.bodyMedium, color = cute.sub)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SoftButton("全選", { refs.forEach { selected[it.key] = true }; amountText = null }, compact = true)
-                        SoftButton("全不選", { refs.forEach { selected[it.key] = false }; amountText = null }, compact = true)
-                    }
-                }
-                CuteCard(Modifier.fillMaxWidth()) {
-                    Text(if (fx) "這次還了多少（$currency）" else "這次還了多少", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                    Spacer(Modifier.height(6.dp))
-                    CompactField(
-                        shownAmount, { v -> amountText = if (fx) fxInput(v, dec) else v.filter { c -> c.isDigit() }.take(9) },
-                        "金額", Modifier.fillMaxWidth().needInView(nv, "amount"), number = true, decimal = fx && dec > 0,
-                        prefix = if (fx) Currencies.of(currency).symbol.trim() else tw.moneybook.app.Money.twd,
-                        error = nv.on("amount"),
-                    )
-                    nv.Message("amount")
-                    if (short) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("比勾選的少 ${unitText(selUnits - units)}", style = MaterialTheme.typography.labelLarge, color = cute.expense)
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            CuteChip("還沒還完，剩下的繼續欠", !settle, { settle = false })
-                            CuteChip("這樣就算還清了", settle, { settle = true })
-                        }
-                        if (settle) Text("少付的 ${unitText(selUnits - units)} 不用還，從那幾筆的支出裡扣掉。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                    }
-                    if (over) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("比勾選的多 ${unitText(units - selUnits)}：算還清，多付的錢（手續費、湊整）加在最後一筆的支出上。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text("從哪個帳戶還", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                    Spacer(Modifier.height(4.dp))
-                    PickerButton(acc?.let { it.name + if (it.isForeign) "（${it.currency}）" else "" } ?: "選擇帳戶", { pickAcc = true })
-                    nv.Message("acc")
-                    if (twdAsk) {
-                        Spacer(Modifier.height(8.dp))
-                        CompactField(
-                            twdInput ?: estTwd.toString(), { v -> twdInput = v.filter { c -> c.isDigit() }.take(10) },
-                            "實際扣掉的台幣", Modifier.fillMaxWidth().needInView(nv, "twd"), number = true, prefix = tw.moneybook.app.Money.twd, error = nv.on("twd"),
-                        )
-                        nv.Message("twd")
-                        val diff = twd - estTwd
-                        if (units > 0L && estTwd > 0L && diff != 0L) {
-                            Text("預估 ${formatMoney(estTwd)} → 實際 ${formatMoney(twd)}，${if (diff > 0) "多" else "少"} ${formatMoney(kotlin.math.abs(diff))}；還清後支出改成實際金額。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                        }
-                    } else if (fx && acc != null) {
-                        Text("直接從「${acc.name}」扣 ${formatFx(units, currency)}，支出照記的時候的預估匯率。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        SoftButton("全選", { calcs.forEach { c -> c.g.refs.forEach { selected[it.key] = true }; c.s.amountText = null } }, compact = true)
+                        SoftButton("全不選", { calcs.forEach { c -> c.g.refs.forEach { selected[it.key] = false }; c.s.amountText = null } }, compact = true)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
                     CuteChip(tw.moneybook.app.formatTime(timeMin), false, { pickTime = true }, icon = "vec:clock")
                 }
-                Text("勾選這次要還的帳（由舊到新分配）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
-                refs.forEach { r ->
-                    CuteCard(Modifier.fillMaxWidth().alpha(if (isOn(r)) 1f else 0.55f)) {
+                calcs.forEach { c ->
+                    val k = c.currency
+                    CuteCard(Modifier.fillMaxWidth()) {
+                        Text(currencyName(k), style = MaterialTheme.typography.titleMedium)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            androidx.compose.material3.Checkbox(checked = isOn(r), onCheckedChange = { selected[r.key] = it; amountText = null })
-                            Column(Modifier.weight(1f)) {
-                                Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyLarge)
-                                if (billNote(r.t).isNotEmpty()) Text(catPath(d, r.t), style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                                Text(
-                                    "還剩 ${unitText(r.item.remainingUnits)}" + (if (fx) "（約 ${formatMoney(r.item.remainingTwd)}）" else "") +
-                                        if (r.item.pays.isNotEmpty()) "・已還 ${formatMoney(r.item.pays.sumOf { it.amount })}" else "",
-                                    style = MaterialTheme.typography.labelMedium, color = cute.sub,
-                                )
+                            Text("這次勾選 ${c.active.size} 筆，合計", style = MaterialTheme.typography.bodyMedium, color = cute.sub, modifier = Modifier.weight(1f))
+                            Text(c.unitText(c.selUnits), style = MaterialTheme.typography.titleMedium, color = cute.expense)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        c.g.refs.forEach { r ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp)).background(cute.soft)
+                                    .alpha(if (isOn(r)) 1f else 0.55f).padding(end = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                androidx.compose.material3.Checkbox(checked = isOn(r), onCheckedChange = { selected[r.key] = it; c.s.amountText = null })
+                                Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                                    Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyLarge)
+                                    if (billNote(r.t).isNotEmpty()) Text(catPath(d, r.t), style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                                    Text(
+                                        "還剩 ${c.unitText(r.item.remainingUnits)}" + (if (c.fx) "（約 ${formatMoney(r.item.remainingTwd)}）" else "") +
+                                            if (r.item.pays.isNotEmpty()) "・已還 ${formatMoney(r.item.pays.sumOf { it.amount })}" else "",
+                                        style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                                    )
+                                }
                             }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(if (c.fx) "這次還了多少（$k）" else "這次還了多少", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Spacer(Modifier.height(4.dp))
+                        CompactField(
+                            c.shown, { v -> c.s.amountText = if (c.fx) fxInput(v, c.dec) else v.filter { ch -> ch.isDigit() }.take(9) },
+                            "金額", Modifier.fillMaxWidth().needInView(nv, "amount$k"), number = true, decimal = c.fx && c.dec > 0,
+                            prefix = if (c.fx) Currencies.of(k).symbol.trim() else tw.moneybook.app.Money.twd,
+                            error = nv.on("amount$k"),
+                        )
+                        nv.Message("amount$k")
+                        if (c.active.isNotEmpty() && c.units <= 0L && calcs.size > 1) {
+                            Text("金額是 0：這次不還${currencyName(k)}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        }
+                        if (c.short) {
+                            Spacer(Modifier.height(6.dp))
+                            Text("比勾選的少 ${c.unitText(c.selUnits - c.units)}", style = MaterialTheme.typography.labelLarge, color = cute.expense)
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                CuteChip("還沒還完，剩下的繼續欠", !c.s.settle, { c.s.settle = false })
+                                CuteChip("這樣就算還清了", c.s.settle, { c.s.settle = true })
+                            }
+                            if (c.s.settle) Text("少付的 ${c.unitText(c.selUnits - c.units)} 不用還，從那幾筆的支出裡扣掉。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        }
+                        if (c.over) {
+                            Spacer(Modifier.height(6.dp))
+                            Text("比勾選的多 ${c.unitText(c.units - c.selUnits)}：算還清，多付的錢（手續費、湊整）加在最後一筆的支出上。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text("從哪個帳戶還", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        Spacer(Modifier.height(4.dp))
+                        PickerButton(c.acc?.let { it.name + if (it.isForeign) "（${it.currency}）" else "" } ?: "選擇帳戶", { pickAccFor = k })
+                        nv.Message("acc$k")
+                        if (c.twdAsk) {
+                            Spacer(Modifier.height(8.dp))
+                            CompactField(
+                                c.s.twdInput ?: c.estTwd.toString(), { v -> c.s.twdInput = v.filter { ch -> ch.isDigit() }.take(10) },
+                                "實際扣掉的台幣", Modifier.fillMaxWidth().needInView(nv, "twd$k"), number = true, prefix = tw.moneybook.app.Money.twd, error = nv.on("twd$k"),
+                            )
+                            nv.Message("twd$k")
+                            val diff = c.twd - c.estTwd
+                            if (c.units > 0L && c.estTwd > 0L && diff != 0L) {
+                                Text("預估 ${formatMoney(c.estTwd)} → 實際 ${formatMoney(c.twd)}，${if (diff > 0) "多" else "少"} ${formatMoney(kotlin.math.abs(diff))}；還清後支出改成實際金額。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                            }
+                        } else if (c.fx && c.acc != null) {
+                            Text("直接從「${c.acc.name}」扣 ${formatFx(c.units, k)}，支出照記的時候的預估匯率。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                         }
                     }
                 }
@@ -1499,15 +1550,19 @@ private fun DebtRepayPage(vm: MoneyViewModel, who: String, currency: String, onB
                 Button(
                     onClick = {
                         if (need != null) { tries.count++; return@Button }
-                        if (vm.repayDebt(who, currency, accId!!, day, timeMin, units, if (twdAsk) twd else 0L, short && settle, only = active.map { it.key }.toSet())) onDone()
+                        if (vm.repayDebts(who, parts.map { it.part() }, day, timeMin)) onDone()
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("確認還款 " + (if (twdAsk) formatMoney(twd) else unitText(units))) }
+                ) { Text("確認還款 " + parts.joinToString("＋") { it.unitText(it.units) }.ifEmpty { formatMoney(0L) }) }
             }
         }
     }
-    if (pickAcc) {
-        AccountPickDialog(vm = vm, accounts = accounts, selectedId = accId, onPick = { accId = it.id; pickAcc = false; twdInput = null }, onDismiss = { pickAcc = false }, title = "從哪個帳戶還")
+    pickAccFor?.let { k ->
+        val c = calcs.firstOrNull { it.currency == k }
+        if (c != null) AccountPickDialog(
+            vm = vm, accounts = c.accounts, selectedId = c.s.accId,
+            onPick = { c.s.accId = it.id; c.s.twdInput = null; pickAccFor = null }, onDismiss = { pickAccFor = null }, title = "從哪個帳戶還",
+        )
     }
     if (pickDate) CuteDatePickerDialog(day, { day = it; pickDate = false }, { pickDate = false }, "還款的日期")
     if (pickTime) TimePickerDialog(timeMin, { timeMin = it; pickTime = false }, { pickTime = false })
