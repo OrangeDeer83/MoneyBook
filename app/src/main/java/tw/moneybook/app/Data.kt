@@ -74,7 +74,13 @@ data class Category(
 data class ReimbPay(val day: Long, val accountId: Long?, val amount: Long, val time: Int = -1, val fxAmount: Long = 0L)
 
 /**
- * 一次還款（落在某一筆欠款上）：amount 是這次從帳戶實際扣掉的台幣（還外幣欠款時是實際扣的台幣；用同幣別外幣帳戶還時是約當台幣），
+ * 欠一個人的錢：amount 是記的時候欠多少（台幣；外幣欠款是預估的台幣），units 是外幣欠款欠的外幣（最小單位；台幣欠款是 0），
+ * pays 是還款記錄，done＝已經結清（不管實際還的比欠的多或少，都不會再追）。
+ */
+data class DebtItem(val who: String, val amount: Long, val units: Long = 0L, val pays: List<DebtPay> = emptyList(), val done: Boolean = false)
+
+/**
+ * 一次還款（落在某一項欠款上）：amount 是這次從帳戶實際扣掉的台幣（還外幣欠款時是實際扣的台幣；用同幣別外幣帳戶還時是約當台幣），
  * fxAmount 是外幣帳戶實際扣掉的外幣（最小單位，其他情況是 0），units 是這次沖掉的欠款（台幣欠款是台幣，外幣欠款是外幣最小單位；
  * 還的比欠的多時，多出來的錢只算在 amount 裡）。
  */
@@ -148,23 +154,24 @@ data class Txn(
     /** 外幣消費還沒請款：amount 是預估的台幣 */
     val fxPending: Boolean = false,
     /**
-     * 欠款：別人先墊、我還沒付的支出，這裡是欠誰（空白＝不是欠款）。欠款的 accountId 是 null：記的那天就算支出，
-     * 但沒有動任何帳戶，還款（debtPays）時才從帳戶扣。外幣欠款同時有 fxSpendAmount／fxSpendCur，還沒還清時 fxPending 是 true。
+     * 欠款：別人先幫我付、我還沒還的部分，每個人一項（見 Debt.kt）。有欠款時帳戶只扣我自己付的 debtSelf（是 0 時 accountId 是 null），
+     * 欠的部分等還款才從帳戶扣；整筆在記的那天就算支出。
      */
-    val debtTo: String = "",
-    /** 記欠款時的金額（台幣）；還清後 amount 會改成實際還的總額，刪掉還款要靠它還原 */
-    val debtOrig: Long = 0L,
-    /** 已經結清：不管實際還的比記的多或少，不會再追 */
-    val debtDone: Boolean = false,
-    val debtPays: List<DebtPay> = emptyList(),
+    val debtItems: List<DebtItem> = emptyList(),
+    /** 有欠款時我自己付的那一份（台幣，從 accountId 扣）；外幣消費還沒請款時是預估，請款後是實際 */
+    val debtSelf: Long = 0L,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
 
-    /** 實際金額：支出 = 原價 − 優惠 + 手續費；收入 = 金額 − 手續費；轉帳 = 轉帳金額 */
+    /**
+     * 實際金額：支出 = 原價 − 優惠 + 手續費；收入 = 金額 − 手續費；轉帳 = 轉帳金額。
+     * 有欠款的支出 = 自己付的 + 每一項欠款算進支出的金額（還清時多付、免掉的會反映在這裡）。
+     */
     val paid: Long
         get() = when (type) {
-            TxType.EXPENSE -> (amount - discount + fee).coerceAtLeast(0L)
+            TxType.EXPENSE -> if (debtItems.isNotEmpty()) (debtSelf + debtItems.sumOf { if (it.done) it.pays.sumOf { p -> p.amount } else it.amount }).coerceAtLeast(0L)
+            else (amount - discount + fee).coerceAtLeast(0L)
             TxType.INCOME -> (amount - fee).coerceAtLeast(0L)
             TxType.TRANSFER -> amount
         }
@@ -190,6 +197,9 @@ data class Txn(
             reimbAccountId = null, reimbDay = null,
             reimbItems = list,
         )
+
+    /** 記的時候的總額（原價 − 優惠 + 手續費）；欠款還清時多付、免掉的不會改它（明細的灰色小字） */
+    val recorded: Long get() = if (type == TxType.EXPENSE) (amount - discount + fee).coerceAtLeast(0L) else paid
 
     /** 報銷上限：原價 + 手續費（刷卡有優惠時，對方可能還是給你原價） */
     val reimbCap: Long get() = if (type == TxType.EXPENSE) amount + fee else 0L
@@ -312,7 +322,7 @@ data class AppData(
             t.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
             t.toAccountId?.let { id -> if (id != t.accountId) accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + t.flowFor(a) } }
             for (p in t.items.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + p.flowFor(a) } }
-            for (p in t.debtPays) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) - p.flowFor(a) } }
+            for (p in t.debtItems.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) - p.flowFor(a) } }
         }
         return m
     }
@@ -340,7 +350,7 @@ data class AppData(
                 if (p.accountId == accountId) ev.add(Ev("p${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 1 + i, p.flowFor(a)))
             }
             // 欠款的還款接在報銷收款後面（編號從 500 起，兩邊不會撞）
-            t.debtPays.forEachIndexed { i, p ->
+            t.debtItems.flatMap { it.pays }.forEachIndexed { i, p ->
                 if (p.accountId == accountId) ev.add(Ev("d${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 500 + i, -p.flowFor(a)))
             }
         }
@@ -522,7 +532,8 @@ fun sortTxns(list: List<Txn>): List<Txn> =
 fun Txn.flowFor(a: Account): Long {
     val fx = a.isForeign
     return when (type) {
-        TxType.EXPENSE -> if (accountId == a.id) -(if (fx) fxAmount else paid) else 0L
+        // 有欠款的支出，帳戶只扣自己付的那一份
+        TxType.EXPENSE -> if (accountId == a.id) -(if (fx) fxAmount else if (debtItems.isNotEmpty()) debtSelf else paid) else 0L
         TxType.INCOME -> if (accountId == a.id) (if (fx) fxAmount else paid) else 0L
         TxType.TRANSFER ->
             (if (toAccountId == a.id) (if (fx) fxAmount else amount) else 0L) -

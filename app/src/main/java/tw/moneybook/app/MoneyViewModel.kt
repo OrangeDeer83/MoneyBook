@@ -51,12 +51,24 @@ data class TxnDraft(
     val fxSpendAmount: Long = 0L,
     val fxSpendCur: String = "",
     val fxPending: Boolean = false,
-    /** 欠款：別人先墊、我還沒付，這裡是欠誰（空白＝一般記錄）；欠款沒有帳戶，還款時才動帳戶（見 Debt.kt） */
-    val debtTo: String = "",
+    /** 欠款：別人先幫我付的部分，每個人一項（空的＝沒有欠款）；帳戶只扣剩下我自己付的那一份（見 Debt.kt） */
+    val debtItems: List<DebtItem> = emptyList(),
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
 class ReimbReceipt(val txnId: Long, val index: Int, val amount: Long, val chase: Boolean, val fx: Long = 0L, val accountId: Long? = null)
+
+/**
+ * 套用欠款名單（新的、或還沒有還款記錄的）：自己付的 = 總額 − 欠款合計；全部都欠別人時沒有帳戶；
+ * 外幣消費依金額比例把外幣分給每個人；自己付的是 0 時沒有東西要請款。
+ */
+private fun withDebt(t: Txn, items: List<DebtItem>): Txn {
+    val list = items.filter { it.who.isNotBlank() && it.amount > 0L }.map { it.copy(who = it.who.trim(), pays = emptyList(), done = false) }
+    if (t.type != TxType.EXPENSE || list.isEmpty()) return t.copy(debtItems = emptyList(), debtSelf = 0L)
+    val self = (t.recorded - list.sumOf { it.amount }).coerceAtLeast(0L)
+    val withUnits = if (t.isFxSpend) splitDebtUnits(list, t.recorded, t.fxSpendAmount) else list
+    return t.copy(debtItems = withUnits, debtSelf = self, accountId = if (self > 0L) t.accountId else null, fxPending = t.fxPending && self > 0L)
+}
 
 /** 報銷總額不能超過原價 + 手續費；沒有收款紀錄又是 0 元的對象直接拿掉 */
 private fun capItems(t: Txn, items: List<ReimbItem>): List<ReimbItem> {
@@ -182,39 +194,34 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val d = data
         if (editId != null) {
             val old = d.txns.firstOrNull { it.id == editId } ?: return
-            // 已經有還款記錄的欠款：金額、幣別、還款都不動（畫面也不讓改），只改分類、日期、備註、標籤、欠誰
-            val locked = old.isDebt && old.debtPays.isNotEmpty() && dr.type == TxType.EXPENSE
-            val debt = dr.type == TxType.EXPENSE && dr.debtTo.isNotBlank()
+            // 欠款已經有還款記錄：金額、手續費／優惠、帳戶、外幣、欠款名單都不動（畫面也不讓改），只改分類、日期、備註、標籤
+            val locked = old.debtItems.any { it.pays.isNotEmpty() || it.done } && dr.type == TxType.EXPENSE
             var t = old.copy(
                 type = dr.type, amount = dr.amount, categoryId = dr.categoryId,
-                accountId = if (debt) null else dr.accountId, toAccountId = dr.toAccountId, day = dr.day,
+                accountId = dr.accountId, toAccountId = dr.toAccountId, day = dr.day,
                 note = dr.note, tags = dr.tags,
-                fee = if (debt) 0L else dr.fee, discount = if (dr.type == TxType.EXPENSE && !debt) dr.discount else 0L,
+                fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
                 adjust = old.adjust && dr.type != TxType.TRANSFER,
                 time = dr.time,
                 fxAmount = dr.fxAmount,
                 billMonth = dr.billMonth,
                 fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
-                // 欠款：沒有還款記錄時，金額跟著改（記欠款時的金額 debtOrig）；變回一般記錄就清掉欠款的欄位
-                debtTo = if (debt) dr.debtTo.trim() else "",
-                debtOrig = if (debt) dr.amount else 0L,
-                debtDone = false,
-                debtPays = emptyList(),
-            ).let { it.withItems(if (dr.type == TxType.EXPENSE && !debt) capItems(it, dr.reimbItems) else emptyList()) }
-            if (locked) {
-                t = t.copy(
-                    amount = old.amount, debtOrig = old.debtOrig, debtDone = old.debtDone, debtPays = old.debtPays,
+            )
+            t = if (locked) {
+                t.copy(
+                    amount = old.amount, fee = old.fee, discount = old.discount, accountId = old.accountId,
                     fxSpendAmount = old.fxSpendAmount, fxSpendCur = old.fxSpendCur, fxPending = old.fxPending,
-                    accountId = null, fee = 0L, discount = 0L, debtTo = dr.debtTo.trim().ifBlank { old.debtTo },
+                    debtItems = old.debtItems, debtSelf = old.debtSelf,
                 )
-            }
+            } else withDebt(t, dr.debtItems)
+            t = t.withItems(if (dr.type == TxType.EXPENSE) capItems(t, dr.reimbItems) else emptyList())
             commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
             savedTxnId = editId
             return
         }
         var next = d.nextId
         val bookId = d.currentBook.id
-        val debt = dr.type == TxType.EXPENSE && dr.debtTo.isNotBlank()
+        val debt = dr.type == TxType.EXPENSE && dr.debtItems.isNotEmpty()
         // 欠款不分期
         val n = if (dr.type == TxType.EXPENSE && !debt) dr.installments.coerceIn(1, 60) else 1
         val list = ArrayList<Txn>()
@@ -222,17 +229,16 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             list.add(
                 Txn(
                     id = next++, bookId = bookId, type = dr.type, amount = dr.amount,
-                    categoryId = dr.categoryId, accountId = if (debt) null else dr.accountId, toAccountId = dr.toAccountId,
+                    categoryId = dr.categoryId, accountId = dr.accountId, toAccountId = dr.toAccountId,
                     day = dr.day, note = dr.note, tags = dr.tags, time = dr.time,
-                    fee = if (debt) 0L else dr.fee, discount = if (dr.type == TxType.EXPENSE && !debt) dr.discount else 0L,
+                    fee = dr.fee, discount = if (dr.type == TxType.EXPENSE) dr.discount else 0L,
                     fxAmount = dr.fxAmount,
                     billMonth = dr.billMonth,
                     // 分期（n > 1）不支援外幣消費：這裡只有單筆
                     fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
-                    debtTo = if (debt) dr.debtTo.trim() else "", debtOrig = if (debt) dr.amount else 0L,
-                ).let {
+                ).let { withDebt(it, dr.debtItems) }.let {
                     it.withItems(
-                        if (dr.type == TxType.EXPENSE && !debt) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
+                        if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
                         else emptyList()
                     )
                 }
@@ -360,9 +366,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 還欠款（見 withDebtRepaid），可以復原；成功回傳 true */
-    fun repayDebt(who: String, currency: String, accountId: Long, day: Long, time: Int, units: Long, actualTwd: Long, settle: Boolean): Boolean {
+    fun repayDebt(who: String, currency: String, accountId: Long, day: Long, time: Int, units: Long, actualTwd: Long, settle: Boolean, only: Set<Pair<Long, Int>>? = null): Boolean {
         val d = data
-        val after = d.withDebtRepaid(who, currency, accountId, day, time, units, actualTwd, settle) ?: run {
+        val after = d.withDebtRepaid(who, currency, accountId, day, time, units, actualTwd, settle, only = only) ?: run {
             toast("還款的金額或帳戶不對")
             return false
         }
@@ -375,11 +381,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
-    /** 刪掉某一筆還款，那筆欠款重新變成還欠著（見 withDebtPayRemoved），可以復原 */
-    fun deleteDebtPay(txnId: Long, index: Int) {
+    /** 刪掉某一項欠款的某一筆還款，那一項重新變成還欠著（見 withDebtPayRemoved），可以復原 */
+    fun deleteDebtPay(txnId: Long, itemIndex: Int, payIndex: Int) {
         val d = data
         val old = d.txns.firstOrNull { it.id == txnId } ?: return
-        val after = d.withDebtPayRemoved(txnId, index) ?: return
+        val after = d.withDebtPayRemoved(txnId, itemIndex, payIndex) ?: return
         commit(after)
         _messages.tryEmit(UiMsg("已刪除這筆還款", "復原") {
             val now = data

@@ -36,15 +36,17 @@ import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
 import tw.moneybook.app.Currencies
 import tw.moneybook.app.DebtGroup
+import tw.moneybook.app.DebtRef
+import tw.moneybook.app.effective
+import tw.moneybook.app.remainingTwd
+import tw.moneybook.app.remainingUnits
+import tw.moneybook.app.totalUnits
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.Txn
 import tw.moneybook.app.debtCurrency
 import tw.moneybook.app.debtGroups
 import tw.moneybook.app.fxSpendNote
 import tw.moneybook.app.isFxSpend
-import tw.moneybook.app.debtRemainingTwd
-import tw.moneybook.app.debtRemainingUnits
-import tw.moneybook.app.debtTotalUnits
 import tw.moneybook.app.fmt
 import tw.moneybook.app.formatFx
 import tw.moneybook.app.formatMoney
@@ -127,7 +129,9 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
     var showSettled by remember { mutableStateOf(false) }
 
     @Composable
-    fun DebtLine(t: Txn) {
+    fun DebtLine(r: DebtRef) {
+        val t = r.t
+        val it0 = r.item
         val what = listOf(catPath(d, t), t.note.trim().lineSequence().firstOrNull()?.trim().orEmpty()).filter { it.isNotEmpty() }.joinToString("・")
         Column(Modifier.fillMaxWidth()) {
             Row(Modifier.fillMaxWidth().clickable { onEdit(t.id) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -137,16 +141,16 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
                 }
                 Text(
                     when {
-                        t.debtDone && t.debtPays.isEmpty() -> "免還"
-                        t.debtDone -> formatMoney(t.amount)
-                        t.debtPays.isEmpty() -> debtAmountText(t.debtTotalUnits, t.debtOrig, t.debtCurrency)
-                        else -> "剩 " + debtAmountText(t.debtRemainingUnits, t.debtRemainingTwd, t.debtCurrency)
+                        it0.done && it0.pays.isEmpty() -> "免還"
+                        it0.done -> formatMoney(it0.effective)
+                        it0.pays.isEmpty() -> debtAmountText(it0.totalUnits, it0.amount, r.currency)
+                        else -> "剩 " + debtAmountText(it0.remainingUnits, it0.remainingTwd, r.currency)
                     },
                     style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
-                    color = if (t.debtDone) cute.sub else cute.expense, maxLines = 1,
+                    color = if (it0.done) cute.sub else cute.expense, maxLines = 1,
                 )
             }
-            t.debtPays.forEachIndexed { i, p ->
+            it0.pays.forEachIndexed { i, p ->
                 val acc = p.accountId?.let { d.accMap[it] }
                 Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -154,7 +158,7 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
                             (acc?.let { "・${it.name}" } ?: ""),
                         style = MaterialTheme.typography.labelSmall, color = cute.income, modifier = Modifier.weight(1f), maxLines = 1,
                     )
-                    TextButton(onClick = { vm.deleteDebtPay(t.id, i) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    TextButton(onClick = { vm.deleteDebtPay(t.id, r.index, i) }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
                         Text("刪除還款", style = MaterialTheme.typography.labelSmall, color = cute.expense)
                     }
                 }
@@ -169,7 +173,7 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
                     Text("還欠著", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                     Text(formatMoney(groups.sumOf { it.remainingTwd }), style = MaterialTheme.typography.headlineMedium)
                     Text(
-                        "${groups.map { it.who }.distinct().size} 人、${groups.sumOf { it.txns.size }} 筆。別人先墊、我還沒轉帳的錢，記的那天就算支出，還款時才從帳戶扣。",
+                        "${groups.map { it.who }.distinct().size} 人、${groups.sumOf { it.refs.size }} 筆。別人先墊、我還沒轉帳的錢，記的那天就算支出，還款時才從帳戶扣。",
                         style = MaterialTheme.typography.bodySmall, color = cute.sub,
                     )
                 }
@@ -184,7 +188,7 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
                         Text(debtAmountText(g.remainingUnits, g.remainingTwd, g.currency), fontWeight = FontWeight.SemiBold, color = cute.expense)
                     }
                     Spacer(Modifier.height(6.dp))
-                    g.txns.forEach { DebtLine(it) }
+                    g.refs.forEach { DebtLine(it) }
                     Spacer(Modifier.height(8.dp))
                     SoftButton("還款", { repayKey = g.who to g.currency }, compact = true)
                 }
@@ -198,10 +202,10 @@ fun DebtScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
                     )
                 }
                 if (showSettled) {
-                    items(settled, key = { "s${it.id}" }) { t ->
+                    items(settled, key = { "s${it.t.id}_${it.index}" }) { r ->
                         CuteCard(Modifier.fillMaxWidth()) {
-                            Text(t.debtTo, style = MaterialTheme.typography.titleSmall)
-                            DebtLine(t)
+                            Text(r.who, style = MaterialTheme.typography.titleSmall)
+                            DebtLine(r)
                         }
                     }
                 }

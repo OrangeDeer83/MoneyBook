@@ -144,14 +144,15 @@ fun Txn.fxSpendNote(): String? {
     return formatFx(fxSpendAmount, fxSpendCur) + rate + if (fxPending) "（預估）" else "（實際）"
 }
 
-/** 還沒請款的外幣消費（目前帳本），最久的排前面（外幣欠款是還給別人的，不算在裡面，見 Debt.kt） */
-fun AppData.fxPendingList(): List<Txn> = bookTxns.filter { it.fxPending && it.isFxSpend && !it.isDebt }.sortedWith(compareBy({ it.day }, { it.id }))
+/** 還沒請款的外幣消費（目前帳本），最久的排前面（外幣欠款裡別人先付的部分不用請款，只有自己刷卡的那一份算，見 Debt.kt） */
+fun AppData.fxPendingList(): List<Txn> = bookTxns.filter { it.fxPending && it.isFxSpend }.sortedWith(compareBy({ it.day }, { it.id }))
 
 /** 請款：把預估的台幣改成銀行實際請款的台幣，標記消失；找不到、不是待請款、金額不對回傳 null */
 fun AppData.withFxSettled(id: Long, actualTwd: Long): AppData? {
     val t = txns.firstOrNull { it.id == id } ?: return null
-    if (!t.fxPending || !t.isFxSpend || t.isDebt || actualTwd <= 0L) return null
-    return copy(txns = txns.map { if (it.id == id) it.copy(amount = actualTwd, fxPending = false) else it })
+    if (!t.fxPending || !t.isFxSpend || actualTwd <= 0L) return null
+    // 有欠款的外幣消費：請款的只是自己刷卡的那一份
+    return copy(txns = txns.map { if (it.id == id) (if (it.isDebt) it.copy(debtSelf = actualTwd, fxPending = false) else it.copy(amount = actualTwd, fxPending = false)) else it })
 }
 
 /**

@@ -220,9 +220,9 @@ fun EditScreen(
     var fxsMinor by rememberSaveable { mutableStateOf(orig?.fxSpendAmount ?: 0L) }
     var fxsPending by rememberSaveable { mutableStateOf(orig?.fxPending ?: false) }
     // 欠款：別人先墊、我還沒付（見 Debt.kt）；開了就沒有帳戶，還款時才動帳戶。已經有還款記錄的不能改回一般、金額不能改
-    var debtWho by rememberSaveable { mutableStateOf(orig?.debtTo ?: "") }
+    var debtWho by rememberSaveable { mutableStateOf(orig?.debtItems?.firstOrNull()?.who ?: "") }
     val debtOn = debtWho.isNotBlank() && type == TxType.EXPENSE && !tplMode
-    val debtLocked = orig?.isDebt == true && orig.debtPays.isNotEmpty()
+    val debtLocked = orig?.debtItems?.any { it.pays.isNotEmpty() || it.done } == true
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -348,7 +348,7 @@ fun EditScreen(
         fxSpendAmount = if (fxsOn) fxsMinor else 0L,
         fxSpendCur = if (fxsOn) fxsCur else "",
         fxPending = fxsOn && (fxsPending || debtOn),
-        debtTo = if (debtOn) debtWho.trim() else "",
+        debtItems = if (debtOn) listOf(tw.moneybook.app.DebtItem(debtWho.trim(), actual)) else emptyList(),
     )
 
     val initialDraft = remember { draft() }

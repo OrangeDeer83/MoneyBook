@@ -122,7 +122,15 @@ class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?) {
 /** 這些記錄底下所有的報銷收款 */
 fun reimbRecvsOf(txns: List<Txn>): List<ReimbRecv> = txns.flatMap { t ->
     t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) } +
-        t.debtPays.mapIndexed { i, p -> ReimbRecv(t, t.debtTo, ReimbPay(p.day, p.accountId, p.amount, p.time, p.fxAmount), DEBT_IDX + i, debt = true) }
+        t.debtItems.flatMap { i -> i.pays.map { i.who to it } }
+            .mapIndexed { k, (who, p) -> ReimbRecv(t, who, ReimbPay(p.day, p.accountId, p.amount, p.time, p.fxAmount), DEBT_IDX + k, debt = true) }
+}
+
+/** 欠款對象的簡短寫法：一個人寫名字；多人時名字加起來不超過 8 個字就全列（A、B），太長就寫「3 人」 */
+fun debtWhoLabel(t: Txn): String {
+    val names = t.debtItems.map { it.who.trim() }.distinct()
+    val joined = names.joinToString("、")
+    return if (names.size <= 1 || joined.length <= 8) joined else "${names.size} 人"
 }
 
 /**
@@ -282,12 +290,13 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
                 if (t.isDebt) {
                     // 欠款：還沒付、還了一部分（剩多少）、已還清
                     Spacer(Modifier.width(6.dp))
-                    val open = !t.debtDone
+                    val open = t.debtItems.any { !it.done }
+                    val who = debtWhoLabel(t)
                     Text(
                         when {
-                            t.debtDone -> "已還清・${t.debtTo}"
-                            t.debtPays.isEmpty() -> "還沒付・欠 ${t.debtTo}"
-                            else -> "欠 ${t.debtTo} 還剩 ${formatMoney(t.debtRemainingTwd)}"
+                            !open -> "已還清・$who"
+                            t.debtItems.all { it.pays.isEmpty() } -> "還沒付・欠 $who"
+                            else -> "欠 $who 還剩 ${formatMoney(t.debtRemainingTwd)}"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = if (open) cute.expense else cute.income,
