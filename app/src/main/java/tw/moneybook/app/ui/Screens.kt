@@ -680,7 +680,9 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        if (pending.isNotEmpty()) {
+                        // 報銷（別人欠我）和欠款（我欠別人）合成一顆，寫淨額
+                        if (pending.isNotEmpty() || debts.isNotEmpty()) {
+                            val net = pending.sumOf { it.reimbOutstanding } - debts.sumOf { it.remainingTwd }
                             Row(
                                 Modifier.clip(CircleShape).background(cute.soft).clickable(onClick = onReimb)
                                     .padding(horizontal = 12.dp, vertical = 5.dp),
@@ -689,9 +691,13 @@ fun HomeScreen(
                                 IconGlyph("vec:receipt", 16.sp)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    "待報銷 ${pending.size} 筆・${formatMoney(pending.sumOf { it.reimbOutstanding })}  ›",
+                                    "報銷／欠款 " + when {
+                                        net > 0L -> "淨收 ${formatMoney(net)}"
+                                        net < 0L -> "淨欠 ${formatMoney(-net)}"
+                                        else -> "兩清"
+                                    } + "  ›",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.primary, maxLines = 1,
                                 )
                             }
                         }
@@ -706,18 +712,6 @@ fun HomeScreen(
                                 Spacer(Modifier.width(6.dp))
                                 // 顏色和旁邊的「待報銷」一樣
                                 Text("待請款外幣 ${fxPend.size} 筆  ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                            }
-                        }
-                        // 別人先墊、我還沒還的欠款
-                        if (debts.isNotEmpty()) {
-                            Row(
-                                Modifier.clip(CircleShape).background(cute.soft).clickable(onClick = onDebt)
-                                    .padding(horizontal = 12.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                IconGlyph("vec:book", 16.sp)
-                                Spacer(Modifier.width(6.dp))
-                                Text("欠款 ${formatMoney(debts.sumOf { it.remainingTwd })}  ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                             }
                         }
                     }

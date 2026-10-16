@@ -193,7 +193,6 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "data" -> DataScreen(vm) { pop() }
                 "reimb" -> ReimbScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "fxpending" -> FxPendingScreen(vm) { pop() }
-                "debt" -> DebtScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 else -> {
@@ -282,7 +281,6 @@ private fun MainTabs(
                     onManageBooks = { open("books") },
                     onReimb = { open("reimb") },
                     onFxPending = { open("fxpending") },
-                    onDebt = { open("debt") },
                 )
                 1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") })
                 2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") })
