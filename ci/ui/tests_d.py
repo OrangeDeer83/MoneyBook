@@ -3191,3 +3191,46 @@ def t_fetch_report_compact():
     d.time.sleep(0.8)
     ns = d.shot("全部列出")
     d.check("展開後 4 檔都看得到（含市值最小的 0056）", d.has(ns, "0056 0056", True) and not any(n.text.startswith("還有 ") for n in ns), [n.text for n in ns if n.text][:30])
+
+
+@case(D, "趨勢：長按存錢曲線、收支長條圖顯示那個月的數字，點其他地方才收起來", visual=True)
+def t_trend_long_press():
+    import re
+    d.fresh(f.base_seed())
+    f.tab("統計")
+    d.time.sleep(2)
+    d.tap_text("趨勢", exact=True)
+    d.time.sleep(2)
+    ns = d.nodes()
+    title = d.first(ns, "存錢趨勢", True)
+    legend = d.first(ns, " 累積存款", True) or next((n for n in ns if n.text.strip() == "累積存款"), None)
+    y = (title.cy + legend.cy) // 2 + 30
+    d.swipe(880, y, 880, y, 900)      # 長按最右邊（最近的那個月）
+    d.time.sleep(0.8)
+    ns = d.shot("長按存錢曲線")
+    d.check("跳出資訊框：年月、每月結餘、累積存款",
+            any(re.fullmatch(r"\d{4} 年 \d{1,2} 月", n.text) for n in ns) and d.has(ns, "每月結餘", True) and d.has(ns, "累積存款", True), [n.text for n in ns if n.text][:40])
+    d.time.sleep(1.5)
+    ns = d.nodes()
+    d.check("放開手指後資訊框還在", d.has(ns, "每月結餘", True), [n.text for n in ns if n.text][:30])
+    d.tap(d.first(ns, "存錢趨勢", True))
+    d.time.sleep(0.8)
+    ns = d.shot("點其他地方")
+    d.check("點其他地方後資訊框收起來", not d.has(ns, "每月結餘", True), [n.text for n in ns if n.text][:30])
+    # 收支長條圖
+    for _ in range(3):
+        ns = d.nodes()
+        bt = next((n for n in ns if n.text.startswith("近 ") and n.text.endswith("個月收支")), None)
+        if bt is not None and bt.cy < 1300:
+            break
+        d.swipe(540, 1700, 540, 1100, 600)
+        d.time.sleep(0.8)
+    ns = d.nodes()
+    bt = next(n for n in ns if n.text.startswith("近 ") and n.text.endswith("個月收支"))
+    lg = min((n for n in ns if n.text.strip() == "收入" and n.cy > bt.cy), key=lambda n: n.cy)
+    y = (bt.cy + lg.cy) // 2 + 20
+    d.swipe(880, y, 880, y, 900)
+    d.time.sleep(0.8)
+    ns = d.shot("長按收支長條圖")
+    d.check("長條圖的資訊框：年月、收入、支出、結餘",
+            any(re.fullmatch(r"\d{4} 年 \d{1,2} 月", n.text) for n in ns) and d.has(ns, "結餘", True) and sum(1 for n in ns if n.text == "支出") >= 1, [n.text for n in ns if n.text][:40])

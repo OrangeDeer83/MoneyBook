@@ -40,6 +40,27 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.sp
+import tw.moneybook.app.formatMoney
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import kotlin.random.Random
 
 // ───────────────────────── 圖表 ─────────────────────────
@@ -195,7 +216,109 @@ fun LabeledDonut(
     }
 }
 
-/** 成對長條圖：每組兩根（收入、支出），下方有標籤 */
+/**
+ * 圖表長按選到的那一點：哪一張圖（key）、第幾個、那張圖在畫面上的範圍。
+ * 選到後資訊框一直留著，點到那張圖以外的地方才收起來（見 ChartPickArea）。
+ */
+@Stable
+class ChartPick {
+    var key by mutableStateOf<String?>(null)
+    var index by mutableIntStateOf(-1)
+    var area: Rect = Rect.Zero
+    fun clear() { key = null; index = -1 }
+    fun of(k: String): Int = if (key == k) index else -1
+}
+
+val LocalChartPick = staticCompositionLocalOf<ChartPick?> { null }
+
+/** 包住有可長按圖表的整頁：手指按到選中的那張圖以外的地方（包括捲動），就把資訊框收起來 */
+@Composable
+fun ChartPickArea(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val pick = remember { ChartPick() }
+    val origin = remember { arrayOf(Offset.Zero) }
+    CompositionLocalProvider(LocalChartPick provides pick) {
+        Box(
+            modifier.onGloballyPositioned { origin[0] = it.positionInWindow() }.pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    if (pick.key != null && !pick.area.contains(down.position + origin[0])) pick.clear()
+                }
+            },
+        ) { content() }
+    }
+}
+
+/** 長按（約半秒）選這張圖最近的那一組，手指不放左右拖可以換；n 是有幾組（平均分在整個寬度） */
+@Composable
+private fun Modifier.chartPick(key: String, n: Int): Modifier {
+    val pick = LocalChartPick.current ?: return this
+    if (n <= 0) return this
+    val haptic = LocalHapticFeedback.current
+    val area = remember { arrayOf(Rect.Zero) }
+    return onGloballyPositioned {
+        area[0] = it.boundsInWindow()
+        if (pick.key == key) pick.area = area[0]
+    }.pointerInput(key, n) {
+        fun idx(x: Float) = (x / (size.width.toFloat() / n)).toInt().coerceIn(0, n - 1)
+        detectDragGesturesAfterLongPress(
+            onDragStart = { pos ->
+                pick.key = key
+                pick.area = area[0]
+                pick.index = idx(pos.x)
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            },
+            onDrag = { change, _ ->
+                change.consume()
+                pick.index = idx(change.position.x)
+            },
+        )
+    }
+}
+
+/** 資訊框的一行：標籤在左、數字在右 */
+class TipLine(val label: String, val value: String, val color: Color)
+
+/** 長按圖表跳出的資訊框：放在選到的那一組旁邊（右半邊的放左邊），寬度固定 */
+@Composable
+private fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, footer: List<TipLine> = emptyList()) {
+    val cute = LocalCute.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val tipW = 176.dp
+        val slot = maxWidth / n
+        val cx = slot * index + slot / 2
+        val left = (if (index >= n / 2.0) cx - tipW - 10.dp else cx + 10.dp).coerceIn(0.dp, (maxWidth - tipW).coerceAtLeast(0.dp))
+        Column(
+            Modifier.offset(x = left).width(tipW).clip(RoundedCornerShape(12.dp)).background(cute.card)
+                .border(1.dp, cute.soft, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = cute.ink)
+            lines.forEach { l ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(l.label, style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f))
+                    Text(l.value, style = MaterialTheme.typography.bodyMedium, color = l.color, maxLines = 1)
+                }
+            }
+            if (footer.isNotEmpty()) {
+                Row {
+                    footer.forEachIndexed { i, l ->
+                        Text(
+                            l.label + " " + l.value, style = MaterialTheme.typography.labelSmall, color = l.color, maxLines = 1,
+                            textAlign = if (i == 0) TextAlign.Start else TextAlign.End, modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 結餘的寫法：正的加 +，負的 - */
+private fun signedMoney(v: Long): String = (if (v >= 0) "+" else "-") + formatMoney(kotlin.math.abs(v))
+
+/**
+ * 成對長條圖：每組兩根（收入、支出），下方有標籤。titles 不是空的就可以長按看那一組的收入、支出、結餘（titles 是資訊框的標題，例如「2026 年 9 月」）。
+ */
 @Composable
 fun PairBars(
     labels: List<String>,
@@ -205,29 +328,47 @@ fun PairBars(
     colorB: Color,
     modifier: Modifier = Modifier,
     highlight: Int = -1,
+    titles: List<String> = emptyList(),
+    key: String = "bars",
 ) {
     val max = (a + b).maxOrNull()?.takeIf { it > 0 } ?: 1L
-    val grid = LocalCute.current.soft
-    val sub = LocalCute.current.sub
+    val cute = LocalCute.current
+    val grid = cute.soft
+    val sub = cute.sub
+    val n = labels.size.coerceAtLeast(1)
+    val sel = if (titles.isNotEmpty()) LocalChartPick.current?.of(key) ?: -1 else -1
     Column(modifier) {
-        Canvas(Modifier.fillMaxWidth().height(150.dp)) {
-            val n = labels.size.coerceAtLeast(1)
-            val slot = size.width / n
-            val barW = (slot * 0.28f).coerceAtMost(14.dp.toPx())
-            for (k in 1..3) {
-                val y = size.height * k / 4f
-                drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-            }
-            for (i in 0 until n) {
-                val cx = slot * i + slot / 2f
-                if (i == highlight) {
-                    drawRoundRect(grid.copy(alpha = 0.6f), Offset(slot * i + 2f, 0f), Size(slot - 4f, size.height), CornerRadius(8.dp.toPx()))
+        Box(if (titles.isNotEmpty()) Modifier.chartPick(key, labels.size) else Modifier) {
+            Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+                val slot = size.width / n
+                val barW = (slot * 0.28f).coerceAtMost(14.dp.toPx())
+                for (k in 1..3) {
+                    val y = size.height * k / 4f
+                    drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
                 }
-                val ha = size.height * (a.getOrElse(i) { 0L }.toFloat() / max)
-                val hb = size.height * (b.getOrElse(i) { 0L }.toFloat() / max)
-                val r = CornerRadius(barW / 2f)
-                if (ha > 0f) drawRoundRect(colorA, Offset(cx - barW - 1.5f, size.height - ha), Size(barW, ha), r)
-                if (hb > 0f) drawRoundRect(colorB, Offset(cx + 1.5f, size.height - hb), Size(barW, hb), r)
+                for (i in 0 until n) {
+                    val cx = slot * i + slot / 2f
+                    if (i == highlight || i == sel) {
+                        drawRoundRect(if (i == sel) sub.copy(alpha = 0.25f) else grid.copy(alpha = 0.6f), Offset(slot * i + 2f, 0f), Size(slot - 4f, size.height), CornerRadius(8.dp.toPx()))
+                    }
+                    val ha = size.height * (a.getOrElse(i) { 0L }.toFloat() / max)
+                    val hb = size.height * (b.getOrElse(i) { 0L }.toFloat() / max)
+                    val r = CornerRadius(barW / 2f)
+                    if (ha > 0f) drawRoundRect(colorA, Offset(cx - barW - 1.5f, size.height - ha), Size(barW, ha), r)
+                    if (hb > 0f) drawRoundRect(colorB, Offset(cx + 1.5f, size.height - hb), Size(barW, hb), r)
+                }
+            }
+            if (sel in labels.indices) {
+                val ia = a.getOrElse(sel) { 0L }
+                val ib = b.getOrElse(sel) { 0L }
+                ChartTip(
+                    sel, n, titles.getOrElse(sel) { labels[sel] },
+                    listOf(
+                        TipLine("收入", formatMoney(ia), colorA),
+                        TipLine("支出", formatMoney(ib), colorB),
+                        TipLine("結餘", signedMoney(ia - ib), if (ia >= ib) cute.income else cute.expense),
+                    ),
+                )
             }
         }
         Row(Modifier.fillMaxWidth()) {
@@ -245,9 +386,15 @@ fun PairBars(
     }
 }
 
-/** 存錢折線圖：累積存款（粗線＋漸層）與每月結餘（細線） */
+/**
+ * 存錢折線圖：累積存款（粗線＋漸層）與每月結餘（細線）。每個月只有一個點（那個月的總數），點和點之間的線只是連起來好看，不代表中間的日子。
+ * titles 不是空的就可以長按看那個月的每月結餘、累積存款、收入、支出（incs／exps 和 monthly 對齊）。
+ */
 @Composable
-fun SavingsLine(labels: List<String>, cumulative: List<Long>, monthly: List<Long>, modifier: Modifier = Modifier) {
+fun SavingsLine(
+    labels: List<String>, cumulative: List<Long>, monthly: List<Long>, modifier: Modifier = Modifier,
+    titles: List<String> = emptyList(), incs: List<Long> = emptyList(), exps: List<Long> = emptyList(),
+) {
     val primary = MaterialTheme.colorScheme.primary
     val cute = LocalCute.current
     val card = cute.card
@@ -256,57 +403,77 @@ fun SavingsLine(labels: List<String>, cumulative: List<Long>, monthly: List<Long
     val maxV = all.maxOrNull() ?: 0L
     val minV = all.minOrNull() ?: 0L
     val range = (maxV - minV).coerceAtLeast(1L).toFloat()
+    val key = "savings"
+    val sel = if (titles.isNotEmpty()) LocalChartPick.current?.of(key) ?: -1 else -1
     Column(modifier) {
         Row(Modifier.fillMaxWidth()) {
             Text(formatMoneyShort(maxV), style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.weight(1f))
         }
-        Canvas(Modifier.fillMaxWidth().height(160.dp)) {
-            if (n == 0) return@Canvas
-            val top = 10.dp.toPx()
-            val bottom = size.height - 10.dp.toPx()
-            val h = bottom - top
-            val slot = size.width / n
-            fun x(i: Int) = slot * i + slot / 2f
-            fun y(v: Long) = top + (maxV - v).toFloat() / range * h
+        Box(if (titles.isNotEmpty()) Modifier.chartPick(key, n) else Modifier) {
+            Canvas(Modifier.fillMaxWidth().height(160.dp)) {
+                if (n == 0) return@Canvas
+                val top = 10.dp.toPx()
+                val bottom = size.height - 10.dp.toPx()
+                val h = bottom - top
+                val slot = size.width / n
+                fun x(i: Int) = slot * i + slot / 2f
+                fun y(v: Long) = top + (maxV - v).toFloat() / range * h
 
-            // 0 的基準線
-            val zy = y(0L)
-            drawLine(
-                cute.sub.copy(alpha = 0.5f), Offset(0f, zy), Offset(size.width, zy),
-                strokeWidth = 1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
-            )
-
-            fun smooth(values: List<Long>): Path {
-                val p = Path()
-                p.moveTo(x(0), y(values[0]))
-                for (i in 1 until values.size) {
-                    val x0 = x(i - 1); val y0 = y(values[i - 1])
-                    val x1 = x(i); val y1 = y(values[i])
-                    val cx = (x0 + x1) / 2f
-                    p.cubicTo(cx, y0, cx, y1, x1, y1)
+                // 0 的基準線
+                val zy = y(0L)
+                drawLine(
+                    cute.sub.copy(alpha = 0.5f), Offset(0f, zy), Offset(size.width, zy),
+                    strokeWidth = 1.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)),
+                )
+                // 長按選到的那個月：一條直線
+                if (sel in 0 until n) {
+                    drawLine(cute.sub, Offset(x(sel), 0f), Offset(x(sel), size.height), strokeWidth = 1.dp.toPx())
                 }
-                return p
-            }
 
-            // 每月結餘（細線）
-            if (n > 1) drawPath(smooth(monthly), cute.accent2, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-            monthly.forEachIndexed { i, v -> drawCircle(cute.accent2, radius = 2.5.dp.toPx(), center = Offset(x(i), y(v))) }
+                fun smooth(values: List<Long>): Path {
+                    val p = Path()
+                    p.moveTo(x(0), y(values[0]))
+                    for (i in 1 until values.size) {
+                        val x0 = x(i - 1); val y0 = y(values[i - 1])
+                        val x1 = x(i); val y1 = y(values[i])
+                        val cx = (x0 + x1) / 2f
+                        p.cubicTo(cx, y0, cx, y1, x1, y1)
+                    }
+                    return p
+                }
 
-            // 累積存款：漸層面積 + 粗線
-            if (n > 1) {
-                val area = smooth(cumulative)
-                area.lineTo(x(n - 1), zy)
-                area.lineTo(x(0), zy)
-                area.close()
-                drawPath(area, Brush.verticalGradient(listOf(primary.copy(alpha = 0.30f), primary.copy(alpha = 0.02f)), startY = top, endY = bottom))
-                drawPath(smooth(cumulative), primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+                // 每月結餘（細線）
+                if (n > 1) drawPath(smooth(monthly), cute.accent2, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+                monthly.forEachIndexed { i, v -> drawCircle(cute.accent2, radius = (if (i == sel) 5f else 2.5f).dp.toPx(), center = Offset(x(i), y(v))) }
+
+                // 累積存款：漸層面積 + 粗線
+                if (n > 1) {
+                    val area = smooth(cumulative)
+                    area.lineTo(x(n - 1), zy)
+                    area.lineTo(x(0), zy)
+                    area.close()
+                    drawPath(area, Brush.verticalGradient(listOf(primary.copy(alpha = 0.30f), primary.copy(alpha = 0.02f)), startY = top, endY = bottom))
+                    drawPath(smooth(cumulative), primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+                }
+                cumulative.forEachIndexed { i, v ->
+                    val big = i == n - 1 || i == sel
+                    val r = if (big) 6.dp.toPx() else 4.dp.toPx()
+                    drawCircle(primary, radius = r, center = Offset(x(i), y(v)))
+                    // 選到的那一點實心，其他空心
+                    if (i != sel) drawCircle(card, radius = r - 2.dp.toPx(), center = Offset(x(i), y(v)))
+                }
             }
-            cumulative.forEachIndexed { i, v ->
-                val last = i == n - 1
-                val r = if (last) 6.dp.toPx() else 4.dp.toPx()
-                drawCircle(primary, radius = r, center = Offset(x(i), y(v)))
-                drawCircle(card, radius = r - 2.dp.toPx(), center = Offset(x(i), y(v)))
+            if (sel in 0 until n) {
+                val net = monthly[sel]
+                ChartTip(
+                    sel, n, titles.getOrElse(sel) { labels[sel] },
+                    listOf(
+                        TipLine("每月結餘", signedMoney(net), if (net >= 0) cute.income else cute.expense),
+                        TipLine("累積存款", formatMoney(cumulative[sel]), primary),
+                    ),
+                    if (incs.size == n && exps.size == n) listOf(TipLine("收", formatMoney(incs[sel]), cute.income), TipLine("支", formatMoney(exps[sel]), cute.expense)) else emptyList(),
+                )
             }
         }
         Row(Modifier.fillMaxWidth()) {

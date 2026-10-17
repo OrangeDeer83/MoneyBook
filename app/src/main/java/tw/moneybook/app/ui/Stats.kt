@@ -184,127 +184,130 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit) {
     val type = if (kind == 0) TxType.EXPENSE else TxType.INCOME
     val book = d.bookTxns
 
-    LazyColumn(
-        state = vm.statListState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("統計", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 4.dp))
-                PillSegment(listOf("月", "年", "區間", "趨勢"), mode, { vm.statMode = it })
+    // 長按圖表看數字：資訊框留著，點其他地方才收起來
+    ChartPickArea(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = vm.statListState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("統計", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                    PillSegment(listOf("月", "年", "區間", "趨勢"), mode, { vm.statMode = it })
+                }
             }
-        }
-        item {
-            Row(
-                Modifier.fillMaxWidth().clip(CircleShape).background(cute.card).clickable(onClick = onSearch)
-                    .padding(horizontal = 16.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:search", 18.sp) }
-                Spacer(Modifier.width(8.dp))
-                Text("搜尋記錄：備註、分類、標籤、金額…", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
+            item {
+                Row(
+                    Modifier.fillMaxWidth().clip(CircleShape).background(cute.card).clickable(onClick = onSearch)
+                        .padding(horizontal = 16.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides cute.sub) { IconGlyph("vec:search", 18.sp) }
+                    Spacer(Modifier.width(8.dp))
+                    Text("搜尋記錄：備註、分類、標籤、金額…", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
+                }
             }
-        }
 
-        if (mode == 3) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    CuteChip("近 6 個月", trendN == 6, { trendN = 6 })
-                    CuteChip("近 12 個月", trendN == 12, { trendN = 12 })
-                }
-            }
-            trend(this, book, vm.month, trendN)
-        } else {
-            item { PeriodBar(vm, mode) }
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    PillSegment(listOf("支出", "收入"), kind, { kind = it })
-                    Spacer(Modifier.weight(1f))
-                    CuteChip("依分類", group == 0, { group = 0 })
-                    Spacer(Modifier.width(6.dp))
-                    CuteChip("依標籤", group == 1, { group = 1 })
-                }
-            }
-            val scope = periodFilter(book, mode, vm)
-            val amt: (Txn) -> Long = { t -> if (t.adjust) 0L else if (gross && t.type == TxType.EXPENSE) t.paid else t.statAmount }
-            val list = scope.filter { it.type == type && amt(it) > 0 }
-            val transferFees = if (type == TxType.EXPENSE) scope.filter { it.type == TxType.TRANSFER }.sumOf { it.fee } else 0L
-            val reimbGain = if (type == TxType.INCOME) scope.sumOf { it.reimbGain } else 0L
-            val total = list.sumOf { amt(it) } + transferFees + reimbGain
-            if (type == TxType.EXPENSE && scope.any { it.type == TxType.EXPENSE && it.reimb != 0 }) {
+            if (mode == 3) {
                 item {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("報銷：", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                        CuteChip("只算自己負擔", !gross, { gross = false })
-                        CuteChip("含報銷全額", gross, { gross = true })
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CuteChip("近 6 個月", trendN == 6, { trendN = 6 })
+                        CuteChip("近 12 個月", trendN == 12, { trendN = 12 })
                     }
                 }
-            }
-
-            if (total == 0L) {
-                item { EmptyHint(d.prefs.mascot, "這段期間沒有${if (kind == 0) "支出" else "收入"}記錄") }
+                trend(this, book, vm.month, trendN)
             } else {
-                val typeOk: (Txn) -> Boolean = { t -> t.type == type && amt(t) > 0 }
-                val base = if (group == 0) byCategory(d, list, amt) else byTag(list, amt)
-                val extra = ArrayList<Slice>()
-                if (transferFees > 0) {
-                    val n = scope.count { it.type == TxType.TRANSFER && it.fee > 0 }
-                    extra.add(Slice("fee", "轉帳手續費", "img:stat_atm", Color.Gray, transferFees, n, { t -> t.type == TxType.TRANSFER && t.fee > 0 }, emptyList()))
-                }
-                if (reimbGain > 0) {
-                    val n = scope.count { it.reimbGain > 0 }
-                    extra.add(Slice("gain", "報銷回饋", "img:stat_cashback", Color.Gray, reimbGain, n, { t -> t.reimbGain > 0 }, emptyList()))
-                }
-                val slices = recolor(base + extra)
-                val sel = slices.getOrNull(selected)
+                item { PeriodBar(vm, mode) }
                 item {
-                    CuteCard(Modifier.fillMaxWidth()) {
-                        LabeledDonut(
-                            labels = slices.map { it.label },
-                            colors = slices.map { it.color },
-                            values = slices.map { it.amount },
-                            selected = selected,
-                            onSelect = { selected = if (it == selected) -1 else it },
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                if (sel != null) {
-                                    Text(iconLabel(sel.emoji, sel.label), style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                                    Text(formatMoney(sel.amount), style = MaterialTheme.typography.titleMedium, color = sel.color)
-                                    Text(
-                                        String.format("%.1f%%・%d 筆", sel.amount * 100.0 / total, sel.count),
-                                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
-                                    )
-                                } else {
-                                    Text(if (kind == 0) "總支出" else "總收入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                                    Text(formatMoney(total), style = MaterialTheme.typography.titleLarge)
-                                    Text(
-                                        if (group == 1) "標籤可重複計算" else "點圓餅看細節",
-                                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
-                                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        PillSegment(listOf("支出", "收入"), kind, { kind = it })
+                        Spacer(Modifier.weight(1f))
+                        CuteChip("依分類", group == 0, { group = 0 })
+                        Spacer(Modifier.width(6.dp))
+                        CuteChip("依標籤", group == 1, { group = 1 })
+                    }
+                }
+                val scope = periodFilter(book, mode, vm)
+                val amt: (Txn) -> Long = { t -> if (t.adjust) 0L else if (gross && t.type == TxType.EXPENSE) t.paid else t.statAmount }
+                val list = scope.filter { it.type == type && amt(it) > 0 }
+                val transferFees = if (type == TxType.EXPENSE) scope.filter { it.type == TxType.TRANSFER }.sumOf { it.fee } else 0L
+                val reimbGain = if (type == TxType.INCOME) scope.sumOf { it.reimbGain } else 0L
+                val total = list.sumOf { amt(it) } + transferFees + reimbGain
+                if (type == TxType.EXPENSE && scope.any { it.type == TxType.EXPENSE && it.reimb != 0 }) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("報銷：", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            CuteChip("只算自己負擔", !gross, { gross = false })
+                            CuteChip("含報銷全額", gross, { gross = true })
+                        }
+                    }
+                }
+
+                if (total == 0L) {
+                    item { EmptyHint(d.prefs.mascot, "這段期間沒有${if (kind == 0) "支出" else "收入"}記錄") }
+                } else {
+                    val typeOk: (Txn) -> Boolean = { t -> t.type == type && amt(t) > 0 }
+                    val base = if (group == 0) byCategory(d, list, amt) else byTag(list, amt)
+                    val extra = ArrayList<Slice>()
+                    if (transferFees > 0) {
+                        val n = scope.count { it.type == TxType.TRANSFER && it.fee > 0 }
+                        extra.add(Slice("fee", "轉帳手續費", "img:stat_atm", Color.Gray, transferFees, n, { t -> t.type == TxType.TRANSFER && t.fee > 0 }, emptyList()))
+                    }
+                    if (reimbGain > 0) {
+                        val n = scope.count { it.reimbGain > 0 }
+                        extra.add(Slice("gain", "報銷回饋", "img:stat_cashback", Color.Gray, reimbGain, n, { t -> t.reimbGain > 0 }, emptyList()))
+                    }
+                    val slices = recolor(base + extra)
+                    val sel = slices.getOrNull(selected)
+                    item {
+                        CuteCard(Modifier.fillMaxWidth()) {
+                            LabeledDonut(
+                                labels = slices.map { it.label },
+                                colors = slices.map { it.color },
+                                values = slices.map { it.amount },
+                                selected = selected,
+                                onSelect = { selected = if (it == selected) -1 else it },
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    if (sel != null) {
+                                        Text(iconLabel(sel.emoji, sel.label), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                        Text(formatMoney(sel.amount), style = MaterialTheme.typography.titleMedium, color = sel.color)
+                                        Text(
+                                            String.format("%.1f%%・%d 筆", sel.amount * 100.0 / total, sel.count),
+                                            style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                                        )
+                                    } else {
+                                        Text(if (kind == 0) "總支出" else "總收入", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                        Text(formatMoney(total), style = MaterialTheme.typography.titleLarge)
+                                        Text(
+                                            if (group == 1) "標籤可重複計算" else "點圓餅看細節",
+                                            style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+                    sliceRows(
+                        slices, total, expandedSet,
+                        onToggle = { key -> expandedSet = if (key in expandedSet) expandedSet - key else expandedSet + key },
+                        onOpen = { sl ->
+                            val base2: (Txn) -> Boolean = if (sl.key == "fee" || sl.key == "gain") sl.pred else ({ t: Txn -> typeOk(t) && sl.pred(t) })
+                            val useAmt: (Txn) -> Long = when (sl.key) {
+                                "fee" -> ({ t: Txn -> t.fee })
+                                "gain" -> ({ t: Txn -> t.reimbGain })
+                                else -> amt
+                            }
+                            vm.drill = tw.moneybook.app.Drill(iconLabel(sl.emoji, sl.label), mode, base2, useAmt)
+                            onDrill()
+                        },
+                    )
                 }
-                sliceRows(
-                    slices, total, expandedSet,
-                    onToggle = { key -> expandedSet = if (key in expandedSet) expandedSet - key else expandedSet + key },
-                    onOpen = { sl ->
-                        val base2: (Txn) -> Boolean = if (sl.key == "fee" || sl.key == "gain") sl.pred else ({ t: Txn -> typeOk(t) && sl.pred(t) })
-                        val useAmt: (Txn) -> Long = when (sl.key) {
-                            "fee" -> ({ t: Txn -> t.fee })
-                            "gain" -> ({ t: Txn -> t.reimbGain })
-                            else -> amt
-                        }
-                        vm.drill = tw.moneybook.app.Drill(iconLabel(sl.emoji, sl.label), mode, base2, useAmt)
-                        onDrill()
-                    },
-                )
+                if (mode == 1) item { YearOverview(scope, vm.statYear) }
+                if (mode == 2) item { RangeOverview(scope, vm.rangeStart, vm.rangeEnd) }
             }
-            if (mode == 1) item { YearOverview(scope, vm.statYear) }
-            if (mode == 2) item { RangeOverview(scope, vm.rangeStart, vm.rangeEnd) }
         }
     }
 }
@@ -445,6 +448,8 @@ private fun YearOverview(scope: List<Txn>, year: Int) {
             colorA = cute.income,
             colorB = cute.expense,
             highlight = if (now.year == year) now.monthValue - 1 else -1,
+            titles = (1..12).map { "$year 年 $it 月" },
+            key = "yearBars",
         )
         Spacer(Modifier.height(6.dp))
         Legend()
@@ -482,6 +487,8 @@ private fun trend(scope: LazyListScope, book: List<Txn>, end: YearMonth, n: Int)
     val nets = months.indices.map { incs[it] - exps[it] }
     val cumulative = nets.runningReduce { acc, v -> acc + v }
     val labels = months.map { if (n > 6 && it.monthValue % 2 == 0 && it != end) "" else "${it.monthValue}月" }
+    // 長按圖表時資訊框的標題
+    val titles = months.map { "${it.year} 年 ${it.monthValue} 月" }
     scope.item {
         val cute = LocalCute.current
         CuteCard(Modifier.fillMaxWidth()) {
@@ -497,7 +504,7 @@ private fun trend(scope: LazyListScope, book: List<Txn>, end: YearMonth, n: Int)
                 color = if (saved >= 0) cute.income else cute.expense,
             )
             Spacer(Modifier.height(12.dp))
-            SavingsLine(labels, cumulative, nets)
+            SavingsLine(labels, cumulative, nets, titles = titles, incs = incs, exps = exps)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -525,7 +532,7 @@ private fun trend(scope: LazyListScope, book: List<Txn>, end: YearMonth, n: Int)
             Text("近 $n 個月收支", style = MaterialTheme.typography.titleMedium)
             Text("${months.first().year}/${months.first().monthValue} ～ ${end.year}/${end.monthValue}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
             Spacer(Modifier.height(12.dp))
-            PairBars(labels, incs, exps, cute.income, cute.expense, highlight = n - 1)
+            PairBars(labels, incs, exps, cute.income, cute.expense, highlight = n - 1, titles = titles, key = "trendBars")
             Spacer(Modifier.height(6.dp))
             Legend()
             val active = exps.count { it > 0 }
