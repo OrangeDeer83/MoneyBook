@@ -2958,7 +2958,7 @@ def t_debt_and_reimb_together():
     f.save_edit()
     d.time.sleep(1)
     ns = d.shot("首頁")
-    d.check("粗體 -$0、灰色總額 300", d.has(ns, "-$0", True) and d.has(ns, "300", True), [n.text for n in ns if "$" in n.text or n.text.isdigit()][:20])
+    d.check("粗體 -$0、灰色總額 300（放不下時寫「總額 300」）", d.has(ns, "-$0", True) and (d.has(ns, "300", True) or d.has(ns, "總額 300", True)), [n.text for n in ns if "$" in n.text or "300" in n.text][:20])
     d.check("小字：我付 $100（現金）・欠 A、B 共 $200・報銷 C、D 共 $300", d.has(ns, "我付 $100（現金）・欠 A、B 共 $200・報銷 C、D 共 $300", True), [n.text for n in ns if "我付" in n.text])
     d.check("本月支出 $0", value_below(ns, "本月支出") == "$0", value_below(ns, "本月支出"))
     acc_tab()
@@ -3107,6 +3107,12 @@ def t_row_narrow_tags():
         # 約 288dp：很窄，標籤移到小字下面那一行
         d.sh("wm density 600")
         d.time.sleep(3)
+        # 很窄時上面的摘要變高，那一筆可能在畫面外：往下捲到看得到
+        for _ in range(4):
+            if any(n.text.startswith("我付") for n in d.nodes()):
+                break
+            d.swipe(540, 1700, 540, 900, 600)
+            d.time.sleep(0.8)
         ns = d.shot("很窄（約 288dp）")
         info = next((n for n in ns if n.text.startswith("我付")), None)
         tag = d.first(ns, "待報銷", True)
