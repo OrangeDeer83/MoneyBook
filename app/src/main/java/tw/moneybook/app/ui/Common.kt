@@ -250,6 +250,28 @@ fun MenuRow(emoji: String, title: String, subtitle: String?, onClick: () -> Unit
 }
 
 /** 子頁面的標題列 */
+/**
+ * 整頁的對話框（記一筆的報銷／欠款、快速加入庫存）：視窗蓋滿整個螢幕，內容自己用 statusBarsPadding／navigationBarsPadding 避開系統列。
+ * 只設 decorFitsSystemWindows = false 時，系統會把視窗往下推一個狀態列的高度、高度卻還是整個螢幕，最下面一截跑到畫面外
+ * （放在最下面的按鈕或摘要會被切掉），所以另外把視窗設成可以蓋到狀態列。
+ */
+@Composable
+fun FullScreenDialog(onDismissRequest: () -> Unit, content: @Composable () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+        androidx.compose.runtime.SideEffect {
+            window?.apply {
+                setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+            }
+        }
+        content()
+    }
+}
+
 @Composable
 fun SubTopBar(title: String, onBack: () -> Unit, actions: @Composable (() -> Unit)? = null) {
     Row(

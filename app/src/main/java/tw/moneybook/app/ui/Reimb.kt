@@ -331,10 +331,7 @@ fun ReimbEditPage(
         }
     }
 
-    Dialog(
-        onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
+    FullScreenDialog(onDismissRequest = onClose) {
         Column(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding().navigationBarsPadding().imePadding()

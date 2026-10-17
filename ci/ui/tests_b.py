@@ -676,6 +676,8 @@ def t_reimb_default_single():
     d.check("不再有「一人・全額」「分給多人」分頁", not d.has(ns, "一人・全額") and not d.has(ns, "分給多人"), [n.text for n in ns if n.text][:30])
     d.check("預設一列：對象空白、金額是實付 400", len(d.edits()) == 2 and d.edits()[1].text == "400", [e.text for e in d.edits()])
     d.check("有「＋ 新增對象」與「平分」", d.has(ns, "＋ 加一個人") and d.has(ns, "平分", False))
+    hint = d.first(ns, "點一下展開完整四行", True)
+    d.check("最下面固定的摘要整個看得到（沒有被切掉）", hint is not None and hint.y2 - hint.y1 >= 30, (hint.y1, hint.y2) if hint else None)
     d.fill(d.edits()[0], "Zed")
     d.hide_ime()
     done_reimb()

@@ -141,7 +141,7 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
         if (vm.addQuickHoldings(a.id, day, items, curs.associateWith { rateOfCur(it) })) onClose()
     }
 
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    FullScreenDialog(onDismissRequest = onClose) {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(AppIcons.ChevronLeft, contentDescription = "返回") }
