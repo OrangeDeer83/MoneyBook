@@ -388,7 +388,8 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
             fun tagW(s: String): Float = w(s, typo.labelSmall) + 12.dp.toPx() + 6.dp.toPx()
             // 列寬扣掉左右留白、圖示（40）、圖示後的間距（12）、金額前的間距（8）
             val inner = (maxWidth - (if (highlight) 22.dp else 12.dp) - 12.dp - 60.dp).toPx()
-            val titleNeed = w(titleHead, typo.bodyLarge) + 28.dp.toPx()
+            // 大分類名稱很長時最多保留標題區的 45%，其餘照舊用「…」截掉，不然標籤永遠被推到下一行
+            val titleNeed = minOf(w(titleHead, typo.bodyLarge), inner * 0.45f) + 28.dp.toPx()
             val amountW = w(sign + shownText, typo.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
             val feesW = if (fees.isEmpty()) 0f else w(fees.joinToString("・"), typo.labelSmall)
             val right0 = maxOf(amountW + (gray?.let { w(it, typo.bodyMedium) + 8.dp.toPx() } ?: 0f), feesW)
