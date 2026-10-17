@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -387,7 +388,7 @@ fun PairBars(
 }
 
 /**
- * 存錢折線圖：累積存款（粗線＋漸層）與每月結餘（細線）。每個月只有一個點（那個月的總數），點和點之間的線只是連起來好看，不代表中間的日子。
+ * 存錢折線圖：累積存款（粗線＋漸層）與每月結餘（細線）。每個月只有一個點（那個月的總數），點和點之間用直線連，不代表中間的日子。
  * titles 不是空的就可以長按看那個月的每月結餘、累積存款、收入、支出（incs／exps 和 monthly 對齊）。
  */
 @Composable
@@ -431,30 +432,26 @@ fun SavingsLine(
                     drawLine(cute.sub, Offset(x(sel), 0f), Offset(x(sel), size.height), strokeWidth = 1.dp.toPx())
                 }
 
-                fun smooth(values: List<Long>): Path {
+                // 每個月只有一個點：用直線連起來（曲線看起來像有每天的資料，容易誤會）
+                fun line(values: List<Long>): Path {
                     val p = Path()
                     p.moveTo(x(0), y(values[0]))
-                    for (i in 1 until values.size) {
-                        val x0 = x(i - 1); val y0 = y(values[i - 1])
-                        val x1 = x(i); val y1 = y(values[i])
-                        val cx = (x0 + x1) / 2f
-                        p.cubicTo(cx, y0, cx, y1, x1, y1)
-                    }
+                    for (i in 1 until values.size) p.lineTo(x(i), y(values[i]))
                     return p
                 }
 
                 // 每月結餘（細線）
-                if (n > 1) drawPath(smooth(monthly), cute.accent2, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+                if (n > 1) drawPath(line(monthly), cute.accent2, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                 monthly.forEachIndexed { i, v -> drawCircle(cute.accent2, radius = (if (i == sel) 5f else 2.5f).dp.toPx(), center = Offset(x(i), y(v))) }
 
                 // 累積存款：漸層面積 + 粗線
                 if (n > 1) {
-                    val area = smooth(cumulative)
+                    val area = line(cumulative)
                     area.lineTo(x(n - 1), zy)
                     area.lineTo(x(0), zy)
                     area.close()
                     drawPath(area, Brush.verticalGradient(listOf(primary.copy(alpha = 0.30f), primary.copy(alpha = 0.02f)), startY = top, endY = bottom))
-                    drawPath(smooth(cumulative), primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+                    drawPath(line(cumulative), primary, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
                 cumulative.forEachIndexed { i, v ->
                     val big = i == n - 1 || i == sel
