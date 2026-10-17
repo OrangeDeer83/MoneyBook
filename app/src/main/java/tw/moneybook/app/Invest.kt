@@ -275,9 +275,21 @@ fun AppData.withTradeUpdated(
     )
 }
 
-/** 一檔的抓價結果（抓價完成後列給使用者看） */
-data class FetchResult(val symbol: String, val name: String, val market: String, val price: Double?, val currency: String = "") {
+/** 抓到的價格和上次差超過這個比例，就在抓價結果提醒確認（常見原因：選錯市場、股票分割／合併） */
+const val PRICE_JUMP = 0.30
+
+/**
+ * 一檔的抓價結果（抓價完成後列給使用者看）。prev／prevDay：這次抓之前最近一次記下的價格（抓價或手動輸入的，同幣別）；
+ * value：這一檔的台幣市值（所有帳戶合計），結果只列市值最大的幾檔。
+ */
+data class FetchResult(
+    val symbol: String, val name: String, val market: String, val price: Double?, val currency: String = "",
+    val prev: Double? = null, val prevDay: Long = 0L, val value: Long = 0L,
+) {
     val ok: Boolean get() = price != null
+
+    /** 抓到了，但和上次的價格差超過 PRICE_JUMP */
+    val bigMove: Boolean get() = price != null && prev != null && prev > 0.0 && kotlin.math.abs(price / prev - 1.0) > PRICE_JUMP
 }
 
 /**

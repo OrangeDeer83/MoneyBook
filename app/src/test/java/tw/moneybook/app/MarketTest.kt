@@ -93,4 +93,13 @@ class MarketTest {
         assertTrue(FetchResult("0050", "ETF", "TW", 120.5).ok)
         assertFalse(FetchResult("ZZZ", "", "US", null).ok)
     }
+
+    @Test
+    fun fetchResultBigMoveWhenPriceJumpsOver30Percent() {
+        assertTrue(FetchResult("1234", "", "TW", 116.0, prev = 58.0).bigMove)       // 翻倍（可能分割或選錯市場）
+        assertTrue(FetchResult("1234", "", "TW", 40.0, prev = 58.0).bigMove)        // 跌超過 30%
+        assertFalse(FetchResult("0050", "", "TW", 75.0, prev = 58.0).bigMove)       // 漲 29%：不提醒
+        assertFalse(FetchResult("0050", "", "TW", 120.0).bigMove)                   // 沒有上次的價格
+        assertFalse(FetchResult("ZZZ", "", "US", null, prev = 10.0).bigMove)        // 沒抓到另外列
+    }
 }

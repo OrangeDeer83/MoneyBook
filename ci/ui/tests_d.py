@@ -503,7 +503,7 @@ def t_invest_fetch_real():
     d.tap_text("開啟並抓價", exact=True)
     d.wait_text("抓價結果", timeout=60)
     ns = d.shot("抓價結果")
-    d.check("結果顯示已更新 1 檔（沒有的話代表網路不通或抓不到）", d.has(ns, "已更新（1 檔）"), [n.text for n in ns if "檔" in n.text])
+    d.check("結果顯示「1 檔都更新了」（沒有的話代表網路不通或抓不到）", d.has(ns, "1 檔都更新了", True), [n.text for n in ns if "檔" in n.text])
     d.tap_text("關閉", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("抓價後")
@@ -3165,3 +3165,29 @@ def t_person_bill_opens_edit():
     d.time.sleep(1.5)
     ns = d.shot("按完成")
     d.check("存好後也回到 Amy 的頁面", d.has(ns, "我欠Amy（欠款）", True), [n.text for n in ns if n.text][:30])
+
+
+@case(D, "抓價結果：價格變動很大的用警示色列出，成功的只列市值最大的 3 檔、其他可以展開", visual=True)
+def t_fetch_report_compact():
+    # 這個用例會真的連 Yahoo Finance，雲端沒有網路時會失敗
+    s = empty_seed(invest=True)
+    # 0050 上次記的價格是 1.00，抓到的一定差超過 30%：要出現在「價格變動很大」
+    s.trade(-10, "0050", True, 10, 1, 0, "ETF", market="TW")
+    s.price("0050", -5, 1.0)
+    # 另外 4 檔沒有記過價格：只列市值最大的 3 檔，其他收起來
+    for i, sym in enumerate(("2330", "2317", "2454", "0056")):
+        s.trade(-10, sym, True, 100 * (4 - i), 10, 0, sym, market="TW")
+    d.fresh(s.json())
+    open_account("測試證券")
+    d.tap_text("抓最新價格", exact=True)
+    d.wait_text("上網抓最新價格？", timeout=10)
+    d.tap_text("開啟並抓價", exact=True)
+    d.wait_text("抓價結果", timeout=90)
+    d.time.sleep(1)
+    ns = d.shot("抓價結果")
+    d.check("「價格變動很大 1 檔（請確認）」列出 0050，寫上次的價格", d.has(ns, "價格變動很大 1 檔（請確認）", True) and any(n.text.startswith("上次 ") and "1.00 →" in n.text for n in ns), [n.text for n in ns if n.text][:30])
+    d.check("其他 4 檔只列 3 檔，有「還有 1 檔　全部列出」", d.has(ns, "其他 4 檔都更新了", True) and any(n.text.startswith("還有 1 檔") for n in ns), [n.text for n in ns if n.text][:30])
+    d.tap(d.wait(lambda n: n.text.startswith("還有 1 檔"), 5, "全部列出"))
+    d.time.sleep(0.8)
+    ns = d.shot("全部列出")
+    d.check("展開後 4 檔都看得到（含市值最小的 0056）", d.has(ns, "0056 0056", True) and not any(n.text.startswith("還有 ") for n in ns), [n.text for n in ns if n.text][:30])

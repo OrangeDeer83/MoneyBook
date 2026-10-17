@@ -318,42 +318,77 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     }
 }
 
-/** 抓價結果：沒抓到的列出來，抓到的列出價格（投資帳戶頁和帳戶總覽的「更新全部價格」共用） */
+/**
+ * 抓價結果（投資帳戶頁和帳戶總覽的「更新全部價格」共用）：有問題的用警示色放最上面、一定全部列出
+ * （紅：沒抓到；橘：和上次的價格差超過 30%，見 FetchResult.bigMove）；其他成功的只列市值最大的 3 檔，點「全部列出」才展開。
+ */
 @Composable
 fun FetchReportDialog(vm: MoneyViewModel) {
     val cute = LocalCute.current
     vm.fetchReport?.let { rep ->
         val failed = rep.filter { !it.ok }
-        val okList = rep.filter { it.ok }
+        val jumps = rep.filter { it.bigMove }
+        val fine = rep.filter { it.ok && !it.bigMove }.sortedByDescending { it.value }
+        var showAll by remember(rep) { mutableStateOf(false) }
+        fun label(r: tw.moneybook.app.FetchResult) = if (r.name.isNotBlank()) "${r.name} ${r.symbol}" else r.symbol
         AlertDialog(
             onDismissRequest = { vm.fetchReport = null },
             title = { Text("抓價結果") },
             text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (failed.isNotEmpty()) {
-                        Text("沒抓到（${failed.size} 檔）", style = MaterialTheme.typography.titleSmall, color = cute.expense)
-                        failed.forEach { r ->
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cute.expense.copy(alpha = 0.12f)).padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text("沒抓到 ${failed.size} 檔", style = MaterialTheme.typography.titleSmall, color = cute.expense)
+                            failed.forEach { r ->
+                                Text(label(r) + if (r.market.isNotBlank()) "（${Markets.label(r.market)}）" else "", style = MaterialTheme.typography.bodyMedium, color = cute.expense)
+                            }
                             Text(
-                                (if (r.name.isNotBlank()) "${r.name} ${r.symbol}" else r.symbol) + if (r.market.isNotBlank()) "（${Markets.label(r.market)}）" else "",
-                                style = MaterialTheme.typography.bodyMedium,
+                                "請確認市場和代號對不對（例如韓股要選「韓股」、日股代號不用加 .T），或點持股那一列手動輸入現價。也可能是網路不通。",
+                                style = MaterialTheme.typography.bodySmall, color = cute.sub,
                             )
                         }
-                        Text(
-                            "請確認市場和代號對不對（例如韓股要選「韓股」、日股代號不用加 .T），或點持股那一列手動輸入現價。也可能是網路不通。",
-                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
-                        )
                     }
-                    if (okList.isNotEmpty()) {
-                        Text("已更新（${okList.size} 檔）", style = MaterialTheme.typography.titleSmall)
-                        Text("下面是各檔最後一筆成交價（休市時是上一個交易日的收盤價），已經套用到持股的現價。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                        okList.forEach { r ->
-                            Row(Modifier.fillMaxWidth()) {
+                    if (jumps.isNotEmpty()) {
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cute.accent2.copy(alpha = 0.3f)).padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text("價格變動很大 ${jumps.size} 檔（請確認）", style = MaterialTheme.typography.titleSmall, color = cute.ink)
+                            jumps.forEach { r ->
+                                val pct = Math.round((r.price!! / r.prev!! - 1.0) * 100.0)
+                                val day = LocalDate.ofEpochDay(r.prevDay)
+                                Text(label(r), style = MaterialTheme.typography.bodyMedium, color = cute.ink)
                                 Text(
-                                    if (r.name.isNotBlank()) "${r.name} ${r.symbol}" else r.symbol,
-                                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
+                                    "上次 ${day.monthValue}/${day.dayOfMonth} ${unitPrice(r.prev, r.currency)} → ${unitPrice(r.price, r.currency)}（${if (pct > 0) "+" else ""}$pct%）",
+                                    style = MaterialTheme.typography.bodySmall, color = cute.ink,
                                 )
-                                Text(unitPrice(r.price ?: 0.0, r.currency), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
                             }
+                            Text(
+                                "和上次的價格差超過 30%：可能選錯市場、或股票分割／合併。價格還是先套用了，不對的話點持股那一列改。",
+                                style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                            )
+                        }
+                    }
+                    if (fine.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                if (failed.isEmpty() && jumps.isEmpty()) "${fine.size} 檔都更新了" else "其他 ${fine.size} 檔都更新了",
+                                style = MaterialTheme.typography.titleSmall, color = cute.income,
+                            )
+                            if (fine.size > 3 && !showAll) Text("市值最大的幾檔：", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                            (if (showAll) fine else fine.take(3)).forEach { r ->
+                                Row(Modifier.fillMaxWidth()) {
+                                    Text(label(r), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Text(unitPrice(r.price ?: 0.0, r.currency), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                                }
+                            }
+                            if (fine.size > 3 && !showAll) {
+                                SoftButton("還有 ${fine.size - 3} 檔　全部列出 ▾", { showAll = true }, compact = true)
+                            }
+                            Text("價格是各檔最後一筆成交價（休市時是上一個交易日的收盤價），已經套用到持股的現價。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                         }
                     }
                 }
