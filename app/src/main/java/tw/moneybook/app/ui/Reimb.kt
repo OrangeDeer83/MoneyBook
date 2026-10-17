@@ -746,19 +746,42 @@ private fun ReimbHome(
                                 Icon(AppIcons.ChevronRight, contentDescription = null, tint = cute.sub)
                             }
                             Spacer(Modifier.height(6.dp))
+                            // 一個方向一條細 bar：報銷看收回多少、欠款看還了多少（外幣用約當台幣），只算還沒結清的帳
+                            @Composable
+                            fun progress(text: String, color: androidx.compose.ui.graphics.Color, pct: String, frac: Float, barColor: androidx.compose.ui.graphics.Color) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(text, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                                    Text(pct, style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                SplitBar(listOf(frac to barColor), height = 6.dp)
+                                Spacer(Modifier.height(4.dp))
+                            }
                             if (m.claims.isNotEmpty()) {
+                                val due = m.claims.sumOf { it.item.amount }
+                                val got = m.claims.sumOf { it.item.received }
+                                progress("${ownerLabel(m.who)}欠我 ${formatMoney(m.oweMe)}（${m.claims.size} 筆）", cute.income, "已收 ${pctOf(got, due)}%", got.toFloat() / due.coerceAtLeast(1L), cute.income)
                                 val oldest = m.claims.minWith(compareBy({ it.txn.day }, { it.txn.id }))
-                                Text("${ownerLabel(m.who)}欠我 ${formatMoney(m.oweMe)}（${m.claims.size} 筆）", style = MaterialTheme.typography.bodyMedium, color = cute.income)
                                 Text(
                                     "欠最久：${billLabel(d, oldest.txn)} ${formatMoney(oldest.item.remaining)}" + if (m.claims.size > 1) "（另有 ${m.claims.size - 1} 筆）" else "",
                                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                                 )
+                                Spacer(Modifier.height(4.dp))
                             }
-                            m.debts.forEach { g ->
-                                Text(
-                                    "我欠${ownerLabel(m.who)} " + (if (g.currency.isEmpty()) formatMoney(g.remainingTwd) else "${formatFx(g.remainingUnits, g.currency)}（約 ${formatMoney(g.remainingTwd)}）") + "（${g.refs.size} 筆）",
-                                    style = MaterialTheme.typography.bodyMedium, color = cute.expense,
-                                )
+                            if (m.debts.isNotEmpty()) {
+                                val refs = m.debts.flatMap { it.refs }
+                                val total = refs.sumOf { it.item.amount }
+                                val left = refs.sumOf { it.item.remainingTwd }
+                                val parts = m.debts.sortedBy { if (it.currency.isEmpty()) 0 else 1 }
+                                    .map { g -> if (g.currency.isEmpty()) formatMoney(g.remainingUnits) else formatFx(g.remainingUnits, g.currency) }
+                                // 幣別用＋連起來；三種以上或太長就寫幾種幣別、約多少台幣
+                                val amt = when {
+                                    parts.size == 1 && m.debts[0].currency.isEmpty() -> "${parts[0]}（${refs.size} 筆）"
+                                    parts.size == 1 -> "${parts[0]}（約 ${formatMoney(m.iOwe)}）"
+                                    parts.size >= 3 || parts.joinToString("＋").length > 22 -> "${parts.size} 種幣別・約 ${formatMoney(m.iOwe)}"
+                                    else -> parts.joinToString("＋")
+                                }
+                                progress("我欠${ownerLabel(m.who)} $amt", cute.expense, "已還 ${pctOf((total - left).coerceAtLeast(0L), total)}%", (total - left).toFloat() / total.coerceAtLeast(1L), cute.accent2)
                             }
                             Text(
                                 if (days >= 1L) "最久的已經 $days 天" else "今天記的",
