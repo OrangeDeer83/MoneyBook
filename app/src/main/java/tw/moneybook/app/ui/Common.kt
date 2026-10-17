@@ -264,7 +264,10 @@ fun FullScreenDialog(onDismissRequest: () -> Unit, content: @Composable () -> Un
         val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
         androidx.compose.runtime.SideEffect {
             window?.apply {
-                setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                // 高度用整個螢幕（含手勢列），MATCH_PARENT 會少掉手勢列那一條，露出後面變暗的底色
+                val h = if (android.os.Build.VERSION.SDK_INT >= 30) windowManager.currentWindowMetrics.bounds.height()
+                else android.util.DisplayMetrics().also { @Suppress("DEPRECATION") windowManager.defaultDisplay.getRealMetrics(it) }.heightPixels
+                setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, h)
                 addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
             }
         }
