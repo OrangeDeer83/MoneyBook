@@ -761,7 +761,7 @@ private fun ReimbHome(
                             if (m.claims.isNotEmpty()) {
                                 val due = m.claims.sumOf { it.item.amount }
                                 val got = m.claims.sumOf { it.item.received }
-                                progress("${ownerLabel(m.who)}欠我 ${formatMoney(m.oweMe)}（${m.claims.size} 筆）", cute.income, "已收 ${pctOf(got, due)}%", got.toFloat() / due.coerceAtLeast(1L), cute.income)
+                                progress("${ownerLabel(m.who)}欠我 ${formatMoney(m.oweMe)}（共 ${m.claims.size} 筆）", cute.income, "已收 ${pctOf(got, due)}%", got.toFloat() / due.coerceAtLeast(1L), cute.income)
                                 val oldest = m.claims.minWith(compareBy({ it.txn.day }, { it.txn.id }))
                                 Text(
                                     "欠最久：${billLabel(d, oldest.txn)} ${formatMoney(oldest.item.remaining)}" + if (m.claims.size > 1) "（另有 ${m.claims.size - 1} 筆）" else "",
@@ -777,7 +777,7 @@ private fun ReimbHome(
                                     .map { g -> if (g.currency.isEmpty()) formatMoney(g.remainingUnits) else formatFx(g.remainingUnits, g.currency) }
                                 // 有外幣時上面寫約多少台幣，各幣別的金額放到 bar 下面的小字；只有台幣照舊
                                 val fx = m.debts.any { it.currency.isNotEmpty() }
-                                val amt = (if (fx) "約 " else "") + formatMoney(if (fx) m.iOwe else m.debts[0].remainingUnits) + "（${refs.size} 筆）"
+                                val amt = (if (fx) "約 " else "") + formatMoney(if (fx) m.iOwe else m.debts[0].remainingUnits) + "（共 ${refs.size} 筆）"
                                 progress("我欠${ownerLabel(m.who)} $amt", cute.expense, "已還 ${pctOf((total - left).coerceAtLeast(0L), total)}%", (total - left).toFloat() / total.coerceAtLeast(1L), cute.accent2)
                                 if (fx) Text(parts.joinToString("＋"), style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -1048,7 +1048,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
             ) {
                 CuteCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${ownerLabel(who)}還欠你（${claims.size} 筆）", style = MaterialTheme.typography.bodyLarge, color = cute.sub, modifier = Modifier.weight(1f))
+                        Text("${ownerLabel(who)}還欠你（共 ${claims.size} 筆）", style = MaterialTheme.typography.bodyLarge, color = cute.sub, modifier = Modifier.weight(1f))
                         Text(formatMoney(totalRemaining), style = MaterialTheme.typography.titleLarge, color = cute.expense)
                     }
                     val l0 = lines[0]
@@ -1595,7 +1595,7 @@ private fun DebtRepayPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, o
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(currencyName(c.currency), style = MaterialTheme.typography.bodyLarge, color = cute.sub, modifier = Modifier.weight(1f))
                             Text(
-                                c.unitText(c.g.remainingUnits) + (if (c.fx) "（約 ${formatMoney(c.g.remainingTwd)}・${c.g.refs.size} 筆）" else "（${c.g.refs.size} 筆）"),
+                                c.unitText(c.g.remainingUnits) + (if (c.fx) "（約 ${formatMoney(c.g.remainingTwd)}・共 ${c.g.refs.size} 筆）" else "（共 ${c.g.refs.size} 筆）"),
                                 style = MaterialTheme.typography.bodyLarge, color = cute.expense,
                             )
                         }
