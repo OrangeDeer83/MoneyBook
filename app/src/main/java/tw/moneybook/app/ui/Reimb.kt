@@ -596,13 +596,16 @@ private sealed class ReimbPage {
  */
 @Composable
 fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
-    var page by remember { mutableStateOf<ReimbPage>(ReimbPage.Home) }
+    // 從人頁點帳單去記一筆修改，回來時這一頁會重新建立：停在原本那個人的頁面（記在 vm 裡）
+    var page by remember { mutableStateOf<ReimbPage>(vm.reimbPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home) }
+    androidx.compose.runtime.SideEffect { vm.reimbPerson = (page as? ReimbPage.Person)?.who }
+    val leave = { vm.reimbPerson = null; vm.reimbTab = 0; onBack() }
     // 從人頁進去的收款／還款／抵銷，做完回到人頁；從總覽進去的回到總覽
     var fromPerson by remember { mutableStateOf<String?>(null) }
     fun back() { page = fromPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home }
     when (val p = page) {
         is ReimbPage.Home -> ReimbHome(
-            vm, onEdit, onBack,
+            vm, onEdit, leave,
             onReceive = { fromPerson = null; page = ReimbPage.Receive(it) },
             onPerson = { page = ReimbPage.Person(it) },
             onRepay = { fromPerson = null; page = ReimbPage.Repay(it) },
@@ -613,6 +616,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
         is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Person -> ReimbPersonPage(
             vm, p.who, onBack = { fromPerson = null; page = ReimbPage.Home },
+            onEdit = onEdit,
             onReceive = { fromPerson = p.who; page = ReimbPage.Receive(p.who) },
             onRepay = { fromPerson = p.who; page = ReimbPage.Repay(p.who) },
             onOffset = { fromPerson = p.who; page = ReimbPage.Offset(p.who) },
@@ -697,7 +701,7 @@ private fun ReimbHome(
 ) {
     val d = vm.data
     val cute = LocalCute.current
-    var tab by remember { mutableStateOf(0) }
+    var tab by vm::reimbTab
     val pending = d.bookTxns.pendingReimb()
     val claims = claimsOf(d.bookTxns)
     val people = d.mutuals()
@@ -1257,6 +1261,8 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
 private fun ReimbPersonPage(
     vm: MoneyViewModel, who: String, onBack: () -> Unit, onReceive: () -> Unit,
     onRepay: () -> Unit, onOffset: () -> Unit,
+    /** 點帳單：到記一筆修改那一筆 */
+    onEdit: (Long) -> Unit,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -1326,7 +1332,7 @@ private fun ReimbPersonPage(
                             item.received < item.amount -> "不追了，少收 ${formatMoney(item.amount - item.received)}"
                             else -> "已收齊"
                         }
-                        CuteCard(Modifier.fillMaxWidth()) {
+                        CuteCard(Modifier.fillMaxWidth().clickable { onEdit(c.txn.id) }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge)
@@ -1348,7 +1354,7 @@ private fun ReimbPersonPage(
                             item.effective > item.amount -> "已還清，多付 ${formatMoney(item.effective - item.amount)}"
                             else -> "已還清"
                         }
-                        CuteCard(Modifier.fillMaxWidth()) {
+                        CuteCard(Modifier.fillMaxWidth().clickable { onEdit(r.t.id) }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyLarge)

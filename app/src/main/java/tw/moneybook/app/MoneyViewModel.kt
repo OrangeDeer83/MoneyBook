@@ -118,6 +118,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     var homeCalendar by mutableStateOf(false)
     // 日曆選到的日期：切到別的分頁再回來要還在
     var calSelected by mutableLongStateOf(LocalDate.now().toEpochDay())
+    // 報銷／欠款頁：正在看誰的頁面、總覽在哪個分頁；從那裡點帳單去記一筆修改，回來要停在原處
+    var reimbPerson by mutableStateOf<String?>(null)
+    var reimbTab by mutableIntStateOf(0)
     val meListState = androidx.compose.foundation.lazy.LazyListState()
     val accListState = androidx.compose.foundation.lazy.LazyListState()
     // 帳戶分頁：是否顯示已隱藏的帳戶（每次開 App 都先隱藏）
