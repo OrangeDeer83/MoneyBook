@@ -150,9 +150,21 @@ def open_reimb_home():
     d.wait_text("別人欠我", timeout=15)
 
 
+def tap_person(who):
+    """報銷／欠款總覽：點人名（卡片有進度 bar 比較高，人多時要往下捲才看得到）"""
+    for _ in range(6):
+        n = next((x for x in d.nodes() if x.text == who), None)
+        if n is not None:
+            d.tap(n)
+            return
+        d.swipe(540, 1800, 540, 900, 600)
+        d.time.sleep(0.8)
+    d.tap(d.wait(lambda n: n.text == who, 5, who))
+
+
 def to_receive(who):
     """報銷／欠款總覽：點人名進他的頁面，再按下面的「收款」"""
-    d.tap(d.wait(lambda n: n.text == who, 10, who))
+    tap_person(who)
     d.wait_text("紀錄", timeout=10)
     d.time.sleep(0.6)
     d.tap_text("收款", exact=True, lowest=True)
@@ -163,9 +175,11 @@ def reimb_fill_full():
     """記一筆的報銷／欠款頁沒有開關了：第一列金額填滿實付（等於以前打開開關後的預設：一列、全額）"""
     import re as _re
     ns = d.nodes()
+    # 上面一行寫「實付 $400」（舊版是「實付」標籤下面一個金額）
+    one = next((n for n in ns if _re.fullmatch(r"實付 (NT)?\$[0-9,]+", n.text)), None)
     lab = d.first(ns, "實付", True)
     vals = [n for n in ns if lab and n.cy > lab.cy and _re.fullmatch(r"(NT)?\$[0-9,]+", n.text)]
-    v = min(vals, key=lambda n: n.cy).text if vals else ""
+    v = one.text if one else min(vals, key=lambda n: n.cy).text if vals else ""
     digits = _re.sub(r"[^0-9]", "", v)
     if digits and digits != "0":
         ed = d.edits()

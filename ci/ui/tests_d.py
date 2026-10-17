@@ -2744,7 +2744,7 @@ def open_reimb_debt_home():
 
 def open_repay(who, label="還款"):
     """總覽 → 點人名進他的頁面 → 按下面的「還款」"""
-    d.tap(d.wait(lambda n: n.text == who, 10, who))
+    f.tap_person(who)
     d.wait_text("紀錄", timeout=10)
     d.time.sleep(0.6)
     d.tap_text(label, exact=True, lowest=True)
