@@ -775,14 +775,11 @@ private fun ReimbHome(
                                 val left = refs.sumOf { it.item.remainingTwd }
                                 val parts = m.debts.sortedBy { if (it.currency.isEmpty()) 0 else 1 }
                                     .map { g -> if (g.currency.isEmpty()) formatMoney(g.remainingUnits) else formatFx(g.remainingUnits, g.currency) }
-                                // 幣別用＋連起來；三種以上或太長就寫幾種幣別、約多少台幣
-                                val amt = when {
-                                    parts.size == 1 && m.debts[0].currency.isEmpty() -> "${parts[0]}（${refs.size} 筆）"
-                                    parts.size == 1 -> "${parts[0]}（約 ${formatMoney(m.iOwe)}）"
-                                    parts.size >= 3 || parts.joinToString("＋").length > 22 -> "${parts.size} 種幣別・約 ${formatMoney(m.iOwe)}"
-                                    else -> parts.joinToString("＋")
-                                }
+                                // 有外幣時上面寫約多少台幣，各幣別的金額放到 bar 下面的小字；只有台幣照舊
+                                val fx = m.debts.any { it.currency.isNotEmpty() }
+                                val amt = (if (fx) "約 " else "") + formatMoney(if (fx) m.iOwe else m.debts[0].remainingUnits) + "（${refs.size} 筆）"
                                 progress("我欠${ownerLabel(m.who)} $amt", cute.expense, "已還 ${pctOf((total - left).coerceAtLeast(0L), total)}%", (total - left).toFloat() / total.coerceAtLeast(1L), cute.accent2)
+                                if (fx) Text(parts.joinToString("＋"), style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             Text(
                                 if (days >= 1L) "最久的已經 $days 天" else "今天記的",
