@@ -3019,7 +3019,7 @@ def t_debt_repay_multi_currency():
     open_reimb_debt_home()
     ns = d.shot("總覽：Ken 只有一顆「還款」")
     d.check("Ken 的卡片只有一顆「還款」（沒有「還款（JPY）」）", d.has(ns, "還款", True) and not any(n.text.startswith("還款（") or n.text == "還款 JPY" for n in ns), [n.text for n in ns if "還款" in n.text])
-    d.check("卡片的欠款寫「我欠Ken 約 NT$3,440（共 2 筆）」、下面小字「NT$800＋¥12,000」、細 bar「已還 0%」", d.has(ns, "我欠Ken 約 NT$3,440（共 2 筆）", True) and d.has(ns, "NT$800＋¥12,000", True) and d.has(ns, "已還 0%", True), [n.text for n in ns if "欠" in n.text or "%" in n.text])
+    d.check("卡片的欠款寫「我欠Ken NT$800＋¥12,000（約 NT$3,440・共 2 筆）」、細 bar「已還 0%」", d.has(ns, "我欠Ken NT$800＋¥12,000（約 NT$3,440・共 2 筆）", True) and d.has(ns, "已還 0%", True), [n.text for n in ns if "欠" in n.text or "%" in n.text])
     open_repay("Ken")
     ns = d.shot("還款頁：台幣、日圓各一區")
     d.check("總結一行一種幣別：台幣 NT$800、日圓 ¥12,000（約 NT$2,640）",
