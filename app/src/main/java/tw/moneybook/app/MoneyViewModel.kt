@@ -547,10 +547,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val all = data.portfolio(accountId).positions
         val positions = all.distinctBy { it.symbol }
         if (positions.isEmpty()) return
-        // 抓之前最近一次記下的價格（比較變動大不大）、每一檔的市值合計（結果只列市值最大的幾檔）
+        // 抓之前最近一次記下的價格（比較變動大不大）、每一檔用新價格算的市值合計（結果只列市值最大的幾檔）
         val before = data.prices
         fun prevOf(p: tw.moneybook.app.Position) = before.filter { it.symbol == p.symbol && it.currency == p.currency }.maxByOrNull { it.day }
-        fun valueOf(p: tw.moneybook.app.Position) = all.filter { it.symbol == p.symbol }.sumOf { it.value }
+        fun valueOf(p: tw.moneybook.app.Position, price: Double?) = all.filter { it.symbol == p.symbol }.sumOf { kotlin.math.round(it.qty * (price ?: it.price) * it.rate).toLong() }
         fetching = true
         viewModelScope.launch {
             val got = ArrayList<PriceSnap>()
@@ -564,11 +564,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     val q = try { PriceFetcher.fetchNative(p.symbol, p.market) } catch (_: Exception) { null }
                     val ok = q != null && q.currency.equals(p.currency, ignoreCase = true)
                     if (ok) got.add(PriceSnap(p.symbol, fetchDay, q!!.price, p.currency))
-                    results.add(FetchResult(p.symbol, p.name, p.market, if (ok) q!!.price else null, p.currency, prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p)))
+                    results.add(FetchResult(p.symbol, p.name, p.market, if (ok) q!!.price else null, p.currency, prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p, if (ok) q!!.price else null)))
                 } else {
                     val q = try { PriceFetcher.fetch(p.symbol, p.market) } catch (_: Exception) { null }
                     if (q != null) got.add(PriceSnap(p.symbol, fetchDay, q.price))
-                    results.add(FetchResult(p.symbol, p.name, p.market, q?.price, "", prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p)))
+                    results.add(FetchResult(p.symbol, p.name, p.market, q?.price, "", prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p, q?.price)))
                 }
             }
             // 外幣持股順便更新匯率，市值才跟得上
