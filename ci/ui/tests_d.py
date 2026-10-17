@@ -2854,7 +2854,7 @@ def t_debt_repay_continue_and_delete():
     d.wait_text("紀錄", timeout=10)
     d.time.sleep(0.8)
     ns = d.shot("Amy 的頁面")
-    d.check("你欠他 $300；晚餐「待還 $300」、機票「已還清」", d.has(ns, "你欠他", True) and d.has(ns, "待還 $300", True) and d.has(ns, "已還清", True), [n.text for n in ns if n.text][:30])
+    d.check("欠款（台幣）已還 63%、還欠 $300；晚餐「待還 $300」、機票「已還清」", d.has(ns, "欠款（台幣）", True) and d.has(ns, "已還 63%", True) and d.has(ns, "$300", True) and d.has(ns, "待還 $300", True) and d.has(ns, "已還清", True), [n.text for n in ns if n.text][:30])
     d.check("紀錄有兩筆「還款」", sum(1 for n in ns if "還款 $" in n.text) == 2, [n.text for n in ns if "還款" in n.text])
     d.tap_text("⋯", exact=True)
     d.time.sleep(0.6)
@@ -3083,7 +3083,7 @@ def t_debt_offset_foreign():
     d.time.sleep(0.8)
     ns = d.shot("Ken 的頁面")
     d.check("紀錄「互相抵銷 1,000」、小字寫「抵掉 ¥4,500」", any("互相抵銷" in n.text and "1,000" in n.text for n in ns) and any("抵掉 ¥4,500" in n.text for n in ns), [n.text for n in ns if n.text][:40])
-    d.check("你欠他（日圓）¥7,500（約 1,650）", d.has(ns, "你欠他（日圓）", True) and any(n.text.startswith("¥7,500") for n in ns), [n.text for n in ns if n.text][:30])
+    d.check("欠款（日圓）已還 38%、還欠 ¥7,500", d.has(ns, "欠款（日圓）", True) and d.has(ns, "已還 38%", True) and d.has(ns, "¥7,500", True), [n.text for n in ns if n.text][:30])
 
 
 def _narrow_seed():

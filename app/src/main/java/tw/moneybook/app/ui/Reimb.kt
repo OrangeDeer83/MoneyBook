@@ -646,6 +646,31 @@ private fun netText(net: Long): String = when {
     else -> "兩清"
 }
 
+/**
+ * 一條進度：上面是標題和百分比，中間是比例條，下面左邊寫總共／已經多少，右邊是還剩多少（單獨一格，一行一個金額）
+ */
+@Composable
+private fun ProgressBlock(
+    title: String, pct: String, frac: Float, color: androidx.compose.ui.graphics.Color,
+    detail: String, leftLabel: String, leftValue: String,
+    /** 百分比的字色（欠款的橘色比較淡，字改用支出色） */
+    pctColor: androidx.compose.ui.graphics.Color = color,
+) {
+    val cute = LocalCute.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f))
+        Text(pct, style = MaterialTheme.typography.titleSmall, color = pctColor)
+    }
+    Spacer(Modifier.height(6.dp))
+    SplitBar(listOf(frac to color))
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(detail, style = MaterialTheme.typography.labelMedium, color = cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(end = 8.dp))
+        Text("$leftLabel ", style = MaterialTheme.typography.labelMedium, color = cute.sub, maxLines = 1)
+        Text(leftValue, style = MaterialTheme.typography.titleMedium, color = cute.expense, maxLines = 1)
+    }
+}
+
 /** 一行一個金額：標籤在左、金額靠右（金額太長時標籤縮短，不會擠成好幾行） */
 @Composable
 private fun AmountLine(label: String, value: String, color: androidx.compose.ui.graphics.Color, strong: Boolean = false) {
@@ -1232,16 +1257,33 @@ private fun ReimbPersonPage(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                // 一行一個金額：還欠你、已收、你欠他（每種幣別一行）、淨額（外幣用預估匯率換成台幣）
+                // 進度：報銷一條（收回多少了）、欠款每種幣別一條（還了多少了），只算還沒結清的帳；最後是淨額（外幣用預估匯率換成台幣）
                 CuteCard(Modifier.fillMaxWidth()) {
-                    AmountLine("${ownerLabel(who)}還欠你", formatMoney(owed), cute.expense)
-                    AmountLine("已收", formatMoney(claims.sumOf { it.item.received }), cute.income)
+                    val openClaims = claims.filter { !it.item.closed }
+                    if (openClaims.isNotEmpty()) {
+                        val due = openClaims.sumOf { it.item.amount }
+                        val got = openClaims.sumOf { it.item.received }
+                        ProgressBlock(
+                            "報銷：收回多少了", "已收 ${pctOf(got, due)}%", got.toFloat() / due.coerceAtLeast(1L), cute.income,
+                            "應收 ${formatMoney(due)}・已收 ${formatMoney(got)}", "${ownerLabel(who)}還欠你", formatMoney(owed),
+                        )
+                    } else if (claims.isNotEmpty()) {
+                        AmountLine("${ownerLabel(who)}還欠你", formatMoney(0L), cute.expense)
+                        AmountLine("已收", formatMoney(claims.sumOf { it.item.received }), cute.income)
+                    }
+                    if (debtRefs.isNotEmpty() && groups.isEmpty()) AmountLine("你欠他", formatMoney(0L), cute.expense)
+                    groups.sortedBy { if (it.currency.isEmpty()) 0 else 1 }.forEachIndexed { i, g ->
+                        val total = g.refs.sumOf { it.item.totalUnits }
+                        val left = g.remainingUnits
+                        fun u(v: Long) = if (g.currency.isEmpty()) formatMoney(v) else formatFx(v, g.currency)
+                        if (openClaims.isNotEmpty() || i > 0) Spacer(Modifier.height(12.dp))
+                        ProgressBlock(
+                            "欠款（${if (g.currency.isEmpty()) "台幣" else Currencies.of(g.currency).name}）", "已還 ${pctOf(total - left, total)}%",
+                            (total - left).toFloat() / total.coerceAtLeast(1L), cute.accent2,
+                            "欠 ${u(total)}・已還 ${u(total - left)}", "還欠", u(left), cute.expense,
+                        )
+                    }
                     if (debtRefs.isNotEmpty()) {
-                        if (groups.isEmpty()) AmountLine("你欠他", formatMoney(0L), cute.expense)
-                        groups.sortedBy { if (it.currency.isEmpty()) 0 else 1 }.forEach { g ->
-                            if (g.currency.isEmpty()) AmountLine("你欠他", formatMoney(g.remainingTwd), cute.expense)
-                            else AmountLine("你欠他（${Currencies.of(g.currency).name}）", "${formatFx(g.remainingUnits, g.currency)}（約 ${formatMoney(g.remainingTwd)}）", cute.expense)
-                        }
                         // 兩個方向都有時，寫淨額
                         AmountDivider()
                         AmountLine(
