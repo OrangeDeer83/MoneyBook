@@ -240,6 +240,7 @@ fun ReimbRecvRow(d: AppData, r: ReimbRecv, showAcc: Boolean, amount: String, bal
 
 // ───────────────────────── 共用：一筆記錄 ─────────────────────────
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, highlight: Boolean = false, onClick: () -> Unit) {
     val cute = LocalCute.current
@@ -310,156 +311,197 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
         } else hlAnim.snapTo(0f)
     }
     val hlAlpha = hlAnim.value
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(cute.card)
-            // 剛記好（或剛改好）的那一筆：主色的底色、外框，左邊一條粗色條；剛出現時比較深，約 1 秒後淡成定格的樣子
-            // （用主色不用輔助色：輔助色和卡片、背景太接近，會融進去；深色模式的主色是淺色，疊上去整張會變亮）
-            .then(
-                if (highlight) {
-                    val hl = MaterialTheme.colorScheme.primary
-                    Modifier
-                        .background(hl.copy(alpha = hlAlpha))
-                        // 外框細一點、淡一點；色條離外框一段距離，兩者才分得出來
-                        .border(2.dp, hl.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
-                        .drawBehind {
-                            drawRoundRect(
-                                color = hl,
-                                topLeft = Offset(11.dp.toPx(), 12.dp.toPx()),
-                                size = androidx.compose.ui.geometry.Size(5.dp.toPx(), size.height - 24.dp.toPx()),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5.dp.toPx()),
-                            )
-                        }
-                } else Modifier
+    // 標題列的狀態標籤（待請款、欠款、報銷）：完整寫法和放不下時的短寫法（拿掉金額，金額在下面那行小字或右邊都看得到）
+    val tags = ArrayList<StatusTag>()
+    if (t.fxPending && t.isFxSpend) {
+        // 外幣刷卡還沒請款：金額是預估的
+        tags.add(StatusTag("待請款", "待請款", cute.ink, cute.accent2.copy(alpha = 0.4f)))
+    }
+    if (t.isDebt) {
+        // 欠款：還沒付、還了一部分（剩多少）、已還清
+        val open = t.debtItems.any { !it.done }
+        val who = debtWhoLabel(t)
+        // 結清時多付（多還了）或被免掉的差額
+        val diff = t.debtItems.sumOf { it.effective } - t.debtTotal
+        val col = if (open) cute.expense else cute.income
+        tags.add(
+            StatusTag(
+                when {
+                    !open -> "已還清・$who" + when {
+                        diff > 0L -> " 多付 ${formatMoney(diff)}"
+                        diff < 0L -> " 免 ${formatMoney(-diff)}"
+                        else -> ""
+                    }
+                    t.debtItems.all { it.pays.isEmpty() } -> if (t.debtSelf > 0L) "欠 $who ${formatMoney(t.debtTotal)}" else "還沒付・欠 $who"
+                    else -> "欠 $who 還剩 ${formatMoney(t.debtRemainingTwd)}"
+                },
+                if (open) "欠 $who" else "已還清",
+                col, col.copy(alpha = 0.14f),
             )
-            .clickable(onClick = onClick)
-            // 高亮時左邊要放色條，內容往右讓一點
-            .padding(start = if (highlight) 22.dp else 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CatBubble(emoji, color, 40.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (t.fxPending && t.isFxSpend) {
-                    // 外幣刷卡還沒請款：金額是預估的
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "待請款",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = cute.ink,
-                        modifier = Modifier.clip(CircleShape).background(cute.accent2.copy(alpha = 0.4f)).padding(horizontal = 6.dp, vertical = 1.dp),
-                    )
-                }
-                if (t.isDebt) {
-                    // 欠款：還沒付、還了一部分（剩多少）、已還清
-                    Spacer(Modifier.width(6.dp))
-                    val open = t.debtItems.any { !it.done }
-                    val who = debtWhoLabel(t)
-                    // 結清時多付（多還了）或被免掉的差額
-                    val diff = t.debtItems.sumOf { it.effective } - t.debtTotal
-                    Text(
-                        when {
-                            !open -> "已還清・$who" + when {
-                                diff > 0L -> " 多付 ${formatMoney(diff)}"
-                                diff < 0L -> " 免 ${formatMoney(-diff)}"
-                                else -> ""
+        )
+    }
+    if (t.reimb != 0) {
+        val col = if (t.reimb == 1) cute.expense else cute.income
+        tags.add(
+            StatusTag(
+                (if (t.reimb == 1) "待報銷" else "已報銷") + when {
+                    t.reimb == 1 && t.reimbOutstanding < t.reimbAmount -> " 剩${formatMoney(t.reimbOutstanding)}"
+                    // 結案時收得比較多（回饋算收入）或比較少（不追了）
+                    t.reimb == 2 && t.reimbGain > 0L -> " ${formatMoney(t.reimbAmount)}・回饋 +${formatMoney(t.reimbGain)}"
+                    t.reimb == 2 && reimbShort(t) > 0L -> " ${formatMoney(t.reimbAmount)}・少收 ${formatMoney(reimbShort(t))}"
+                    t.reimbAmount < t.paid -> " ${formatMoney(t.reimbAmount)}"
+                    // 待報銷：全額也標出金額；已報銷全額不另外標
+                    t.reimb == 1 -> " ${formatMoney(t.reimbAmount)}"
+                    else -> ""
+                },
+                if (t.reimb == 1) "待報銷" else "已報銷",
+                col, col.copy(alpha = 0.14f),
+            )
+        )
+    }
+    val (sign, c) = when {
+        t.type == TxType.EXPENSE -> "-" to cute.expense
+        t.type == TxType.INCOME -> "+" to cute.income
+        signedFor != null && t.toAccountId == signedFor -> "+" to cute.income
+        signedFor != null && t.accountId == signedFor -> "-" to cute.expense
+        else -> "" to cute.sub
+    }
+    val shown = when {
+        inForeign && signedAcc != null -> kotlin.math.abs(t.flowFor(signedAcc))
+        t.type == TxType.TRANSFER && signedFor != null && t.accountId == signedFor -> t.amount + t.fee
+        // 帳戶明細：這個帳戶實際扣了多少（有欠款時只有自己付的那一份）
+        signedAcc != null && t.type == TxType.EXPENSE -> kotlin.math.abs(t.flowFor(signedAcc))
+        actualMode -> t.spent
+        else -> t.paid
+    }
+    val shownText = if (inForeign && signedAcc != null) formatFx(shown, signedAcc.currency) else formatMoney(shown)
+    val gray = if (actualMode && t.recorded != shown) formatMoney(t.recorded).removePrefix(tw.moneybook.app.Money.twd) else null
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val typo = MaterialTheme.typography
+    // 標題至少要留得下大分類（後面接「 …」）
+    val titleHead = title.text.substringBefore(" ›")
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // 依這一列實際的寬度決定排法：0＝標籤寫完整；1＝標籤拿掉金額、灰色總額移到金額下面；2＝標籤移到下一行
+        val level = with(density) {
+            fun w(s: String, style: androidx.compose.ui.text.TextStyle): Float = measurer.measure(s, style, maxLines = 1).size.width.toFloat()
+            fun tagW(s: String): Float = w(s, typo.labelSmall) + 12.dp.toPx() + 6.dp.toPx()
+            // 列寬扣掉左右留白、圖示（40）、圖示後的間距（12）、金額前的間距（8）
+            val inner = (maxWidth - (if (highlight) 22.dp else 12.dp) - 12.dp - 60.dp).toPx()
+            val titleNeed = w(titleHead, typo.bodyLarge) + 28.dp.toPx()
+            val amountW = w(sign + shownText, typo.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
+            val feesW = if (fees.isEmpty()) 0f else w(fees.joinToString("・"), typo.labelSmall)
+            val right0 = maxOf(amountW + (gray?.let { w(it, typo.bodyMedium) + 8.dp.toPx() } ?: 0f), feesW)
+            val right1 = maxOf(amountW, gray?.let { w("總額 $it", typo.labelSmall) } ?: 0f, feesW)
+            when {
+                titleNeed + tags.map { tagW(it.full) }.sum() <= inner - right0 -> 0
+                tags.isEmpty() || titleNeed + tags.map { tagW(it.short) }.sum() <= inner - right1 -> 1
+                else -> 2
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(cute.card)
+                // 剛記好（或剛改好）的那一筆：主色的底色、外框，左邊一條粗色條；剛出現時比較深，約 1 秒後淡成定格的樣子
+                // （用主色不用輔助色：輔助色和卡片、背景太接近，會融進去；深色模式的主色是淺色，疊上去整張會變亮）
+                .then(
+                    if (highlight) {
+                        val hl = MaterialTheme.colorScheme.primary
+                        Modifier
+                            .background(hl.copy(alpha = hlAlpha))
+                            // 外框細一點、淡一點；色條離外框一段距離，兩者才分得出來
+                            .border(2.dp, hl.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
+                            .drawBehind {
+                                drawRoundRect(
+                                    color = hl,
+                                    topLeft = Offset(11.dp.toPx(), 12.dp.toPx()),
+                                    size = androidx.compose.ui.geometry.Size(5.dp.toPx(), size.height - 24.dp.toPx()),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5.dp.toPx()),
+                                )
                             }
-                            t.debtItems.all { it.pays.isEmpty() } -> if (t.debtSelf > 0L) "欠 $who ${formatMoney(t.debtTotal)}" else "還沒付・欠 $who"
-                            else -> "欠 $who 還剩 ${formatMoney(t.debtRemainingTwd)}"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (open) cute.expense else cute.income,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clip(CircleShape)
-                            .background((if (open) cute.expense else cute.income).copy(alpha = 0.14f))
-                            .padding(horizontal = 6.dp, vertical = 1.dp),
-                    )
+                    } else Modifier
+                )
+                .clickable(onClick = onClick)
+                // 高亮時左邊要放色條，內容往右讓一點
+                .padding(start = if (highlight) 22.dp else 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CatBubble(emoji, color, 40.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (level < 2) tags.forEach { StatusTagText(it, level == 0) }
                 }
-                if (t.reimb != 0) {
-                    Spacer(Modifier.width(6.dp))
+                if (notes.isNotEmpty()) {
                     Text(
-                        (if (t.reimb == 1) "待報銷" else "已報銷") + when {
-                            t.reimb == 1 && t.reimbOutstanding < t.reimbAmount -> " 剩${formatMoney(t.reimbOutstanding)}"
-                            // 結案時收得比較多（回饋算收入）或比較少（不追了）
-                            t.reimb == 2 && t.reimbGain > 0L -> " ${formatMoney(t.reimbAmount)}・回饋 +${formatMoney(t.reimbGain)}"
-                            t.reimb == 2 && reimbShort(t) > 0L -> " ${formatMoney(t.reimbAmount)}・少收 ${formatMoney(reimbShort(t))}"
-                            t.reimbAmount < t.paid -> " ${formatMoney(t.reimbAmount)}"
-                            // 待報銷：全額也標出金額；已報銷全額不另外標
-                            t.reimb == 1 -> " ${formatMoney(t.reimbAmount)}"
-                            else -> ""
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (t.reimb == 1) cute.expense else cute.income,
-                        modifier = Modifier.clip(CircleShape)
-                            .background((if (t.reimb == 1) cute.expense else cute.income).copy(alpha = 0.14f))
-                            .padding(horizontal = 6.dp, vertical = 1.dp),
+                        notes.joinToString("・"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = cute.sub,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-            }
-            if (notes.isNotEmpty()) {
-                Text(
-                    notes.joinToString("・"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = cute.sub,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (info != null) {
-                Text(info, style = MaterialTheme.typography.bodySmall, color = cute.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (chips.isNotEmpty() || t.tags.isNotEmpty()) {
-                Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // 第一個膠囊（通常是帳戶，名字可能很長）可以縮短，後面的照原樣
-                    chips.forEachIndexed { i, text -> TxnChip(text, if (i == 0) Modifier.weight(1f, fill = false) else Modifier) }
-                    t.tags.take(3).forEach { tag -> TxnChip("#$tag") }
+                if (info != null) {
+                    Text(info, style = MaterialTheme.typography.bodySmall, color = cute.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // 窄到標題列放不下：狀態標籤（短寫法）移到這裡，一排放不下再換行
+                if (level == 2) {
+                    androidx.compose.foundation.layout.FlowRow(
+                        Modifier.padding(top = 3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) { tags.forEach { StatusTagText(it, false, Modifier) } }
+                }
+                if (chips.isNotEmpty() || t.tags.isNotEmpty()) {
+                    Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // 第一個膠囊（通常是帳戶，名字可能很長）可以縮短，後面的照原樣
+                        chips.forEachIndexed { i, text -> TxnChip(text, if (i == 0) Modifier.weight(1f, fill = false) else Modifier) }
+                        t.tags.take(3).forEach { tag -> TxnChip("#$tag") }
+                    }
                 }
             }
-        }
-        Spacer(Modifier.width(8.dp))
-        val (sign, c) = when {
-            t.type == TxType.EXPENSE -> "-" to cute.expense
-            t.type == TxType.INCOME -> "+" to cute.income
-            signedFor != null && t.toAccountId == signedFor -> "+" to cute.income
-            signedFor != null && t.accountId == signedFor -> "-" to cute.expense
-            else -> "" to cute.sub
-        }
-        val shown = when {
-            inForeign && signedAcc != null -> kotlin.math.abs(t.flowFor(signedAcc))
-            t.type == TxType.TRANSFER && signedFor != null && t.accountId == signedFor -> t.amount + t.fee
-            // 帳戶明細：這個帳戶實際扣了多少（有欠款時只有自己付的那一份）
-            signedAcc != null && t.type == TxType.EXPENSE -> kotlin.math.abs(t.flowFor(signedAcc))
-            actualMode -> t.spent
-            else -> t.paid
-        }
-        val shownText = if (inForeign && signedAcc != null) formatFx(shown, signedAcc.currency) else formatMoney(shown)
-        val gray = if (actualMode && t.recorded != shown) formatMoney(t.recorded).removePrefix(tw.moneybook.app.Money.twd) else null
-        // 金額下面小字：這一筆做完之後這個帳戶的餘額（只有帳戶明細會帶 balance），和左邊的標題／備註一大一小
-        Column(horizontalAlignment = Alignment.End) {
-            if (fees.isNotEmpty()) {
-                Text(fees.joinToString("・"), style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (gray != null) {
-                    Text(gray, color = cute.sub.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
-                    Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(8.dp))
+            // 金額下面小字：這一筆做完之後這個帳戶的餘額（只有帳戶明細會帶 balance），和左邊的標題／備註一大一小
+            Column(horizontalAlignment = Alignment.End) {
+                if (fees.isNotEmpty()) {
+                    Text(fees.joinToString("・"), style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
                 }
-                // 實際支出是 0（全額報銷）也照寫，顏色淡一點
-                Text(sign + shownText, color = if (actualMode && shown == 0L) c.copy(alpha = 0.5f) else c, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            }
-            if ((t.fxPending && t.isFxSpend) || (t.isFxSpend && t.debtItems.any { !it.done })) Text("預估", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
-            if (balance != null) {
-                Text(
-                    "餘額 ${signedAcc?.fmt(balance) ?: formatMoney(balance)}", style = MaterialTheme.typography.labelSmall,
-                    color = if (balance < 0) cute.expense else cute.sub, maxLines = 1,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (gray != null && level == 0) {
+                        Text(gray, color = cute.sub.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    // 實際支出是 0（全額報銷）也照寫，顏色淡一點
+                    Text(sign + shownText, color = if (actualMode && shown == 0L) c.copy(alpha = 0.5f) else c, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+                // 放不下時灰色總額移到粗體金額下面
+                if (gray != null && level > 0) Text("總額 $gray", style = MaterialTheme.typography.labelSmall, color = cute.sub.copy(alpha = 0.8f), maxLines = 1)
+                if ((t.fxPending && t.isFxSpend) || (t.isFxSpend && t.debtItems.any { !it.done })) Text("預估", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
+                if (balance != null) {
+                    Text(
+                        "餘額 ${signedAcc?.fmt(balance) ?: formatMoney(balance)}", style = MaterialTheme.typography.labelSmall,
+                        color = if (balance < 0) cute.expense else cute.sub, maxLines = 1,
+                    )
+                }
             }
         }
     }
+}
+
+/** 明細列標題旁的狀態標籤：完整寫法、放不下時的短寫法、文字色、底色 */
+private class StatusTag(val full: String, val short: String, val fg: Color, val bg: Color)
+
+@Composable
+private fun StatusTagText(tag: StatusTag, full: Boolean, modifier: Modifier = Modifier.padding(start = 6.dp)) {
+    Text(
+        if (full) tag.full else tag.short,
+        style = MaterialTheme.typography.labelSmall,
+        color = tag.fg,
+        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.clip(CircleShape).background(tag.bg).padding(horizontal = 6.dp, vertical = 1.dp),
+    )
 }
 
 /** 明細列的小膠囊（帳戶、分期、入帳月份、標籤共用） */

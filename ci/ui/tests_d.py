@@ -3074,3 +3074,46 @@ def t_debt_offset_foreign():
     ns = d.shot("Ken 的頁面")
     d.check("紀錄「互相抵銷 1,000」、小字寫「抵掉 ¥4,500」", any("互相抵銷" in n.text and "1,000" in n.text for n in ns) and any("抵掉 ¥4,500" in n.text for n in ns), [n.text for n in ns if n.text][:40])
     d.check("你欠他（日圓）¥7,500（約 1,650）", d.has(ns, "你欠他（日圓）", True) and any(n.text.startswith("¥7,500") for n in ns), [n.text for n in ns if n.text][:30])
+
+
+def _narrow_seed():
+    """一筆 34,483 的高鐵：全部欠 Ken、待報銷 Amy 30,170 → 實際支出 4,313"""
+    s = empty_seed()
+    t = s.expense(0, 34483, S.C_HSR, acc=None, note="rental")
+    t.update(debtItems=[dict(who="Ken", amount=34483, units=0, done=False, pays=[])], debtSelf=0,
+             reimb=1, reimbAmount=30170, reimbItems=[S.reimb_item("Amy", 30170)])
+    return s
+
+
+@case(D, "明細列：畫面變窄時標籤自動縮短（完整 → 拿掉金額、總額移到金額下面 → 標籤移到下一行）", visual=True)
+def t_row_narrow_tags():
+    d.fresh(_narrow_seed().json())
+    try:
+        # 約 576dp：寬，標籤寫完整、灰色總額在粗體旁邊
+        d.sh("wm density 300")
+        d.time.sleep(3)
+        ns = d.shot("寬（約 576dp）")
+        d.check("寬：標籤寫完整「還沒付・欠 Ken」「待報銷 $30,170」、灰色 34,483",
+                d.has(ns, "還沒付・欠 Ken", True) and d.has(ns, "待報銷 $30,170", True) and d.has(ns, "34,483", True), [n.text for n in ns if n.text][:30])
+        # 約 393dp：一般手機，標籤拿掉金額、總額移到金額下面
+        d.sh("wm density 440")
+        d.time.sleep(3)
+        ns = d.shot("一般（約 393dp）")
+        title = next((n for n in ns if "高鐵" in n.text), None)
+        tag = d.first(ns, "待報銷", True)
+        d.check("一般：標籤縮成「欠 Ken」「待報銷」，在標題同一行；寫「總額 34,483」",
+                d.has(ns, "欠 Ken", True) and tag is not None and title is not None and abs(tag.cy - title.cy) < 30 and d.has(ns, "總額 34,483", True),
+                [(n.text, n.cy) for n in ns if n.text][:30])
+        # 約 288dp：很窄，標籤移到小字下面那一行
+        d.sh("wm density 600")
+        d.time.sleep(3)
+        ns = d.shot("很窄（約 288dp）")
+        info = next((n for n in ns if n.text.startswith("我付")), None)
+        tag = d.first(ns, "待報銷", True)
+        title = next((n for n in ns if "交通" in n.text), None)
+        d.check("很窄：標籤移到下面（在「我付…」那行下面），標題至少看得到「交通」",
+                tag is not None and info is not None and tag.cy > info.cy and title is not None, [(n.text, n.cy) for n in ns if n.text][:30])
+        d.check("標籤不會直的一個字一個字排（高度不超過一行）", tag is not None and (tag.y2 - tag.y1) < 2.2 * max(1, (info.y2 - info.y1) if info else 40), (tag.y1, tag.y2) if tag else None)
+        d.check("粗體實際支出 -$4,313 還在", d.has(ns, "-$4,313", True), [n.text for n in ns if "$" in n.text][:10])
+    finally:
+        d.small_screen(False)
