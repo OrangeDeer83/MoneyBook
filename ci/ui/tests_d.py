@@ -2775,7 +2775,12 @@ def t_debt_record():
     open_debt_tab("Amy")
     ns = d.shot("報銷／欠款頁：欠款填 Amy")
     d.check("只有一個人：金額自動填滿 800", "800" in [e.text for e in d.edits()], [e.text for e in d.edits()])
-    d.check("上方摘要：我付 $0、別人先付 $800", d.has(ns, "我付（從帳戶扣）", True) and d.has(ns, "別人先付（欠款）", True), [n.text for n in ns if n.text][:30])
+    d.check("下方固定的摘要：誰付的「我 0%・別人 100%」、誰負擔「我 100%・報銷 0%」",
+            d.has(ns, "誰付的", True) and d.has(ns, "我 0%・別人 100%", True) and d.has(ns, "我 100%・報銷 0%", True), [n.text for n in ns if n.text][:30])
+    d.tap_text("點一下展開完整四行", exact=True)
+    d.time.sleep(0.6)
+    ns = d.shot("展開完整四行")
+    d.check("展開後：我付（從帳戶扣）、別人先付（欠款）$800", d.has(ns, "我付（從帳戶扣）", True) and d.has(ns, "別人先付（欠款）", True) and d.has(ns, "$800", True), [n.text for n in ns if n.text][:30])
     d.tap_text("完成", exact=True)
     d.time.sleep(1)
     ns = d.shot("回到記一筆")
@@ -2949,8 +2954,13 @@ def t_debt_and_reimb_together():
     d.fill(d.edits()[3], "100")
     d.hide_ime()
     ns = d.shot("報銷 2 人、欠款 2 人")
+    d.check("下方摘要的比例：誰付的「我 33%・別人 67%」、誰負擔「我 0%・報銷 100%」",
+            all(d.has(ns, t, True) for t in ("報銷 2 人", "欠款 2 人", "我 33%・別人 67%", "我 0%・報銷 100%")), [n.text for n in ns if n.text][:30])
+    d.tap_text("點一下展開完整四行", exact=True)
+    d.time.sleep(0.6)
+    ns = d.shot("展開完整四行")
     d.check("摘要：我付 $100、別人先付 $200、可報銷 $300、自己負擔 $0",
-            all(d.has(ns, t, True) for t in ("報銷 2 人", "欠款 2 人")) and d.has(ns, "$100", True) and d.has(ns, "$200", True), [n.text for n in ns if n.text][:30])
+            d.has(ns, "$100", True) and d.has(ns, "$200", True) and d.has(ns, "$300", True), [n.text for n in ns if n.text][:30])
     d.tap_text("完成", exact=True)
     d.time.sleep(1)
     ns = d.shot("回到記一筆")

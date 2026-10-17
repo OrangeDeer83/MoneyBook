@@ -348,40 +348,12 @@ fun ReimbEditPage(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                // 這筆的分配摘要：一直看得到
-                CuteCard(Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("實付", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            Text(formatMoney(actual), style = MaterialTheme.typography.titleLarge)
-                            if (fxOn) Text(formatFx(fxActual, fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
-                    Spacer(Modifier.height(6.dp))
-                    @Composable
-                    fun line(label: String, v: Long, color: androidx.compose.ui.graphics.Color = cute.ink) {
-                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Text(label, style = MaterialTheme.typography.bodyMedium, color = cute.sub, modifier = Modifier.weight(1f))
-                            Text(formatMoney(v), style = MaterialTheme.typography.bodyMedium, color = color)
-                        }
-                    }
-                    line("我付（從帳戶扣）", (actual - debtTotal).coerceAtLeast(0L))
-                    line("別人先付（欠款）", debtTotal)
-                    line("可報銷（別人要還我）", reimbTotal, cute.income)
-                    line("自己負擔（算進支出）", (actual - reimbTotal).coerceAtLeast(0L), MaterialTheme.colorScheme.primary)
-                    if (cap <= 0L) {
-                        // 先填報銷、後填帳目金額：金額還沒輸入時不用提醒上限，儲存時才會依金額限制
-                        Text("還沒輸入帳目金額，報銷金額之後不會超過實付。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                    } else if (reimbTotal > cap) {
-                        Text("報銷合計超過上限 ${formatMoney(cap)}，超過的部分不會算。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
-                    } else if (reimbTotal > actual) {
-                        Text("報銷比實付多 ${formatMoney(reimbTotal - actual)}，多的部分收到後算成報銷回饋收入。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                    }
-                    if (actual > 0L && debtTotal > actual) {
-                        Text("欠款合計超過實付 ${formatMoney(debtTotal - actual)}，請改小一點。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+                // 這筆是什麼、實付多少；分配的比例和摘要固定在最下面（見 ReimbSummaryBar）
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, color = cute.sub, modifier = Modifier.weight(1f))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("實付 ${formatMoney(actual)}", style = MaterialTheme.typography.titleMedium)
+                        if (fxOn) Text(formatFx(fxActual, fxCur), style = MaterialTheme.typography.labelMedium, color = cute.sub)
                     }
                 }
                 if (err.isNotEmpty()) Text(err, style = MaterialTheme.typography.bodyMedium, color = cute.expense)
@@ -471,6 +443,8 @@ fun ReimbEditPage(
                 }
                 Spacer(Modifier.height(16.dp))
             }
+            // 固定在最下面：名單再長都看得到，開鍵盤時跟著往上
+            ReimbSummaryBar(actual, debtTotal, reimbTotal, cap)
         }
         if (splitMenu) {
             val editable = cur.filter { !it.isLocked }
@@ -507,6 +481,90 @@ fun ReimbEditPage(
                 confirmButton = {},
                 dismissButton = { TextButton(onClick = { splitMenu = false }) { Text("取消") } },
             )
+        }
+    }
+}
+
+/** 一條分段的比例條：每段（比例 0～1、顏色）依序排，沒填滿的部分是淡色底 */
+@Composable
+internal fun SplitBar(parts: List<Pair<Float, androidx.compose.ui.graphics.Color>>, modifier: Modifier = Modifier, height: androidx.compose.ui.unit.Dp = 10.dp) {
+    val shown = parts.map { it.first.coerceIn(0f, 1f) to it.second }.filter { it.first > 0f }
+    val rest = (1f - shown.sumOf { it.first.toDouble() }.toFloat()).coerceAtLeast(0f)
+    Row(modifier.fillMaxWidth().height(height).clip(CircleShape).background(LocalCute.current.soft)) {
+        shown.forEach { (f, c) -> Box(Modifier.weight(f).fillMaxHeight().background(c)) }
+        if (rest > 0.001f) Spacer(Modifier.weight(rest))
+    }
+}
+
+/** 百分比（四捨五入到整數） */
+private fun pctOf(v: Long, total: Long): Int = if (total <= 0L) 0 else Math.round(v * 100.0 / total).toInt()
+
+/**
+ * 記一筆「這筆的報銷／欠款」最下面固定的摘要：誰付的（有欠款才有）、誰負擔兩條比例條，加自己負擔、可報銷兩個數字；
+ * 點一下展開完整四行（我付、別人先付、自己負擔、可報銷，各寫百分比）。
+ */
+@Composable
+private fun ReimbSummaryBar(actual: Long, debtTotal: Long, reimbTotal: Long, cap: Long) {
+    val cute = LocalCute.current
+    val primary = MaterialTheme.colorScheme.primary
+    var expanded by remember { mutableStateOf(false) }
+    val selfPay = (actual - debtTotal).coerceAtLeast(0L)
+    val reimb = reimbTotal.coerceAtMost(actual).coerceAtLeast(0L)
+    val bear = (actual - reimbTotal).coerceAtLeast(0L)
+    fun frac(v: Long) = if (actual > 0L) v.toFloat() / actual.toFloat() else 0f
+    // 兩段的百分比加起來是 100：第二段用 100 減第一段
+    val payMe = pctOf(selfPay, actual)
+    val bearMe = pctOf(bear, actual)
+    Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
+    Column(
+        Modifier.fillMaxWidth().background(cute.card).clickable { expanded = !expanded }.padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        @Composable
+        fun barLine(label: String, parts: List<Pair<Float, androidx.compose.ui.graphics.Color>>, right: String) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.width(52.dp))
+                SplitBar(parts, Modifier.weight(1f))
+                Text(right, style = MaterialTheme.typography.labelMedium, color = cute.sub, maxLines = 1, modifier = Modifier.padding(start = 10.dp))
+            }
+        }
+        if (debtTotal > 0L) barLine("誰付的", listOf(frac(selfPay) to primary, frac(debtTotal) to cute.accent2), "我 $payMe%・別人 ${if (actual > 0L) 100 - payMe else 0}%")
+        barLine("誰負擔", listOf(frac(bear) to primary, frac(reimb) to cute.income), "我 $bearMe%・報銷 ${if (actual > 0L) 100 - bearMe else 0}%")
+        if (expanded) {
+            @Composable
+            fun line(color: androidx.compose.ui.graphics.Color, label: String, pct: Int, v: Long, vColor: androidx.compose.ui.graphics.Color = cute.ink) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(color))
+                    Spacer(Modifier.width(6.dp))
+                    Text(label, style = MaterialTheme.typography.bodyMedium)
+                    Text(" $pct%", style = MaterialTheme.typography.bodyMedium, color = cute.sub, modifier = Modifier.weight(1f))
+                    Text(formatMoney(v), style = MaterialTheme.typography.bodyMedium, color = vColor)
+                }
+            }
+            line(primary, "我付（從帳戶扣）", payMe, selfPay)
+            line(cute.accent2, "別人先付（欠款）", if (actual > 0L) 100 - payMe else 0, debtTotal)
+            line(primary, "自己負擔（算進支出）", bearMe, bear, primary)
+            line(cute.income, "可報銷（別人要還我）", if (actual > 0L) 100 - bearMe else 0, reimbTotal, cute.income)
+        } else {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("自己負擔 ", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Text(formatMoney(bear), style = MaterialTheme.typography.titleMedium, color = primary)
+                Spacer(Modifier.width(14.dp))
+                Text("可報銷 ", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Text(formatMoney(reimbTotal), style = MaterialTheme.typography.titleMedium, color = cute.income, modifier = Modifier.weight(1f))
+            }
+        }
+        Text(if (expanded) "點一下收起" else "點一下展開完整四行", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+        if (cap <= 0L) {
+            // 先填報銷、後填帳目金額：金額還沒輸入時不用提醒上限，儲存時才會依金額限制
+            Text("還沒輸入帳目金額，報銷金額之後不會超過實付。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+        } else if (reimbTotal > cap) {
+            Text("報銷合計超過上限 ${formatMoney(cap)}，超過的部分不會算。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+        } else if (reimbTotal > actual) {
+            Text("報銷比實付多 ${formatMoney(reimbTotal - actual)}，多的部分收到後算成報銷回饋收入。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+        }
+        if (actual > 0L && debtTotal > actual) {
+            Text("欠款合計超過實付 ${formatMoney(debtTotal - actual)}，請改小一點。", style = MaterialTheme.typography.labelSmall, color = cute.expense)
         }
     }
 }
