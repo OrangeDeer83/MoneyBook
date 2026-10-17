@@ -268,6 +268,8 @@ fun FullScreenDialog(onDismissRequest: () -> Unit, content: @Composable () -> Un
                 val h = if (android.os.Build.VERSION.SDK_INT >= 30) windowManager.currentWindowMetrics.bounds.height()
                 else android.util.DisplayMetrics().also { @Suppress("DEPRECATION") windowManager.defaultDisplay.getRealMetrics(it) }.heightPixels
                 setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, h)
+                // Android 11 起對話框視窗預設會避開系統列（往下推、少掉手勢列）；改成不避開，由內容自己留白
+                if (android.os.Build.VERSION.SDK_INT >= 30) attributes = attributes.apply { fitInsetsTypes = 0 }
                 addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
             }
         }
