@@ -3353,3 +3353,52 @@ def t_stat_cards_drag():
     ns = d.shot("最下面是這個月存下")
     d.check("加回來的「這個月存下」在最下面", d.has(ns, "這個月存下", True))
 
+
+def asset_seed():
+    """初始：現金 1,000、測試銀行 50,000；兩個多月前收入 20,000、一個多月前支出 3,000、今天支出 1,000 → 現在 67,000，上個月底 68,000"""
+    s = S.Seed(f.today())
+    s.income(-65, 20000, acc=S.BANK, note="bonus")
+    s.expense(-35, 3000, S.C_SHOP, note="shoes")
+    s.expense(0, 1000, S.C_FOOD, note="dinner")
+    return s.json()
+
+
+@case(D, "總資產：帳戶頁卡片有小折線和比上個月，點進去看組成、長按堆疊柱、變化的原因跟著換月份", visual=True)
+def t_asset_page():
+    import re
+    d.fresh(asset_seed())
+    f.tab("帳戶")
+    d.time.sleep(2)
+    ns = d.shot("帳戶頁總資產卡片")
+    d.check("總資產卡片：$67,000、比上個月 -$1,000、右上角「近 12 個月 ›」",
+            d.has(ns, "$67,000", True) and d.has(ns, "比上個月 -$1,000", True) and d.has(ns, "近 12 個月 ›", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("總資產", exact=True)
+    d.time.sleep(2)
+    ns = d.shot("總資產頁")
+    d.check("總資產頁有：現在的組成、總資產變化、變化的原因；投資佔資產的比例預設隱藏",
+            d.has(ns, "現在的組成", True) and d.has(ns, "總資產變化", True) and any(n.text.endswith("月變化的原因") for n in ns)
+            and not d.has(ns, "投資佔資產的比例", True), [n.text for n in ns if n.text][:30])
+    d.check("組成：現金銀行 $67,000・100%", d.has(ns, " 現金銀行 $67,000・100%", True) or d.has(ns, "現金銀行 $67,000・100%", False), [n.text for n in ns if "現金銀行" in n.text])
+    m = f.today().month
+    d.check(f"{m} 月變化的原因 -$1,000，收入－支出 -$1,000",
+            d.has(ns, f"{m} 月變化的原因", True) and sum(1 for n in ns if n.text == "-$1,000") >= 2, [n.text for n in ns if n.text][:30])
+    # 長按堆疊柱倒數第二根（上個月）
+    title = d.first(ns, "總資產變化", True)
+    leg = next((n for n in ns if n.text.strip() == "負債" and n.cy > title.cy), None)
+    w = d._screen()[0]
+    left, right = int(w * 32 / 411), int(w * (411 - 32) / 411)
+    slot = (right - left) / 12
+    x = int(left + slot * 10.5)
+    y = (title.cy + leg.cy) // 2 + 40
+    d.swipe(x, y, x, y, 900)
+    d.time.sleep(1)
+    ns = d.shot("長按上個月")
+    last = (f.today().replace(day=1) - S.datetime.timedelta(days=1))
+    d.check(f"資訊框：{last.year} 年 {last.month} 月、現金銀行、負債、總資產",
+            d.has(ns, f"{last.year} 年 {last.month} 月", True) and d.has(ns, "總資產", True) and d.has(ns, "$68,000", True), [n.text for n in ns if n.text][:40])
+    d.check(f"變化的原因換成 {last.month} 月", d.has(ns, f"{last.month} 月變化的原因", True), [n.text for n in ns if "原因" in n.text])
+    d.tap_text("全部", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("全部")
+    d.check("切到全部後還是有圖（從第一筆記錄的月份開始）", d.has(ns, "總資產變化", True) and any("到現在" in n.text for n in ns), [n.text for n in ns if n.text][:30])
+

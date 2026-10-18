@@ -286,7 +286,7 @@ private fun MainTabs(
                     onReimb = { open("reimb") },
                     onFxPending = { open("fxpending") },
                 )
-                1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") })
+                1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") }, onAsset = { open("asset") })
                 2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") }, onLayout = { open("layout:$it") })
                 else -> MeScreen(vm, open)
             }

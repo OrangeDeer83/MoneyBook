@@ -601,6 +601,25 @@ fun AssetShareBars(labels: List<String>, points: List<tw.moneybook.app.NetWorthP
     }
 }
 
+/** 小折線（帳戶頁總資產卡片用）：只有線和最後一點，沒有座標 */
+@Composable
+fun MiniLine(values: List<Long>, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        if (values.size < 2) return@Canvas
+        val max = values.max()
+        val min = values.min()
+        val r = 3.dp.toPx()
+        val h = size.height - 2 * r
+        fun x(i: Int) = r + (size.width - 2 * r) * i / (values.size - 1)
+        fun y(v: Long) = r + if (max == min) h / 2f else (max - v).toFloat() / (max - min) * h
+        val path = Path()
+        path.moveTo(x(0), y(values[0]))
+        for (i in 1 until values.size) path.lineTo(x(i), y(values[i]))
+        drawPath(path, color, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawCircle(color, radius = r, center = Offset(x(values.size - 1), y(values.last())))
+    }
+}
+
 private fun formatMoneyShort(v: Long): String =
     (if (v < 0) "-" else "") + tw.moneybook.app.Money.twd + tw.moneybook.app.formatShort(kotlin.math.abs(v))
 

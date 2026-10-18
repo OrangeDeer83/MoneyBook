@@ -340,7 +340,7 @@ fun EmojiButton(emoji: String, onClick: () -> Unit) {
 // ───────────────────────── 帳戶 ─────────────────────────
 
 @Composable
-fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
+fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onAsset: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
     val bal = remember(d) { d.balances() }
@@ -384,9 +384,24 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit) {
             val debtDue = d.debtOutstanding()
             val total = d.visibleAccounts.sumOf { d.twdValue(it, bal[it.id] ?: 0L) ?: 0L } - debtDue
             val noRate = d.visibleAccounts.filter { it.isForeign && d.rateOf(it.currency) == null && (bal[it.id] ?: 0L) != 0L }
-            CuteCard(Modifier.fillMaxWidth()) {
-                Text("總資產", style = MaterialTheme.typography.labelLarge, color = cute.sub)
-                Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
+            // 點整張卡片進總資產頁；右邊是近 12 個月的小折線（少於 2 個月就不畫）
+            val sum = remember(d) { d.assetSummary() }
+            CuteCard(Modifier.fillMaxWidth(), onClick = onAsset) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("總資產", style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f))
+                    Text("近 12 個月 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Column(Modifier.weight(1f)) {
+                        Text(formatMoney(total), style = MaterialTheme.typography.headlineMedium, color = if (total < 0) cute.expense else cute.ink)
+                        sum.vsLastMonth?.let { v ->
+                            Text("比上個月 ${signedMoney(v)}", style = MaterialTheme.typography.labelMedium, color = if (v >= 0) cute.income else cute.expense)
+                        }
+                    }
+                    if (sum.trail.size >= 2) {
+                        MiniLine(sum.trail, MaterialTheme.colorScheme.primary, Modifier.padding(start = 12.dp, bottom = 4.dp).width(110.dp).height(44.dp))
+                    }
+                }
                 if (debtDue > 0L) {
                     Text("已扣掉欠款 ${formatMoney(debtDue)}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
