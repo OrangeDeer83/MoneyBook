@@ -315,7 +315,7 @@ private fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, fo
 }
 
 /** 結餘的寫法：正的加 +，負的 - */
-private fun signedMoney(v: Long): String = (if (v >= 0) "+" else "-") + formatMoney(kotlin.math.abs(v))
+fun signedMoney(v: Long): String = (if (v >= 0) "+" else "-") + formatMoney(kotlin.math.abs(v))
 
 /**
  * 成對長條圖：每組兩根（收入、支出），下方有標籤。titles 不是空的就可以長按看那一組的收入、支出、結餘（titles 是資訊框的標題，例如「2026 年 9 月」）。
@@ -486,6 +486,116 @@ fun SavingsLine(
                     color = cute.sub,
                     maxLines = 1,
                 )
+            }
+        }
+    }
+}
+
+/** 總資產圖的顏色（和圓餅圖一樣是固定的圖表色，深淺色模式都看得清楚）：現金銀行藍、投資紫；負債用支出色 */
+val AssetCashColor = Color(0xFF6FA3D6)
+val AssetInvestColor = Color(0xFFA88BD0)
+
+/** 長條圖下面的月份標籤：太多個時只留幾個（最後一個一定留） */
+fun sparseLabels(labels: List<String>, keep: Int = 7): List<String> {
+    val step = ((labels.size + keep - 1) / keep).coerceAtLeast(1)
+    return labels.mapIndexed { i, l -> if ((labels.size - 1 - i) % step == 0) l else "" }
+}
+
+/**
+ * 總資產堆疊柱：每個月一根，0 以上現金銀行（藍）＋投資（紫）往上疊，0 以下是負債（紅）；黑線是總資產（資產－負債）。
+ * 長按看那個月各塊的金額、佔資產的百分比、比上個月；onPick 告訴外面現在選到哪個月（放開後還是那個月）。
+ */
+@Composable
+fun AssetBars(
+    labels: List<String>,
+    points: List<tw.moneybook.app.NetWorthPoint>,
+    titles: List<String>,
+    modifier: Modifier = Modifier,
+    key: String = "assetBars",
+    onPick: (Int) -> Unit = {},
+) {
+    val cute = LocalCute.current
+    val debtColor = cute.expense.copy(alpha = 0.7f)
+    val n = points.size
+    val sel = LocalChartPick.current?.of(key) ?: -1
+    LaunchedEffect(sel) { if (sel in 0 until n) onPick(sel) }
+    val top = (points.maxOfOrNull { maxOf(it.assets, it.net) } ?: 0L).coerceAtLeast(1L)
+    val bottom = (points.minOfOrNull { minOf(-it.debt, it.net) } ?: 0L).coerceAtMost(0L)
+    val range = (top - bottom).toFloat()
+    Column(modifier) {
+        Box(Modifier.chartPick(key, n)) {
+            Canvas(Modifier.fillMaxWidth().height(200.dp)) {
+                if (n == 0) return@Canvas
+                val slot = size.width / n
+                val barW = (slot * 0.62f).coerceAtMost(18.dp.toPx())
+                fun y(v: Long) = (top - v) / range * size.height
+                fun cx(i: Int) = slot * i + slot / 2f
+                for (i in 0 until n) {
+                    if (i == sel) drawRoundRect(cute.sub.copy(alpha = 0.22f), Offset(slot * i + 1f, 0f), Size(slot - 2f, size.height), CornerRadius(6.dp.toPx()))
+                    val p = points[i]
+                    val x0 = cx(i) - barW / 2f
+                    if (p.cash > 0) drawRect(AssetCashColor, Offset(x0, y(p.cash)), Size(barW, y(0) - y(p.cash)))
+                    if (p.invest > 0) drawRect(AssetInvestColor, Offset(x0, y(p.cash + p.invest)), Size(barW, y(p.cash) - y(p.cash + p.invest)))
+                    if (p.debt > 0) drawRect(debtColor, Offset(x0, y(0)), Size(barW, y(-p.debt) - y(0)))
+                }
+                drawLine(cute.sub, Offset(0f, y(0)), Offset(size.width, y(0)), strokeWidth = 1.dp.toPx())
+                if (n > 1) {
+                    val path = Path()
+                    path.moveTo(cx(0), y(points[0].net))
+                    for (i in 1 until n) path.lineTo(cx(i), y(points[i].net))
+                    drawPath(path, cute.ink, style = Stroke(width = 2.5f.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+                for (i in 0 until n) drawCircle(cute.ink, radius = (if (i == sel) 5f else 2.5f).dp.toPx(), center = Offset(cx(i), y(points[i].net)))
+            }
+            if (sel in 0 until n) {
+                val p = points[sel]
+                fun pct(v: Long) = if (p.assets > 0) "・${Math.round(v * 100.0 / p.assets)}%" else ""
+                val lines = mutableListOf(
+                    TipLine("現金銀行", formatMoney(p.cash) + pct(p.cash), AssetCashColor),
+                    TipLine("投資", formatMoney(p.invest) + pct(p.invest), AssetInvestColor),
+                    TipLine("負債", if (p.debt > 0) "-" + formatMoney(p.debt) else formatMoney(0), cute.expense),
+                    TipLine("總資產", formatMoney(p.net), cute.ink),
+                )
+                if (sel > 0) {
+                    val diff = p.net - points[sel - 1].net
+                    lines.add(TipLine("比上個月", signedMoney(diff), if (diff >= 0) cute.income else cute.expense))
+                }
+                ChartTip(sel, n, titles.getOrElse(sel) { labels[sel] }, lines)
+            }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            sparseLabels(labels).forEach { l ->
+                Text(l, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1, softWrap = false)
+            }
+        }
+    }
+}
+
+/** 百分比堆疊：每個月一根一樣高，下面現金銀行、上面投資，看投資佔資產的比例 */
+@Composable
+fun AssetShareBars(labels: List<String>, points: List<tw.moneybook.app.NetWorthPoint>, modifier: Modifier = Modifier) {
+    val cute = LocalCute.current
+    val n = points.size
+    Column(modifier) {
+        Canvas(Modifier.fillMaxWidth().height(140.dp)) {
+            if (n == 0) return@Canvas
+            val slot = size.width / n
+            val barW = (slot * 0.62f).coerceAtMost(18.dp.toPx())
+            for (i in 0 until n) {
+                val p = points[i]
+                val x0 = slot * i + slot / 2f - barW / 2f
+                if (p.assets <= 0) {
+                    drawRect(cute.soft, Offset(x0, 0f), Size(barW, size.height))
+                    continue
+                }
+                val ci = size.height * p.invest / p.assets
+                drawRect(AssetInvestColor, Offset(x0, 0f), Size(barW, ci))
+                drawRect(AssetCashColor, Offset(x0, ci), Size(barW, size.height - ci))
+            }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            sparseLabels(labels).forEach { l ->
+                Text(l, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1, softWrap = false)
             }
         }
     }

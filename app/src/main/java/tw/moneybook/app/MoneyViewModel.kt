@@ -155,6 +155,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         _messages.tryEmit(UiMsg("已恢復預設排版", "復原") { setCardLayout(page, before) })
     }
 
+    /** 總資產頁的期間：近 6、12 個月，0 是全部 */
+    var assetRange by mutableIntStateOf(12)
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())
     var rangeEnd by mutableLongStateOf(LocalDate.now().toEpochDay())

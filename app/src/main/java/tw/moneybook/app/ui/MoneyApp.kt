@@ -195,6 +195,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "fxpending" -> FxPendingScreen(vm) { pop() }
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
+                "asset" -> AssetScreen(vm, onLayout = { push(Route.Page("layout:$it")) }) { pop() }
                 else -> {
                     // 調整卡片排版：layout:<CardPage.key>
                     val cardPage = if (top.name.startsWith("layout:")) tw.moneybook.app.CardPages.of(top.name.removePrefix("layout:")) else null

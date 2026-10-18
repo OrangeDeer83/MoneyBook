@@ -184,6 +184,18 @@ object CardPages {
         CardLayout(listOf(CardRow("savings"), CardRow("bars"), CardRow("months")), hidden = listOf("saved")),
     )
 
-    val all: List<CardPage> = listOf(PERIOD, TREND)
+    /** 總資產頁 */
+    val ASSET = CardPage(
+        "asset", "總資產",
+        listOf(
+            CardSpec("compose", "現在的組成"),
+            CardSpec("change", "總資產變化"),
+            CardSpec("reasons", "變化的原因"),
+            CardSpec("share", "投資佔資產的比例"),
+        ),
+        CardLayout(listOf(CardRow("compose"), CardRow("change"), CardRow("reasons")), hidden = listOf("share")),
+    )
+
+    val all: List<CardPage> = listOf(PERIOD, TREND, ASSET)
     fun of(key: String): CardPage? = all.firstOrNull { it.key == key }
 }
