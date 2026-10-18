@@ -133,6 +133,28 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             d.copy(prefs = d.prefs.copy(collapsedAccTypes = if (type.name in cur) cur - type.name else cur + type.name))
         }
     }
+    /** 某一頁目前的卡片排版（沒調整過是預設排版） */
+    fun cardLayout(page: CardPage): CardLayout =
+        page.normalize(data.prefs.cardLayouts[page.key]?.let { CardLayout.decode(it) })
+
+    fun setCardLayout(page: CardPage, l: CardLayout) {
+        update { d -> d.copy(prefs = d.prefs.copy(cardLayouts = d.prefs.cardLayouts + (page.key to l.encode()))) }
+    }
+
+    /** 統計頁卡片的「隱藏這張」：跳提示可以復原 */
+    fun hideCard(page: CardPage, id: String) {
+        val before = cardLayout(page)
+        setCardLayout(page, page.hide(before, id))
+        _messages.tryEmit(UiMsg("已隱藏「${page.name(id)}」", "復原") { setCardLayout(page, before) })
+    }
+
+    /** 編輯頁的「恢復預設」：跳提示可以復原 */
+    fun resetCardLayout(page: CardPage) {
+        val before = cardLayout(page)
+        update { d -> d.copy(prefs = d.prefs.copy(cardLayouts = d.prefs.cardLayouts - page.key)) }
+        _messages.tryEmit(UiMsg("已恢復預設排版", "復原") { setCardLayout(page, before) })
+    }
+
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())
     var rangeEnd by mutableLongStateOf(LocalDate.now().toEpochDay())

@@ -114,6 +114,7 @@ object Codec {
                 .put("mascotName", p.mascotName).put("mascotLast", p.mascotLast).put("dark", p.dark).put("celebrate", p.celebrate)
                 .put("priceFetch", p.priceFetch).put("priceFetchDay", p.priceFetchDay)
                 .put("collapsedAccTypes", JSONArray(p.collapsedAccTypes))
+                .put("cardLayouts", JSONObject().apply { p.cardLayouts.forEach { (k, v) -> put(k, JSONArray(v)) } })
         )
         return root.toString()
     }
@@ -247,6 +248,7 @@ object Codec {
             priceFetch = po.optBoolean("priceFetch", false),
             priceFetchDay = po.optLong("priceFetchDay", 0L),
             collapsedAccTypes = strings(po.optJSONArray("collapsedAccTypes")),
+            cardLayouts = po.optJSONObject("cardLayouts")?.let { o -> o.keys().asSequence().associateWith { k -> strings(o.optJSONArray(k)) } } ?: emptyMap(),
         )
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
             txns.map { it.id } + templates.map { it.id } + trades.map { it.id }).maxOrNull() ?: 0L

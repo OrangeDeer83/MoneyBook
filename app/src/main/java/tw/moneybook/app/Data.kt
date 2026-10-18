@@ -250,6 +250,8 @@ data class Prefs(
     val priceFetchDay: Long = 0L,
     /** 帳戶分頁收折起來的類型（AccountType 的名稱），重開 App 後仍保留 */
     val collapsedAccTypes: List<String> = emptyList(),
+    /** 統計頁、總資產頁的卡片排版（CardPage.key → CardLayout.encode()）；沒有的頁用預設排版 */
+    val cardLayouts: Map<String, List<String>> = emptyMap(),
 )
 
 data class AppData(
