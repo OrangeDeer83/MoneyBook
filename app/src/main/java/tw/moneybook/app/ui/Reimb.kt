@@ -48,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import tw.moneybook.app.filterSuggestions
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
@@ -119,6 +121,8 @@ internal fun CompactField(
     decimal: Boolean = false,
     /** 必填沒填好：亮紅框 */
     error: Boolean = false,
+    /** 游標進來／離開（名字欄要知道正在打哪一欄，下面才放建議） */
+    onFocus: ((Boolean) -> Unit)? = null,
 ) {
     val cute = LocalCute.current
     BasicTextField(
@@ -130,7 +134,7 @@ internal fun CompactField(
         keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else if (number) KeyboardType.Number else KeyboardType.Text),
         // 數字欄位（金額、外幣、匯率）打字時顯示千分位
         visualTransformation = if (number || decimal) ThousandsVisual else androidx.compose.ui.text.input.VisualTransformation.None,
-        modifier = modifier,
+        modifier = if (onFocus != null) modifier.onFocusChanged { onFocus(it.isFocused) } else modifier,
         decorationBox = { inner ->
             Row(
                 Modifier.clip(RoundedCornerShape(14.dp)).background(cute.soft)
@@ -296,6 +300,9 @@ fun ReimbEditPage(
     var splitMenu by remember { mutableStateOf(false) }
     // 「平分剩下的」模式：沒填金額的人由系統自動分剩下的（含自己），手動改過金額的人就固定；只用在目前這一邊
     var restMode by remember { mutableStateOf(false) }
+    // 正在打名字的是第幾欄（-1 是沒有），那一欄下面才放名字建議
+    var nameFocus by remember { mutableStateOf(-1) }
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
     LaunchedEffect(tab) { restMode = false }
     val lockedSum = cur.sumOf { if (it.isLocked) it.lockedEffective else 0L }
 
@@ -386,18 +393,19 @@ fun ReimbEditPage(
                                 Text(formatMoney(r.locked?.amount ?: r.lockedDebt!!.amount), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
                             }
                         } else {
+                            val setWho: (String) -> Unit = { v ->
+                                r.who = v.take(12); err = ""
+                                // 只有一個人、還沒填金額：金額預設填滿（報銷是實付，欠款是整筆，之後可以改）
+                                if (v.isNotBlank() && r.amt.isBlank() && !r.amtTouched && cur.count { !it.isLocked } == 1) {
+                                    val pool = (actual - lockedSum).coerceAtLeast(0L)
+                                    if (pool > 0L) r.amt = amtText(pool)
+                                }
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 CompactField(
-                                    r.who,
-                                    { v ->
-                                        r.who = v.take(12); err = ""
-                                        // 只有一個人、還沒填金額：金額預設填滿（報銷是實付，欠款是整筆，之後可以改）
-                                        if (v.isNotBlank() && r.amt.isBlank() && !r.amtTouched && cur.count { !it.isLocked } == 1) {
-                                            val pool = (actual - lockedSum).coerceAtLeast(0L)
-                                            if (pool > 0L) r.amt = amtText(pool)
-                                        }
-                                    },
+                                    r.who, setWho,
                                     if (tab == 0) "對象（選填）" else "欠誰", Modifier.weight(1f),
+                                    onFocus = { on -> if (on) nameFocus = i else if (nameFocus == i) nameFocus = -1 },
                                 )
                                 CompactField(
                                     r.amt, { v -> r.auto = false; r.amtTouched = true; err = ""; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
@@ -407,6 +415,15 @@ fun ReimbEditPage(
                                 Text(
                                     "✕", color = cute.sub, style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.clip(CircleShape).clickable { cur.removeAt(i) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                                )
+                            }
+                            // 正在打這一欄的名字：下面列出符合的名字（照用過的次數），點一下填進這一欄
+                            if (nameFocus == i && r.who.isNotBlank()) {
+                                val others = cur.filterIndexed { j, o -> j != i }.map { it.who.trim() }.toSet()
+                                SuggestRow(
+                                    if (tab == 0) "以前的對象" else "以前欠過的人",
+                                    filterSuggestions((if (tab == 0) names else debtNames).filter { it !in others }, r.who).take(8),
+                                    r.who, { nm -> setWho(nm); focus.clearFocus() },
                                 )
                             }
                             if (fxOn && rowTwd(r) > 0L) {

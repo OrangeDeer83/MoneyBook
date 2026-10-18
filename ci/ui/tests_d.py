@@ -3494,3 +3494,48 @@ def t_tips():
     d.time.sleep(1.5)
     ns = d.shot("區間")
     d.check("區間寫「這段期間的重點」", d.has(ns, "這段期間的重點", True), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "常用備註與名字：點備註出現用過 2 次以上的備註，打字篩選、點一下填上；報銷名字打字時列出符合的名字", visual=True)
+def t_suggest_notes_names():
+    s = S.Seed(f.today())
+    for k in range(2):
+        s.expense(-1 - k, 120, S.C_LUNCH, note="Lunch Box")
+        s.expense(-1 - k, 80, S.C_DRINK, note="Late Coffee")
+    s.expense(-3, 50, S.C_LUNCH, note="Lucky")      # 只用過一次：不列
+    s.expense(-4, 300, S.C_DINNER, reimb=1, reimb_amount=300, items=[S.reimb_item("Amy", 300)])
+    s.expense(-5, 200, S.C_DINNER, reimb=1, reimb_amount=200, items=[S.reimb_item("Amanda", 200)])
+    s.expense(-6, 100, S.C_DINNER, reimb=1, reimb_amount=100, items=[S.reimb_item("Bob", 100)])
+    d.fresh(s.json())
+    f.open_add()
+    d.tap_text("備註（選填）", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("點備註")
+    d.check("出現「常用備註」：Lunch Box、Late Coffee；只用過一次的 Lucky 不列",
+            d.has(ns, "常用備註", True) and d.has(ns, "Lunch Box", True) and d.has(ns, "Late Coffee", True) and not d.has(ns, "Lucky", True), [n.text for n in ns if n.text][:30])
+    d.type_text("lun")
+    d.time.sleep(1)
+    ns = d.shot("打 lun")
+    d.check("打 lun 只剩 Lunch Box", d.has(ns, "Lunch Box", True) and not d.has(ns, "Late Coffee", True), [n.text for n in ns if n.text][:30])
+    d.tap_text("Lunch Box", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("點一下填上")
+    d.check("備註填上「Lunch Box」、建議收起來", any(e.text == "Lunch Box" for e in d.edits()) and not d.has(ns, "常用備註", True), [e.text for e in d.edits()])
+    # 報銷名字
+    f.keypad("600")
+    f.chip_scroll("報銷", "新增標籤")
+    d.wait_text("這筆的報銷／欠款", timeout=15)
+    ed = d.edits()
+    d.tap(ed[0])
+    d.type_text("am")
+    d.time.sleep(1)
+    ns = d.shot("名字打 am")
+    d.check("名字欄打 am：下面列出 Amy、Amanda，沒有 Bob", d.has(ns, "以前的對象", True) and d.has(ns, "Amy", True) and d.has(ns, "Amanda", True)
+            and sum(1 for n in ns if n.text == "Bob") <= 1, [n.text for n in ns if n.text][:40])
+    lab = d.first(ns, "以前的對象", True)
+    amanda = next((n for n in ns if n.text == "Amanda" and lab and n.cy > lab.cy), None)
+    if amanda:
+        d.tap(amanda)
+        d.time.sleep(1)
+    ns = d.shot("點 Amanda")
+    d.check("名字填上 Amanda", any(e.text == "Amanda" for e in d.edits()), [e.text for e in d.edits()])
