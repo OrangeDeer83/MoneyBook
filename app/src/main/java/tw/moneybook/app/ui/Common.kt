@@ -123,6 +123,17 @@ fun PillSegment(
 }
 
 /** 小圓角標籤按鈕 */
+/** 一排小按鈕（買進／賣出／日期、日期／時間…）：放不下時換到下一行，不會把最後一顆擠到字被切掉 */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun ChipRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) { content() }
+}
+
 @Composable
 fun CuteChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: String? = null) {
     val cute = LocalCute.current

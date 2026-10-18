@@ -502,7 +502,7 @@ private fun AdjustBalanceDialog(vm: MoneyViewModel, acc: Account, isCard: Boolea
                 },
                 color = cute.sub, style = MaterialTheme.typography.bodySmall,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ChipRow {
                 CuteChip(dayLabel(day), false, { pick = "date" }, icon = "vec:calendar")
                 CuteChip(tw.moneybook.app.formatTime(time), false, { pick = "time" }, icon = "vec:clock")
             }

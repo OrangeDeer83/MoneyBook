@@ -609,7 +609,7 @@ private fun TradeDialog(
         title = { Text((if (edit != null) "修改" else "") + if (buy) "買進" else "賣出") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ChipRow {
                     // 修改時買賣方向鎖住：只顯示目前的方向
                     if (edit == null || buy) CuteChip("買進", buy, { if (edit == null) buy = true })
                     if (edit == null || !buy) CuteChip("賣出", !buy, { if (edit == null) buy = false })

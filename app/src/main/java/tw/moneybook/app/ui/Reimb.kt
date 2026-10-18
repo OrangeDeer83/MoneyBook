@@ -1127,7 +1127,7 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                 if (fxChoices.isNotEmpty() && !multi && curOf(lines[0]).isEmpty()) {
                     Text("有幾筆是用外幣付的，對方還外幣的話，選外幣帳戶收。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ChipRow {
                     CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
                     CuteChip(tw.moneybook.app.formatTime(timeMin), false, { pickTime = true }, icon = "vec:clock")
                 }
@@ -1471,7 +1471,7 @@ private fun ReimbPayEditDialog(vm: MoneyViewModel, entry: Triple<Claim, Int, Rei
                 if (editFx != null) {
                     Text("收外幣：沖掉的台幣用這筆消費當時的匯率換算。", style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ChipRow {
                     CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
                     CuteChip(if (timeMin >= 0) tw.moneybook.app.formatTime(timeMin) else "未設定時間", false, { pickTime = true }, icon = "vec:clock")
                 }
@@ -1608,7 +1608,7 @@ private fun DebtRepayPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, o
                         SoftButton("全不選", { calcs.forEach { c -> c.g.refs.forEach { selected[it.key] = false }; c.s.amountText = null } }, compact = true)
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ChipRow {
                     CuteChip(dayLabel(day), false, { pickDate = true }, icon = "vec:calendar")
                     CuteChip(tw.moneybook.app.formatTime(timeMin), false, { pickTime = true }, icon = "vec:clock")
                 }
