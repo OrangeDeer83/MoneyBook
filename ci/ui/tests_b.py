@@ -291,7 +291,7 @@ def t_receive_partial_fifo():
     d.fill(ed[0], "1200")
     d.hide_ime()
     ns = d.shot("輸入 1200 後的分配")
-    d.check("由舊到新自動分配：最舊的一筆收 1000", "1000" in [n.text for n in d.edits()], [n.text for n in d.edits()])
+    d.check("由舊到新自動分配：最舊的一筆收 1000", "1,000" in [n.text for n in d.edits()], [n.text for n in d.edits()])
     confirm_receive()
     if d.has(d.nodes(), "還有沒收到的款項"):
         d.shot("追問對話框")
@@ -712,7 +712,7 @@ def t_receive_select():
     receive_page("Ming")
     ns = d.shot("Ming 的收款頁（預設全選）")
     d.check("最上面：這次勾選 2 筆，合計 $1,500", d.has(ns, "這次勾選 2 筆，合計") and d.has(ns, "$1,500", True), [n.text for n in ns if n.text][:30])
-    d.check("收到金額預設是勾選的合計 1500", "1500" in [e.text for e in d.edits()], [e.text for e in d.edits()])
+    d.check("收到金額預設是勾選的合計 1500", "1,500" in [e.text for e in d.edits()], [e.text for e in d.edits()])
     boxes = sorted([n for n in ns if n.checkable], key=lambda n: n.cy)
     d.check("每一筆帳前面有勾選框（兩筆，預設都勾）", len(boxes) == 2 and all(b.checked for b in boxes), [(b.cy, b.checked) for b in boxes])
     d.tap(boxes[0])          # 取消勾選最舊的那一筆（r1，$1,000）
