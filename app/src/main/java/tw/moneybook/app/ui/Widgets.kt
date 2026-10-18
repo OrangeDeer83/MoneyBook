@@ -503,7 +503,7 @@ fun sparseLabels(labels: List<String>, keep: Int = 7): List<String> {
 
 /**
  * 總資產堆疊柱：每個月一根，0 以上現金銀行（藍）＋投資（紫）往上疊，0 以下是負債（紅）；黑線是總資產（資產－負債）。
- * 長按看那個月各塊的金額、佔資產的百分比、比上個月；onPick 告訴外面現在選到哪個月（放開後還是那個月）。
+ * 長按看那個月各塊的金額、佔資產的百分比、比上個月；onPick 告訴外面現在選到哪個月（資訊框收起來時是 -1）。
  */
 @Composable
 fun AssetBars(
@@ -518,7 +518,7 @@ fun AssetBars(
     val debtColor = cute.expense.copy(alpha = 0.7f)
     val n = points.size
     val sel = LocalChartPick.current?.of(key) ?: -1
-    LaunchedEffect(sel) { if (sel in 0 until n) onPick(sel) }
+    LaunchedEffect(sel) { onPick(if (sel in 0 until n) sel else -1) }
     val top = (points.maxOfOrNull { maxOf(it.assets, it.net) } ?: 0L).coerceAtLeast(1L)
     val bottom = (points.minOfOrNull { minOf(-it.debt, it.net) } ?: 0L).coerceAtMost(0L)
     val range = (top - bottom).toFloat()

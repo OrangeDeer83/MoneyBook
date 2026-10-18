@@ -82,7 +82,7 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
     val points = remember(d, months) { d.netWorthMonths(months) }
     val labels = months.map { if (it.monthValue == 1 || it == months.first()) "${it.year % 100}/${it.monthValue}" else "${it.monthValue}月" }
     val titles = months.map { "${it.year} 年 ${it.monthValue} 月" }
-    // 「變化的原因」看哪個月：長按圖上的月份會換過去，放開後還是那個月
+    // 「變化的原因」看哪個月：長按圖上的月份會換過去，資訊框收起來就回到最近一個月
     var picked by remember(months) { mutableIntStateOf(months.size - 1) }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding()) {
@@ -105,7 +105,7 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
                     cardRows(layout, narrow, { true }, { onLayout(page.key) }) { id, _ ->
                         when (id) {
                             "compose" -> ComposeCard(points.last(), menu)
-                            "change" -> ChangeCard(vm.assetRange, months, labels, titles, points, menu) { picked = it }
+                            "change" -> ChangeCard(vm.assetRange, months, labels, titles, points, menu) { picked = if (it < 0) months.size - 1 else it }
                             "reasons" -> ReasonsCard(d, months[picked.coerceIn(months.indices)], menu)
                             "share" -> ShareCard(labels, points, menu)
                         }

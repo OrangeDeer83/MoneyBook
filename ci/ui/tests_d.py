@@ -3397,6 +3397,10 @@ def t_asset_page():
     d.check(f"資訊框：{last.year} 年 {last.month} 月、現金銀行、負債、總資產",
             d.has(ns, f"{last.year} 年 {last.month} 月", True) and d.has(ns, "總資產", True) and d.has(ns, "$68,000", True), [n.text for n in ns if n.text][:40])
     d.check(f"變化的原因換成 {last.month} 月", d.has(ns, f"{last.month} 月變化的原因", True), [n.text for n in ns if "原因" in n.text])
+    d.tap_text("總資產變化", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("點其他地方，資訊框收起來")
+    d.check(f"資訊框收起來後，變化的原因回到 {m} 月", d.has(ns, f"{m} 月變化的原因", True) and not d.has(ns, "$68,000", True), [n.text for n in ns if "原因" in n.text])
     d.tap_text("全部", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("全部")
