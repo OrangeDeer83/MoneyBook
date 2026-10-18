@@ -383,7 +383,8 @@ object Calc {
         }
     }
 
-    fun pretty(expr: String): String = expr.replace("-", " − ").replace("+", " + ")
+    /** 顯示用：數字加千分位，運算符號前後留空格（1200+350 → 1,200 + 350） */
+    fun pretty(expr: String): String = groupDigits(expr).first.replace("-", " − ").replace("+", " + ")
 
     /**
      * 可以是負數的按鍵（更新餘額用）：一開始按 − 就是負數，之後和一般計算機一樣；dec＞0 時可以打小數點（外幣）。

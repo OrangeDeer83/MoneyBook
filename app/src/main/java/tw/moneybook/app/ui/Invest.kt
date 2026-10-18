@@ -422,6 +422,7 @@ private fun PriceDialog(p: Position, onConfirm: (Double) -> Unit, onEdit: () -> 
                     label = { Text(if (p.currency.isNotEmpty()) "今天的價格（${p.currency}）" else "今天的價格") }, singleLine = true,
                     isError = nv.on("price"), supportingText = nv.supporting("price"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    visualTransformation = ThousandsVisual,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 SoftButton("編輯", onEdit, Modifier.fillMaxWidth())
@@ -645,12 +646,14 @@ private fun TradeDialog(
                         isError = nv.on("qty") || oversell || tooFew,
                         supportingText = nv.supporting("qty") ?: if (oversell) ({ Text("超過持有的 ${qtyText(holdQty)} 股") }) else if (tooFew) ({ Text("後面已經賣出 ${qtyText(-holdQty)} 股，至少要 ${qtyText(-holdQty)} 股") }) else null,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f).needInView(nv, "qty"),
+                        visualTransformation = ThousandsVisual,
                     )
                     OutlinedTextField(
                         price, { price = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
                         label = { Text(if (cur.isNotEmpty()) "單價（$cur）" else "單價") }, singleLine = true,
                         isError = nv.on("price"), supportingText = nv.supporting("price"),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f).needInView(nv, "price"),
+                        visualTransformation = ThousandsVisual,
                     )
                 }
                 if (cur.isNotEmpty()) {
@@ -669,6 +672,7 @@ private fun TradeDialog(
                         Text(what + (if (cashFx) "，$cur）" else if (cur.isNotEmpty()) "，台幣）" else "）"))
                     }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = if (cashFx) KeyboardType.Decimal else KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = ThousandsVisual,
                 )
                 Text(if (buy) "從哪個帳戶付款" else "賣出的錢轉到哪個帳戶", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                 PickerButton(cashAcc?.let { it.name + if (it.isForeign) "（${it.currency}）" else "" } ?: "不連動（只記買賣，不動帳戶）", { pickCash = true })

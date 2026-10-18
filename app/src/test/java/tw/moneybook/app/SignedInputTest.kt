@@ -1,12 +1,32 @@
 package tw.moneybook.app
 
 import java.time.LocalDate
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** 更新餘額可以輸入負數的計算機、某個時間點的帳戶餘額 */
+/** 千分位、更新餘額可以輸入負數的計算機、某個時間點的帳戶餘額 */
 class SignedInputTest {
+    @Test
+    fun groupDigitsAddsCommasToIntegerPartsOnly() {
+        assertEquals("1,354,869", groupDigits("1354869").first)
+        assertEquals("-1,354,869", groupDigits("-1354869").first)
+        assertEquals("1,200+350", groupDigits("1200+350").first)
+        assertEquals("1,025.5", groupDigits("1025.5").first)
+        assertEquals("0.12345", groupDigits("0.12345").first)   // 小數點後面不加
+        assertEquals("999", groupDigits("999").first)
+        assertEquals("", groupDigits("").first)
+        // 原本每個位置在新字串的位置："1234" → "1,234"
+        assertArrayEquals(intArrayOf(0, 2, 3, 4, 5), groupDigits("1234").second)
+    }
+
+    @Test
+    fun prettyExpressionHasCommas() {
+        assertEquals("1,200 + 350", Calc.pretty("1200+350"))
+        assertEquals("12,000 − 3,000", Calc.pretty("12000-3000"))
+    }
+
     @Test
     fun firstMinusMakesNegative() {
         var e = ""

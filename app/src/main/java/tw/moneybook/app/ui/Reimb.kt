@@ -128,6 +128,8 @@ internal fun CompactField(
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else if (number) KeyboardType.Number else KeyboardType.Text),
+        // 數字欄位（金額、外幣、匯率）打字時顯示千分位
+        visualTransformation = if (number || decimal) ThousandsVisual else androidx.compose.ui.text.input.VisualTransformation.None,
         modifier = modifier,
         decorationBox = { inner ->
             Row(

@@ -197,6 +197,7 @@ fun BudgetDialog(vm: MoneyViewModel, month: java.time.YearMonth, onDismiss: () -
                     text, { text = it.filter { c -> c.isDigit() }.take(10) },
                     prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    visualTransformation = ThousandsVisual,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 val others = book.monthBudgets.entries.sortedByDescending { it.key }
@@ -311,6 +312,7 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
                     budget, { budget = it.filter { c -> c.isDigit() }.take(10) },
                     label = { Text("每月預算（選填）") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    visualTransformation = ThousandsVisual,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (onDelete != null) {
@@ -774,6 +776,7 @@ fun AccountDialog(
                     label = { Text(if (type == AccountType.CARD || type == AccountType.LOAN) "初始金額（欠款請填負數）" else "初始金額") },
                     prefix = { Text(curInfo?.symbol?.trim() ?: tw.moneybook.app.Money.twd) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    visualTransformation = ThousandsVisual,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (type == AccountType.CARD) {
@@ -848,6 +851,7 @@ fun AccountDialog(
                             limit, { limit = it.filter { c -> c.isDigit() }.take(9) },
                             label = { Text("信用額度") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            visualTransformation = ThousandsVisual,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }

@@ -193,6 +193,7 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
                                 label = { Text("股數") }, singleLine = true,
                                 isError = nv.on("qty${r.key}"), supportingText = nv.supporting("qty${r.key}"),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                visualTransformation = ThousandsVisual,
                                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) }),
                                 modifier = Modifier.weight(1f).needInView(nv, "qty${r.key}"),
                             )
@@ -201,6 +202,7 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
                                 label = { Text(if (byTotal) "總成本" else "每股均價") }, singleLine = true,
                                 isError = nv.on("cost${r.key}"), supportingText = nv.supporting("cost${r.key}"),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                                visualTransformation = ThousandsVisual,
                                 // 最後一列填好成本再按「下一個」：自動多一列、游標跳到它的代號
                                 keyboardActions = KeyboardActions(onNext = { if (isLast && !r.blank()) addRow() else focus.moveFocus(FocusDirection.Next) }),
                                 modifier = Modifier.weight(1f).needInView(nv, "cost${r.key}"),

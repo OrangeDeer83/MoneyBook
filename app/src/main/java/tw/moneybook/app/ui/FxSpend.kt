@@ -130,6 +130,7 @@ fun FxSpendDialog(
                     label = { Text("外幣金額（${code.ifEmpty { "外幣" }}）") }, singleLine = true,
                     isError = nv.on("amount"), supportingText = nv.supporting("amount"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    visualTransformation = ThousandsVisual,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (!debt) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -168,6 +169,7 @@ fun FxSpendDialog(
                         label = { Text("實際請款的台幣金額（含海外手續費）") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                         isError = nv.on("twd"), supportingText = nv.supporting("twd"),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = ThousandsVisual,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     val real = if (minor != null && twdActual != null) impliedRate(twdActual, minor, dec) else null
@@ -225,6 +227,7 @@ fun SettleFxDialog(t: Txn, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
                     label = { Text("實際請款的台幣金額（含海外手續費）") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
                     isError = nv.on("twd"), supportingText = nv.supporting("twd"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    visualTransformation = ThousandsVisual,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (real != null && twd != null) {
