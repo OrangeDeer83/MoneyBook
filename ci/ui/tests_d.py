@@ -232,6 +232,11 @@ def t_home_cal_toggle():
 
 
 # ───────────────────────── 更新餘額 ─────────────────────────
+def kp(s):
+    """更新餘額視窗用 App 的計算機鍵盤輸入（- 是「−」鍵）"""
+    f.keypad(s.replace("-", "−"))
+
+
 @case(D, "更新餘額補平差額且不算收支")
 def t_adjust_balance():
     d.fresh(empty_seed().json())
@@ -240,7 +245,7 @@ def t_adjust_balance():
     d.wait_text("實際的餘額", exact=False, timeout=10)
     ns = d.shot("更新餘額對話框")
     d.check("顯示目前記錄的餘額 $50,000", d.has(ns, "目前記錄的餘額：$50,000"))
-    fill_dialog(["52000"])
+    kp("52000")
     ns = d.shot("輸入 52000")
     d.check("預覽：會補記 +$2,000，不算收入", d.has(ns, "會補記 +$2,000，不算收入"))
     d.tap_text("更新", exact=True)
@@ -261,20 +266,19 @@ def t_adjust_edge():
     d.tap_text("更新餘額", exact=True)
     d.wait_text("實際的餘額", exact=False, timeout=10)
     ns = d.shot("信用卡的更新餘額")
-    d.check("信用卡有「欠款請輸入負數」的提示", d.has(ns, "欠款請輸入負數"))
-    fill_dialog(["0"])
+    d.check("信用卡有「欠款：先按 − 再輸入金額」的提示", d.has(ns, "先按 − 再輸入金額"))
+    kp("0")
     ns = d.shot("輸入和目前一樣的 0")
     d.check("數字相同：提示「不用調整」", d.has(ns, "和記錄的一樣，不用調整"))
-    d.clear(d.edits()[0])
-    d.hide_ime()
+    kp("C")
     d.tap_text("更新", exact=True)
     d.time.sleep(0.8)
     ns = d.shot("沒填金額按更新")
-    d.check("欄位清空按更新：提示「請輸入帳戶現在實際的餘額」且對話框還在", d.has(ns, "請輸入帳戶現在實際的餘額") and d.has(ns, "實際的餘額"), [n.text for n in ns if n.text][:20])
-    fill_dialog(["0"])
-    fill_dialog(["-3000"])
+    d.check("清空後按更新：提示「請輸入帳戶那時候實際的餘額」且視窗還在", d.has(ns, "請輸入帳戶那時候實際的餘額") and d.has(ns, "實際的餘額"), [n.text for n in ns if n.text][:20])
+    kp("-3000")
     ns = d.shot("輸入 -3000")
-    d.check("預覽：會補記 −$3,000，不算支出", d.has(ns, "會補記 −$3,000，不算支出"))
+    d.check("第一個按 − 就是負數：顯示 -$3,000，預覽會補記 -$3,000，不算支出",
+            d.has(ns, "-$3,000", True) and d.has(ns, "會補記 -$3,000，不算支出"), [n.text for n in ns if n.text][:20])
     d.tap_text("更新", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("更新之後")
@@ -287,7 +291,7 @@ def t_adjust_undo():
     open_account("測試銀行")
     d.tap_text("更新餘額", exact=True)
     d.wait_text("實際的餘額", exact=False, timeout=10)
-    fill_dialog(["52000"])
+    kp("52000")
     d.tap_text("更新", exact=True)
     d.tap_text("復原", exact=True, timeout=6)   # 提示只停 4 秒，不能先截圖再點
     d.time.sleep(1.5)
@@ -571,7 +575,8 @@ def t_acc_loan():
     d.tap_text("更新餘額", exact=True)
     d.wait_text("實際的餘額", exact=False, timeout=10)
     ns = d.shot("貸款的更新餘額")
-    d.check("貸款的更新餘額也提示欠款請輸入負數", d.has(ns, "欠款請輸入負數"))
+    d.check("貸款的更新餘額也提示欠款先按 −", d.has(ns, "先按 − 再輸入金額"))
+    d.check("有日期和時間可以改（預設現在）", any(n.text.startswith("今天") for n in ns) and any(len(n.text) == 5 and n.text[2] == ":" for n in ns), [n.text for n in ns if n.text][:20])
 
 
 # ───────────────────────── 記一筆：選帳戶分類與常用帳戶 ─────────────────────────
@@ -1385,8 +1390,7 @@ def t_fx_adjust_balance():
     open_account("美元帳戶")
     d.tap_text("更新餘額", exact=True)
     d.wait_text("實際的餘額", timeout=10)
-    d.fill(d.edits()[0], "1000.5")
-    d.hide_ime()
+    kp("1000.5")
     ns = d.shot("輸入實際餘額")
     d.check("對話框顯示目前記錄的餘額 US$987.50", d.has(ns, "目前記錄的餘額：US$987.50", True), [n.text for n in ns if "餘額" in n.text])
     d.check("提示會補記 +US$13.00，不算收入", d.has(ns, "會補記 +US$13.00，不算收入", True), [n.text for n in ns if "補記" in n.text])

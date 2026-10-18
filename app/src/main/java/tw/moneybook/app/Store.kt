@@ -385,6 +385,37 @@ object Calc {
 
     fun pretty(expr: String): String = expr.replace("-", " − ").replace("+", " + ")
 
+    /**
+     * 可以是負數的按鍵（更新餘額用）：一開始按 − 就是負數，之後和一般計算機一樣；dec＞0 時可以打小數點（外幣）。
+     * 只有一個負號時再按 + 就清掉。
+     */
+    fun pressSigned(expr: String, key: String, dec: Int = 0): String = when {
+        expr.isEmpty() && key == "-" -> "-"
+        expr == "-" && (key == "+" || key == "-") -> if (key == "-") "-" else ""
+        else -> if (dec > 0) pressFx(expr, key, dec) else press(expr, key)
+    }
+
+    /** 可以是負數的算式結果（最小單位，台幣 dec＝0）；還沒輸入數字（空的或只有負號）回傳 null */
+    fun evalSigned(expr: String, dec: Int = 0): Long? {
+        if (expr.none { it.isDigit() }) return null
+        var total = 0L
+        var sign = 1L
+        val cur = StringBuilder()
+        fun flush() {
+            total += sign * (parseFx(cur.toString(), dec) ?: 0L)
+            cur.clear()
+        }
+        for (ch in expr) {
+            when {
+                ch.isDigit() || ch == '.' -> cur.append(ch)
+                ch == '+' -> { flush(); sign = 1L }
+                ch == '-' -> { flush(); sign = -1L }
+            }
+        }
+        flush()
+        return total.coerceIn(-MAX_FX, MAX_FX)
+    }
+
     private const val MAX_FX = 99_999_999_999L
 
     /** 外幣模式：金額可以有小數（dec 位），結果是最小單位（美元的分） */

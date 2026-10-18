@@ -357,10 +357,9 @@ fun AccountDetailScreen(
     }
     if (adjusting) {
         AdjustBalanceDialog(
+            vm = vm,
             acc = a,
-            current = balance,
             isCard = a.type == AccountType.CARD || a.type == AccountType.LOAN,
-            onConfirm = { target -> vm.adjustBalance(a.id, target); adjusting = false },
             onDismiss = { adjusting = false },
         )
     }
@@ -443,54 +442,90 @@ private fun RateDialog(
     )
 }
 
-/** 更新餘額：輸入帳戶現在實際的餘額，差額會記成一筆「餘額調整」 */
+/**
+ * 更新餘額：用 App 的計算機鍵盤輸入帳戶那個時間點實際的餘額（第一個按 − 就是負數，信用卡、貸款的欠款），
+ * 日期、時間預設現在，可以改成以前（補記）；和那個時間點記錄的餘額的差額記成一筆「餘額調整」。
+ */
 @Composable
-private fun AdjustBalanceDialog(acc: Account, current: Long, isCard: Boolean, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
+private fun AdjustBalanceDialog(vm: MoneyViewModel, acc: Account, isCard: Boolean, onDismiss: () -> Unit) {
+    val d = vm.data
     val cute = LocalCute.current
-    var text by remember { mutableStateOf("") }
+    val nowTime = java.time.LocalTime.now()
+    val today = LocalDate.now().toEpochDay()
+    var expr by remember { mutableStateOf("") }
+    var day by remember { androidx.compose.runtime.mutableLongStateOf(today) }
+    var time by remember { androidx.compose.runtime.mutableIntStateOf(nowTime.hour * 60 + nowTime.minute) }
+    var pick by remember { mutableStateOf("") }
     val dec = if (acc.isForeign) acc.cur.decimals else 0
-    // 只留數字（外幣可以有小數點），欠款（信用卡）可以在最前面加負號
-    val target = parseFx(text, dec)
-    fun money(v: Long) = acc.fmt(v)
+    val target = tw.moneybook.app.Calc.evalSigned(expr, dec)
+    val current = remember(d, day, time) { d.balanceAt(acc.id, day, time) }
     val tries = rememberNeedTries()
-    val need = firstNeed(if (target == null) Need("target", "請輸入帳戶現在實際的餘額") else null)
+    val need = firstNeed(if (target == null) Need("target", "請輸入帳戶那時候實際的餘額") else null)
     val nv = NeedView(need, tries.count)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("更新餘額") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("目前記錄的餘額：${money(current)}", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(
-                    text, { text = it.filter { c -> c.isDigit() || c == '-' || (c == '.' && dec > 0) }.take(14) },
-                    label = { Text("實際的餘額") }, singleLine = true,
-                    isError = nv.on("target"), supportingText = nv.supporting("target"),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                val diff = target?.let { it - current }
+    fun money(v: Long) = acc.fmt(v)
+    val sym = if (acc.isForeign) acc.cur.symbol.trim() else tw.moneybook.app.Money.twd
+    val shown = when {
+        expr.isEmpty() -> sym + "0"
+        expr.startsWith("-") -> "-" + sym + tw.moneybook.app.Calc.pretty(expr.drop(1))
+        else -> sym + tw.moneybook.app.Calc.pretty(expr)
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(cute.card).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("更新餘額・${acc.name}", style = MaterialTheme.typography.titleLarge, maxLines = 1)
+            Text("${if (day == today) "目前" else "那時候"}記錄的餘額：${money(current)}", color = cute.sub, style = MaterialTheme.typography.bodyMedium)
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    .then(if (nv.on("target")) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(14.dp)) else Modifier)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalAlignment = Alignment.End,
+            ) {
+                Text("實際的餘額", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.fillMaxWidth())
                 Text(
-                    when {
-                        diff == null -> if (isCard) "信用卡或貸款的欠款請輸入負數，例如 -3000" else "輸入帳戶現在實際的金額"
-                        diff == 0L -> "和記錄的一樣，不用調整"
-                        diff > 0 -> "會補記 +${money(diff)}，不算收入"
-                        else -> "會補記 −${money(-diff)}，不算支出"
-                    },
-                    color = cute.sub, style = MaterialTheme.typography.bodySmall,
+                    shown, style = MaterialTheme.typography.headlineMedium, maxLines = 1,
+                    color = if ((target ?: 0L) < 0L || expr == "-") cute.expense else cute.ink,
                 )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                when {
-                    need != null || target == null -> tries.count++
-                    target == current -> onDismiss()      // 和記錄的一樣，不用調整
-                    else -> onConfirm(target)
+                if (target != null && tw.moneybook.app.Calc.hasOp(expr)) {
+                    Text("＝ ${money(target)}", style = MaterialTheme.typography.bodyMedium, color = cute.sub)
                 }
-            }) { Text("更新") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+            }
+            nv.Message("target")
+            val diff = target?.let { it - current }
+            Text(
+                when {
+                    diff == null -> if (isCard) "信用卡或貸款的欠款：先按 − 再輸入金額" else "輸入帳戶那時候實際的金額（欠款先按 −）"
+                    diff == 0L -> "和記錄的一樣，不用調整"
+                    diff > 0 -> "會補記 +${money(diff)}，不算收入"
+                    else -> "會補記 -${money(-diff)}，不算支出"
+                },
+                color = cute.sub, style = MaterialTheme.typography.bodySmall,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                CuteChip(dayLabel(day), false, { pick = "date" }, icon = "vec:calendar")
+                CuteChip(tw.moneybook.app.formatTime(time), false, { pick = "time" }, icon = "vec:clock")
+            }
+            Spacer(Modifier.height(4.dp))
+            Keypad(
+                onKey = { k -> expr = tw.moneybook.app.Calc.pressSigned(expr, k, dec) },
+                doneLabel = "更新", doneEnabled = true,
+                onDone = {
+                    when {
+                        target == null -> tries.count++
+                        target == current -> onDismiss()      // 和記錄的一樣，不用調整
+                        else -> { vm.adjustBalance(acc.id, target, day, time); onDismiss() }
+                    }
+                },
+                dotKey = dec > 0,
+            )
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("取消") }
+        }
+    }
+    when (pick) {
+        "date" -> CuteDatePickerDialog(day, { day = it; pick = "" }, { pick = "" }, "日期")
+        "time" -> TimePickerDialog(time, { time = it; pick = "" }, { pick = "" })
+    }
 }
 
 @Composable

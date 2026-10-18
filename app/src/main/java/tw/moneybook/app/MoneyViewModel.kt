@@ -321,10 +321,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 更新餘額：把帳戶餘額改成實際的數字，差額記成一筆不算收支的「餘額調整」（漏記帳時補平用） */
-    fun adjustBalance(accountId: Long, target: Long, day: Long = LocalDate.now().toEpochDay()) {
+    /** 更新餘額：target 是那個時間點（day、time）帳戶實際的餘額，和記錄的差額記成一筆「餘額調整」放在那個時間 */
+    fun adjustBalance(accountId: Long, target: Long, day: Long = LocalDate.now().toEpochDay(), time: Int = -1) {
         val d = data
         val acc = d.accMap[accountId] ?: return
-        val diff = target - (d.balances()[accountId] ?: 0L)
+        val diff = target - (if (time >= 0) d.balanceAt(accountId, day, time) else d.balances()[accountId] ?: 0L)
         if (diff == 0L) {
             toast("餘額一樣，不用調整")
             return
@@ -335,7 +336,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             // 外幣帳戶：fxAmount 是外幣差額，amount 放約當台幣（沒有匯率就是 0，餘額調整不算收支）
             amount = if (acc.isForeign) d.twdValue(acc, kotlin.math.abs(diff)) ?: 0L else if (diff > 0) diff else -diff,
             categoryId = null, accountId = accountId, toAccountId = null,
-            day = day, note = "", tags = emptyList(), adjust = true,
+            day = day, note = "", tags = emptyList(), adjust = true, time = time,
             fxAmount = if (acc.isForeign) kotlin.math.abs(diff) else 0L,
         )
         commit(d.copy(txns = sortTxns(d.txns + t), nextId = d.nextId + 1))

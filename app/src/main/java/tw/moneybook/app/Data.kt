@@ -374,6 +374,22 @@ data class AppData(
         return out
     }
 
+    /**
+     * 某個帳戶在某一天某個時間點（time：0～1439 分鐘）記完之後的餘額，先後順序和 [runningBalances] 一樣：
+     * 同一天沒有時間的記錄算在最前面，報銷收款、欠款還款沒有時間的算在當天最後。
+     */
+    fun balanceAt(accountId: Long, day: Long, time: Int): Long {
+        val a = accMap[accountId] ?: return 0L
+        fun before(d: Long, t: Int) = d < day || (d == day && t <= time)
+        var bal = a.initial
+        for (t in txns) {
+            if ((t.accountId == accountId || t.toAccountId == accountId) && before(t.day, t.time)) bal += t.flowFor(a)
+            for (p in t.items.flatMap { it.pays }) if (p.accountId == accountId && before(p.day, if (p.time >= 0) p.time else 1440)) bal += p.flowFor(a)
+            for (p in t.debtItems.flatMap { it.pays }) if (p.accountId == accountId && before(p.day, if (p.time >= 0) p.time else 1440)) bal -= p.flowFor(a)
+        }
+        return bal
+    }
+
     fun allTags(): List<String> =
         txns.flatMap { it.tags }.groupingBy { it }.eachCount().entries
             .sortedByDescending { it.value }.map { it.key }
