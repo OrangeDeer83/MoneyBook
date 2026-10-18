@@ -196,8 +196,11 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 else -> {
+                    // 調整卡片排版：layout:<CardPage.key>
+                    val cardPage = if (top.name.startsWith("layout:")) tw.moneybook.app.CardPages.of(top.name.removePrefix("layout:")) else null
+                    if (cardPage != null) CardLayoutScreen(vm, cardPage) { pop() }
                     val accId = top.name.removePrefix("account:").toLongOrNull()
-                    if (top.name.startsWith("account:") && accId != null) {
+                    if (cardPage == null && top.name.startsWith("account:") && accId != null) {
                         AccountDetailScreen(
                             vm, accId,
                             onEdit = { editTxn(it) },
