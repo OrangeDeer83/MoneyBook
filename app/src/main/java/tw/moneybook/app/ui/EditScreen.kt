@@ -98,6 +98,8 @@ import tw.moneybook.app.fxToTwd
 import tw.moneybook.app.impliedRate
 import tw.moneybook.app.isDebt
 import tw.moneybook.app.debtNames
+import tw.moneybook.app.filterSuggestions
+import tw.moneybook.app.noteSuggestions
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.parseFx
 import tw.moneybook.app.rateOf
@@ -472,6 +474,11 @@ fun EditScreen(
             } else null,
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).onFocusChanged { noteFocused = it.isFocused },
         )
+        // 點備註時：用過 2 次以上的備註（同分類的排前面），打字時跟著篩選，點一下填上
+        if (noteFocused) {
+            val sugg = remember(d, catId) { d.noteSuggestions(catId) }
+            SuggestRow("常用備註", filterSuggestions(sugg, note).take(8), note, { s -> note = s; focus.clearFocus() }, Modifier.padding(bottom = 8.dp))
+        }
 
         // 分類或轉帳帳戶
         Box(Modifier.weight(1f).fillMaxWidth().needFrame(nv, "target", RoundedCornerShape(16.dp))) {

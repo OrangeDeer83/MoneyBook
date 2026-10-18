@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,6 +124,39 @@ fun PillSegment(
 }
 
 /** 小圓角標籤按鈕 */
+/**
+ * 一排建議（常用備註、常用名字）：左右滑，點一下填上；和打的字符合的部分用主色標出來。
+ * 沒有建議就什麼都不顯示。
+ */
+@Composable
+fun SuggestRow(label: String, items: List<String>, typed: String, onPick: (String) -> Unit, modifier: Modifier = Modifier) {
+    if (items.isEmpty()) return
+    val cute = LocalCute.current
+    val primary = MaterialTheme.colorScheme.primary
+    val q = typed.trim()
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = cute.sub)
+        Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items.forEach { s ->
+                val at = if (q.isEmpty()) -1 else s.indexOf(q, ignoreCase = true)
+                val text = androidx.compose.ui.text.buildAnnotatedString {
+                    if (at < 0) append(s) else {
+                        append(s.substring(0, at))
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = primary, fontWeight = FontWeight.SemiBold))
+                        append(s.substring(at, at + q.length))
+                        pop()
+                        append(s.substring(at + q.length))
+                    }
+                }
+                Box(
+                    Modifier.clip(CircleShape).background(cute.card).border(1.5.dp, cute.soft, CircleShape)
+                        .clickable { onPick(s) }.padding(horizontal = 12.dp, vertical = 6.dp),
+                ) { Text(text, style = MaterialTheme.typography.labelLarge, color = cute.ink, maxLines = 1) }
+            }
+        }
+    }
+}
+
 /** 一排小按鈕（買進／賣出／日期、日期／時間…）：放不下時換到下一行，不會把最後一顆擠到字被切掉 */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
