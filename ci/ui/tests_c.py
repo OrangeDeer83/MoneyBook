@@ -158,7 +158,10 @@ def t_dark_misc():
     def drill():
         f.tab("統計")
         d.time.sleep(1.5)
-        d.tap(d.wait(lambda n: n.text == "餐飲", 8, "餐飲"))
+        d.wait(lambda n: n.text == "餐飲", 8, "餐飲")
+        # 清單在收支、圓環圖下面：先往上捲，點清單那一列（最下面的「餐飲」，上面的是圓環圖旁的標籤）
+        d.swipe(540, 1700, 540, 800, 500)
+        d.tap_text("餐飲", exact=True, lowest=True)
         d.time.sleep(1.5)
         d.shot("深色：統計展開／下鑽", contrast=True)
     safe("統計下鑽", drill)
