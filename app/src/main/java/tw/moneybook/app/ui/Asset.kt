@@ -206,7 +206,8 @@ private fun ReasonsCard(d: AppData, m: YearMonth, menu: CardMenu) {
     val r = remember(d, m) { d.netWorthReasons(m) }
     val rows = buildList {
         add("收入－支出（存下來的）" to r.saved)
-        add("投資漲跌（同步市值）" to r.invest)
+        // 沒有投資帳戶就不列投資這一行
+        if (r.invest != 0L || d.visibleAccounts.any { it.type == tw.moneybook.app.AccountType.INVEST }) add("投資漲跌（同步市值）" to r.invest)
         if (r.reimb != 0L) add((if (r.reimb < 0) "先墊、還沒收回的報銷" else "收回先墊的報銷") to r.reimb)
         if (r.other != 0L) add("其他（餘額調整、換匯、匯率）" to r.other)
     }

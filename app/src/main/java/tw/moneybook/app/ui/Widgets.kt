@@ -281,10 +281,10 @@ class TipLine(val label: String, val value: String, val color: Color)
 
 /** 長按圖表跳出的資訊框：放在選到的那一組旁邊（右半邊的放左邊），寬度固定 */
 @Composable
-private fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, footer: List<TipLine> = emptyList()) {
+private fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, footer: List<TipLine> = emptyList(), tipWidth: androidx.compose.ui.unit.Dp = 176.dp) {
     val cute = LocalCute.current
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val tipW = 176.dp
+        val tipW = tipWidth
         val slot = maxWidth / n
         val cx = slot * index + slot / 2
         val left = (if (index >= n / 2.0) cx - tipW - 10.dp else cx + 10.dp).coerceIn(0.dp, (maxWidth - tipW).coerceAtLeast(0.dp))
@@ -528,7 +528,9 @@ fun AssetBars(
                 if (n == 0) return@Canvas
                 val slot = size.width / n
                 val barW = (slot * 0.62f).coerceAtMost(18.dp.toPx())
-                fun y(v: Long) = (top - v) / range * size.height
+                // 上下各留一點，最高、最低的點不會被切掉
+                val pad = 6.dp.toPx()
+                fun y(v: Long) = pad + (top - v) / range * (size.height - 2 * pad)
                 fun cx(i: Int) = slot * i + slot / 2f
                 for (i in 0 until n) {
                     if (i == sel) drawRoundRect(cute.sub.copy(alpha = 0.22f), Offset(slot * i + 1f, 0f), Size(slot - 2f, size.height), CornerRadius(6.dp.toPx()))
@@ -560,7 +562,7 @@ fun AssetBars(
                     val diff = p.net - points[sel - 1].net
                     lines.add(TipLine("比上個月", signedMoney(diff), if (diff >= 0) cute.income else cute.expense))
                 }
-                ChartTip(sel, n, titles.getOrElse(sel) { labels[sel] }, lines)
+                ChartTip(sel, n, titles.getOrElse(sel) { labels[sel] }, lines, tipWidth = 214.dp)
             }
         }
         Row(Modifier.fillMaxWidth()) {
