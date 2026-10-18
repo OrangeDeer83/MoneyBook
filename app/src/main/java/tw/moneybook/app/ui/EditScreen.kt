@@ -163,7 +163,7 @@ fun EditScreen(
                 ?: presetFrom
                 ?: presetAcc?.takeIf { id -> accs.any { it.id == id } }
                 ?: (if (presetTo != null) accs.firstOrNull { it.id != presetTo && it.type != tw.moneybook.app.AccountType.CARD && !it.isForeign }?.id else null)
-                ?: accs.firstOrNull()?.id
+                ?: d.defaultAccount(accs)
         )
     }
     var toAccId by rememberSaveable {

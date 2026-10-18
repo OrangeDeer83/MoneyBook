@@ -316,6 +316,10 @@ data class AppData(
         return starred + auto.take((limit - starred.size).coerceAtLeast(0))
     }
 
+    /** 記一筆預設的帳戶：選帳戶時最上面「常用帳戶」的第一個（打星號的優先，再來是最近用最多的），都沒有就第一個 */
+    fun defaultAccount(choices: List<Account>): Long? =
+        frequentAccounts(choices.size).firstOrNull { f -> choices.any { it.id == f.id } }?.id ?: choices.firstOrNull()?.id
+
     fun topCategories(kind: TxType): List<Category> =
         categories.filter { it.kind == kind && it.parentId == null }.sortedBy { it.order }
 
