@@ -501,6 +501,7 @@ def t_stats_kind():
     d.fresh(stats_seed())
     f.tab("統計")
     d.time.sleep(2)
+    f.stats_show_cat()
     ns = d.shot("統計：支出", contrast=True)
     d.check("支出模式有餐飲、交通", d.has(ns, "餐飲") and d.has(ns, "交通"))
     inc = pill(ns, "支出", "收入")
@@ -517,6 +518,7 @@ def t_drill_back():
     d.fresh(stats_seed())
     f.tab("統計")
     d.time.sleep(2)
+    f.stats_show_cat()
     inc = pill(d.nodes(), "支出", "收入")
     d.check("找到切換", inc is not None)
     d.tap(inc)
@@ -554,6 +556,7 @@ def t_sub_indent():
     d.fresh(stats_seed())
     f.tab("統計")
     d.time.sleep(2)
+    f.stats_show_cat()
     d.tap_text("餐飲", exact=True)
     d.time.sleep(1.5)
     d.shot("展開餐飲的子項目")
@@ -567,6 +570,7 @@ def t_donut():
     d.fresh(s.json())
     f.tab("統計")
     d.time.sleep(2.5)
+    f.stats_show_cat()
     d.shot("圓環圖（含多個小比例）")
 
 

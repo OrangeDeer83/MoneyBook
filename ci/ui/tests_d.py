@@ -3430,3 +3430,56 @@ def t_asset_shortcut():
         d.swipe(540, 1700, 540, 900, 500)
     ns = d.shot("加回投資佔資產的比例")
     d.check("總資產頁最下面多了「投資佔資產的比例」", d.has(ns, "投資佔資產的比例", True))
+
+
+def tip_node(ns):
+    """本月重點對話框裡的那一句（吉祥物名字下面、最長的那段字）"""
+    title = next((n for n in ns if n.text in ("本月重點", "這段期間的重點")), None)
+    if title is None:
+        return None
+    cand = [n for n in ns if n.cy > title.cy and n.cy < title.cy + 450 and len(n.text) >= 8 and n.text not in ("本月重點", "這段期間的重點")]
+    return min(cand, key=lambda n: n.cy) if cand else None
+
+
+@case(D, "本月重點：吉祥物一次講一句，預算固定第一句；左右滑、點對話框換句子；年沒有、區間寫這段期間", visual=True)
+def t_tips():
+    s = S.Seed(f.today(), budget=10000)
+    s.expense(0, 1200, S.C_LUNCH, note="lunch")
+    s.expense(0, 300, S.C_METRO)
+    s.expense(-1 if f.today().day > 1 else 0, 2500, S.C_SHOP, note="shoes")
+    s.income(0, 30000, S.C_SALARY, acc=S.BANK)
+    d.fresh(s.json())
+    f.tab("統計")
+    d.time.sleep(2)
+    ns = d.shot("本月重點")
+    tip = tip_node(ns)
+    d.check("最上面是「本月重點」，第一句是預算（有設預算）", d.has(ns, "本月重點", True) and tip is not None and tip.text.startswith("預算"), [n.text for n in ns if n.text][:20])
+    d.check("吉祥物名字「小鹿」在對話框上面", d.has(ns, "小鹿", True))
+    first = tip.text if tip else ""
+    # 往左滑：下一句
+    if tip:
+        d.swipe(tip.cx + 250, tip.cy, tip.cx - 250, tip.cy, 250)
+        d.time.sleep(1)
+    ns = d.shot("往左滑")
+    t2 = tip_node(ns)
+    d.check("往左滑換成另一句", t2 is not None and t2.text != first, (first, t2 and t2.text))
+    # 往右滑：回到第一句
+    if t2:
+        d.swipe(t2.cx - 250, t2.cy, t2.cx + 250, t2.cy, 250)
+        d.time.sleep(1)
+    t3 = tip_node(d.nodes())
+    d.check("往右滑回到第一句", t3 is not None and t3.text == first, t3 and t3.text)
+    # 點對話框：下一句
+    if t3:
+        d.tap(t3)
+        d.time.sleep(1)
+    t4 = tip_node(d.nodes())
+    d.check("點對話框換下一句", t4 is not None and t4.text != first, t4 and t4.text)
+    d.tap_text("年", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("年沒有本月重點")
+    d.check("切到年沒有本月重點", not d.has(ns, "本月重點", True) and not d.has(ns, "這段期間的重點", True))
+    d.tap_text("區間", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("區間")
+    d.check("區間寫「這段期間的重點」", d.has(ns, "這段期間的重點", True), [n.text for n in ns if n.text][:20])

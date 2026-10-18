@@ -190,3 +190,12 @@ def reimb_fill_full():
 def swipe_row_left(node):
     y = node.cy
     d.swipe(1000, y, 250, y, 400)
+
+
+def stats_show_cat():
+    """統計頁：往下捲到分類卡片（上面有本月重點、收支兩張卡片），讓「依分類」在畫面上半部"""
+    for _ in range(4):
+        n = d.first(d.nodes(), "依分類", True)
+        if n is not None and n.cy < 700:
+            return
+        d.swipe(540, 1600, 540, 1000, 500)

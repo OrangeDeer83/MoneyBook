@@ -236,8 +236,9 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
                 } else {
                     item { PeriodBar(vm, mode) }
                     val scope = periodFilter(book, mode, vm)
-                    cardRows(layout, narrow, { id -> id != "yearBars" || mode == 1 }, { onLayout(page.key) }) { id, half ->
+                    cardRows(layout, narrow, { id -> (id != "yearBars" || mode == 1) && (id != "tips" || mode != 1) }, { onLayout(page.key) }) { id, half ->
                         when (id) {
+                            "tips" -> TipsCard(vm, mode, menu)
                             "sum" -> SumCard(vm, mode, scope, half, menu)
                             "cat" -> CategoryCard(vm, mode, scope, onDrill, menu)
                             "yearBars" -> YearBarsCard(scope, vm.statYear, menu)
