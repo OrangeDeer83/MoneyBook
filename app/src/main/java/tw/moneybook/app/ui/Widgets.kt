@@ -546,9 +546,10 @@ fun AssetBars(
                 if (n == 0) return@Canvas
                 val slot = size.width / n
                 val barW = (slot * 0.62f).coerceAtMost(18.dp.toPx())
-                // 上下各留一點，最高、最低的點不會被切掉
+                // 上下各留一點，最高、最低的點不會被切掉；有跨年時最上面再留一條寫年份，不會壓到柱子
                 val pad = 6.dp.toPx()
-                fun y(v: Long) = pad + (top - v) / range * (size.height - 2 * pad)
+                val band = if (years.isNotEmpty()) 16.dp.toPx() else 0f
+                fun y(v: Long) = pad + band + (top - v) / range * (size.height - 2 * pad - band)
                 fun cx(i: Int) = slot * i + slot / 2f
                 for (i in 0 until n) {
                     if (i == sel) drawRoundRect(cute.sub.copy(alpha = 0.22f), Offset(slot * i + 1f, 0f), Size(slot - 2f, size.height), CornerRadius(6.dp.toPx()))
@@ -604,16 +605,19 @@ fun AssetShareBars(labels: List<String>, points: List<tw.moneybook.app.NetWorthP
             if (n == 0) return@Canvas
             val slot = size.width / n
             val barW = (slot * 0.62f).coerceAtMost(18.dp.toPx())
+            // 有跨年時最上面留一條寫年份，柱子從下面開始，年份不會壓在柱子上
+            val band = if (years.isNotEmpty()) 16.dp.toPx() else 0f
+            val h = size.height - band
             for (i in 0 until n) {
                 val p = points[i]
                 val x0 = slot * i + slot / 2f - barW / 2f
                 if (p.assets <= 0) {
-                    drawRect(cute.soft, Offset(x0, 0f), Size(barW, size.height))
+                    drawRect(cute.soft, Offset(x0, band), Size(barW, h))
                     continue
                 }
-                val ci = size.height * p.invest / p.assets
-                drawRect(AssetInvestColor, Offset(x0, 0f), Size(barW, ci))
-                drawRect(AssetCashColor, Offset(x0, ci), Size(barW, size.height - ci))
+                val ci = h * p.invest / p.assets
+                drawRect(AssetInvestColor, Offset(x0, band), Size(barW, ci))
+                drawRect(AssetCashColor, Offset(x0, band + ci), Size(barW, h - ci))
             }
             yearMarks(years, n, measurer, yearStyle, cute.sub)
         }
