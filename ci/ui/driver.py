@@ -218,6 +218,12 @@ def swipe(x1, y1, x2, y2, ms=350):
     time.sleep(0.9)
 
 
+def drag_long(x1, y1, x2, y2, ms=1500):
+    """長按後拖曳（先按住到長按的時間，再移動到終點放開），用在要長按才能拖的地方"""
+    sh(f"input draganddrop {x1} {y1} {x2} {y2} {ms}")
+    time.sleep(1.2)
+
+
 def _screen():
     ns = nodes()
     return max([n.x2 for n in ns] + [1]), max([n.y2 for n in ns] + [1])

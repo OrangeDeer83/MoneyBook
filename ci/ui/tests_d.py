@@ -3234,3 +3234,120 @@ def t_trend_long_press():
     ns = d.shot("長按收支長條圖")
     d.check("長條圖的資訊框：年月、收入、支出、結餘",
             any(re.fullmatch(r"\d{4} 年 \d{1,2} 月", n.text) for n in ns) and d.has(ns, "結餘", True) and sum(1 for n in ns if n.text == "支出") >= 1, [n.text for n in ns if n.text][:40])
+
+
+def card_menu(ns, title):
+    """卡片標題旁邊的 •••（同一列、在標題右邊）"""
+    t = d.first(ns, title, True)
+    if t is None:
+        return None
+    ms = [n for n in ns if n.desc == "卡片選單" and abs(n.cy - t.cy) < 60 and n.cx > t.cx]
+    return min(ms, key=lambda n: n.cx - t.cx) if ms else None
+
+
+def open_card_menu(title, item):
+    m = card_menu(d.nodes(), title)
+    d.check(f"「{title}」右上角有 •••", m is not None)
+    if m is None:
+        return False
+    d.tap(m)
+    d.time.sleep(0.8)
+    d.tap_text(item, exact=True)
+    d.time.sleep(1.2)
+    return True
+
+
+@case(D, "統計頁卡片：••• 隱藏這張可以復原；調整排版改半排、隱藏分類、再加回來、恢復預設", visual=True)
+def t_stat_cards_menu():
+    d.fresh(f.base_seed())
+    f.tab("統計")
+    d.time.sleep(2)
+    ns = d.shot("統計：月（預設排版）")
+    d.check("最上面一張是「收支」卡片，下面是分類（依分類／依標籤在卡片裡）",
+            d.has(ns, "收支", True) and d.has(ns, "依分類", True) and d.first(ns, "收支", True).cy < d.first(ns, "依分類", True).cy, [n.text for n in ns if n.text][:30])
+    # ••• 隱藏這張 → 復原
+    open_card_menu("收支", "隱藏這張")
+    ns = d.nodes()
+    gone = not d.has(ns, "收支", True)
+    msg = d.has(ns, "已隱藏「收支」", True)
+    if d.has(ns, "復原", True):
+        d.tap_text("復原", exact=True)
+        d.time.sleep(1.2)
+    d.check("按「隱藏這張」後收支卡片不見，跳「已隱藏「收支」」", gone and msg, [n.text for n in ns if n.text][:20])
+    ns = d.shot("按復原")
+    d.check("按復原後收支卡片回來", d.has(ns, "收支", True))
+    # 調整排版
+    open_card_menu("收支", "調整排版…")
+    ns = d.shot("調整排版：月・年・區間")
+    d.check("進到「調整排版・月・年・區間」，有 3 張卡片和隱藏區", d.has(ns, "調整排版・月・年・區間", True) and d.has(ns, "分類（圓環圖＋清單）", True)
+            and d.has(ns, "每月收支（只有年）", True) and d.has(ns, "隱藏的卡片（0）", True), [n.text for n in ns if n.text][:30])
+    open_card_menu("收支", "半排")
+    ns = d.shot("收支改半排")
+    sum_ = d.first(ns, "收支", True)
+    d.check("改半排後右邊出現「空位」", d.has(ns, "空位", True) and sum_ is not None and d.first(ns, "空位", True).cx > sum_.cx, [n.text for n in ns if n.text][:30])
+    open_card_menu("分類（圓環圖＋清單）", "隱藏")
+    ns = d.shot("隱藏分類")
+    d.check("分類放進「隱藏的卡片（1）」，有「＋ 顯示」", d.has(ns, "隱藏的卡片（1）", True) and d.has(ns, "＋ 顯示", True))
+    d.tap_text("完成", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("回統計頁：收支半排、分類隱藏")
+    sum_ = d.first(ns, "收支", True)
+    w = d._screen()[0] if hasattr(d, "_screen") else 1080
+    d.check("統計頁上收支在左半邊、分類不見了", sum_ is not None and sum_.cx < w * 0.5 and not d.has(ns, "依分類", True), [n.text for n in ns if n.text][:30])
+    d.check("統計頁上不顯示「有 N 張卡片隱藏中」", not any("隱藏中" in n.text for n in ns))
+    # 再進去把分類加回來
+    open_card_menu("收支", "調整排版…")
+    d.tap_text("＋ 顯示", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("分類加回最下面")
+    cat, yb = d.first(ns, "分類（圓環圖＋清單）", True), d.first(ns, "每月收支（只有年）", True)
+    d.check("分類加回來、放在最下面", cat is not None and yb is not None and cat.cy > yb.cy and d.has(ns, "隱藏的卡片（0）", True))
+    d.tap_text("恢復預設", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("恢復預設")
+    cat, yb, s2 = d.first(ns, "分類（圓環圖＋清單）", True), d.first(ns, "每月收支（只有年）", True), d.first(ns, "收支", True)
+    d.check("恢復預設：收支、分類、每月收支，沒有空位", bool(cat and yb and s2) and s2.cy < cat.cy < yb.cy and not d.has(ns, "空位", True), [n.text for n in ns if n.text][:30])
+
+
+@case(D, "調整排版：長按拖曳卡片換位置、拖進隱藏區；趨勢的「這個月存下」預設隱藏", visual=True)
+def t_stat_cards_drag():
+    d.fresh(f.base_seed())
+    f.tab("統計")
+    d.time.sleep(2)
+    d.tap_text("趨勢", exact=True)
+    d.time.sleep(2)
+    ns = d.nodes()
+    d.check("趨勢預設沒有「這個月存下」", not d.has(ns, "這個月存下", True))
+    open_card_menu("存錢趨勢", "調整排版…")
+    ns = d.shot("調整排版：趨勢")
+    d.check("「這個月存下」在隱藏區", d.has(ns, "調整排版・趨勢", True) and d.has(ns, "隱藏的卡片（1）", True) and d.has(ns, "這個月存下", True), [n.text for n in ns if n.text][:30])
+    # 存錢趨勢拖到每月明細下面
+    sv, mo = d.first(ns, "存錢趨勢", True), d.first(ns, "每月明細", True)
+    d.drag_long(sv.cx, sv.cy, mo.cx, mo.cy + 70)
+    ns = d.shot("存錢趨勢拖到最下面")
+    sv, mo = d.first(ns, "存錢趨勢", True), d.first(ns, "每月明細", True)
+    d.check("存錢趨勢排到每月明細下面", bool(sv and mo) and sv.cy > mo.cy, (sv, mo))
+    # 近幾個月收支拖進隱藏區
+    bars, hid = d.first(ns, "近幾個月收支", True), d.first(ns, "隱藏的卡片（1）", True)
+    d.drag_long(bars.cx, bars.cy, hid.cx, hid.cy)
+    ns = d.shot("拖進隱藏區")
+    d.check("近幾個月收支被拖進隱藏區", d.has(ns, "隱藏的卡片（2）", True), [n.text for n in ns if n.text][:30])
+    # 這個月存下加回來
+    rows = [n for n in ns if n.text == "＋ 顯示"]
+    saved = d.first(ns, "這個月存下", True)
+    btn = min(rows, key=lambda n: abs(n.cy - saved.cy)) if rows and saved else None
+    if btn:
+        d.tap(btn)
+        d.time.sleep(1)
+    d.tap_text("完成", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("回趨勢頁")
+    mo, sv = d.first(ns, "每月明細", True), d.first(ns, "存錢趨勢", True)
+    d.check("趨勢頁：沒有近幾個月收支、每月明細在存錢趨勢上面",
+            not any(n.text.startswith("近 ") and n.text.endswith("個月收支") for n in ns) and bool(mo and sv) and mo.cy < sv.cy, [n.text for n in ns if n.text][:30])
+    for _ in range(4):
+        if d.has(d.nodes(), "這個月存下", True):
+            break
+        d.swipe(540, 1700, 540, 900, 500)
+    ns = d.shot("最下面是這個月存下")
+    d.check("加回來的「這個月存下」在最下面", d.has(ns, "這個月存下", True))
