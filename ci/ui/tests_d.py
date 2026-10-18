@@ -3270,8 +3270,9 @@ def t_stat_cards_menu():
     ns = d.nodes()
     gone = not d.has(ns, "收支", True)
     msg = d.has(ns, "已隱藏「收支」", True)
-    if d.has(ns, "復原", True):
-        d.tap_text("復原", exact=True)
+    undo = d.first(ns, "復原", True)    # 提示只停 4 秒：用同一次讀到的位置馬上點
+    if undo:
+        d.tap(undo)
         d.time.sleep(1.2)
     d.check("按「隱藏這張」後收支卡片不見，跳「已隱藏「收支」」", gone and msg, [n.text for n in ns if n.text][:20])
     ns = d.shot("按復原")
@@ -3351,3 +3352,4 @@ def t_stat_cards_drag():
         d.swipe(540, 1700, 540, 900, 500)
     ns = d.shot("最下面是這個月存下")
     d.check("加回來的「這個月存下」在最下面", d.has(ns, "這個月存下", True))
+
