@@ -91,8 +91,8 @@ def home_values():
 def t_pick_account_scroll():
     d.fresh(S.base(f.today(), extra_accounts=14).json())
     f.open_add()
-    # 帳戶按鈕顯示目前的帳戶名稱（預設第一個：現金）
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    # 帳戶按鈕顯示目前的帳戶名稱（預設是常用帳戶的第一個）
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("選擇帳戶清單（一開始）")
     d.check("一開始看得到最上面的帳戶「測試銀行」", d.has(ns, "測試銀行", True))
@@ -584,7 +584,7 @@ def t_acc_loan():
 def t_pick_account_groups():
     d.fresh(f.base_seed())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("選擇帳戶")
     d.check("有「常用帳戶」分組", d.has(ns, "常用帳戶", True))
@@ -622,7 +622,7 @@ def t_acc_collapse_persist():
 def t_favorite_first():
     d.fresh(S.base(f.today(), fav_card=True).json())    # 測試信用卡從沒用過，但標了星號
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("選擇帳戶")
     fav = d.first(ns, "常用帳戶", True)
@@ -657,7 +657,7 @@ def t_favorite_switch():
     to_main()
     f.tab("明細")
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("選擇帳戶")
     d.check("測試銀行標了星號：選擇帳戶時出現實心星號", d.has(ns, "取消常用帳戶", True))
@@ -691,7 +691,7 @@ def t_star_in_account_tab():
         d.check("點了之後變成實心（取消常用帳戶）", st is not None and st.desc == "取消常用帳戶", st.desc if st else None)
     f.tab("明細")
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("記一筆選帳戶")
     fav = d.first(ns, "常用帳戶", True)
@@ -703,7 +703,7 @@ def t_star_in_account_tab():
 def t_star_in_picker():
     d.fresh(f.base_seed())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     ns = d.shot("選擇帳戶")
     before = len([n for n in ns if n.desc == "取消常用帳戶"])
@@ -1471,7 +1471,7 @@ def t_fx_sell():
 def t_fx_spend():
     d.fresh(usd_seed())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.tap_text("美元帳戶", exact=True)
     d.time.sleep(1)
@@ -1537,7 +1537,7 @@ def t_fx_online_rate_consent():
 def t_fx_spend_reimb():
     d.fresh(usd_seed())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.tap_text("美元帳戶", exact=True)
     d.time.sleep(1)
@@ -1576,7 +1576,7 @@ def t_fx_spend_reimb():
 def fx_claim():
     """用美元帳戶花 US$20.5（約當 NT$646），標待報銷給 Amy，存好後停在主畫面"""
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.tap_text("美元帳戶", exact=True)
     d.time.sleep(1)
@@ -1713,7 +1713,7 @@ def t_fx_reimb_mixed_receipt():
 def t_fx_reimb_split_in_foreign():
     d.fresh(usd_seed())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.tap_text("美元帳戶", exact=True)
     d.time.sleep(1)
@@ -2056,7 +2056,7 @@ def t_card_bill_month():
     ny, nm = nxt // 12, nxt % 12 + 1
     d.fresh(empty_seed().json())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.tap_text("測試信用卡", exact=True)
     d.time.sleep(0.8)
@@ -2485,7 +2485,7 @@ def _pending_fx_seed():
 def t_fx_spend_record_and_settle():
     d.fresh(empty_seed().json())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.tap_text("測試信用卡", exact=True)
     d.time.sleep(0.8)
@@ -2583,7 +2583,7 @@ def t_transfer_shows_balance():
 def t_fx_spend_currency_list():
     d.fresh(empty_seed().json())
     f.open_add()
-    d.tap(d.wait(lambda n: n.text == "現金", 10, "帳戶按鈕"))
+    d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.tap_text("測試信用卡", exact=True)
     d.time.sleep(0.8)
@@ -2787,6 +2787,11 @@ def t_debt_record():
     d.check("展開後：我付（從帳戶扣）、別人先付（欠款）$800", d.has(ns, "我付（從帳戶扣）", True) and d.has(ns, "別人先付（欠款）", True) and d.has(ns, "$800", True), [n.text for n in ns if n.text][:30])
     d.tap_text("完成", exact=True)
     d.time.sleep(1)
+    ns = d.nodes()
+    fx = d.first(ns, "外幣", True)
+    if fx is not None and not d.has(ns, "別人先付", True):
+        d.swipe(150, fx.cy, 950, fx.cy, 300)      # 那排按鈕停在捲到右邊的位置：捲回最左邊
+        d.time.sleep(0.6)
     ns = d.shot("回到記一筆")
     d.check("帳戶按鈕寫「別人先付」", d.has(ns, "別人先付", True), [n.text for n in ns if n.text][:30])
     for _ in range(6):

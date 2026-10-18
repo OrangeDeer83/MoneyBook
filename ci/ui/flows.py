@@ -199,3 +199,26 @@ def stats_show_cat():
         if n is not None and n.cy < 700:
             return
         d.swipe(540, 1600, 540, 1000, 500)
+
+
+def acc_button(timeout=10):
+    """記一筆的帳戶按鈕（時間按鈕右邊那一顆；預設是常用帳戶的第一個，不一定是現金）"""
+    import re as _re
+    def find():
+        ns = d.nodes()
+        t = next((n for n in ns if _re.fullmatch(r"\d{2}:\d{2}|未設定時間", n.text)), None)
+        if t is None:
+            return None
+        row = sorted([n for n in ns if abs(n.cy - t.cy) < 30 and n.cx > t.cx and n.text and n.text != "外幣"], key=lambda n: n.cx)
+        return row[0] if row else None
+    return _wait_node(find, timeout, "帳戶按鈕")
+
+
+def _wait_node(fn, timeout, what):
+    end = d.time.time() + timeout
+    while d.time.time() < end:
+        n = fn()
+        if n is not None:
+            return n
+        d.time.sleep(0.8)
+    raise TimeoutError(f"找不到{what}")
