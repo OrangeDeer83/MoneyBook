@@ -252,13 +252,13 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
                     }
                     // 隱藏的卡片：點「＋ 顯示」加到最下面，或長按拖到上面
                     Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = cute.soft, thickness = 2.dp)
                     Column(
                         Modifier.fillMaxWidth().onGloballyPositioned { hiddenArea = it.boundsInWindow() }
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (target == Drop.Hide) cute.soft else androidx.compose.ui.graphics.Color.Transparent),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        HorizontalDivider(color = cute.soft, thickness = 2.dp)
                         Text("隱藏的卡片（${layout.hidden.size}）", style = MaterialTheme.typography.titleSmall)
                         Text(
                             if (layout.hidden.isEmpty()) "把卡片拖到這裡，或按卡片的 ••• 選「隱藏」"
