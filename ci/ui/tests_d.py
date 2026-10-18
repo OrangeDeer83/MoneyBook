@@ -3245,7 +3245,7 @@ def card_menu(ns, title):
     return min(ms, key=lambda n: n.cx - t.cx) if ms else None
 
 
-def open_card_menu(title, item):
+def open_card_menu(title, item, settle=1.2):
     m = card_menu(d.nodes(), title)
     d.check(f"「{title}」右上角有 •••", m is not None)
     if m is None:
@@ -3253,7 +3253,7 @@ def open_card_menu(title, item):
     d.tap(m)
     d.time.sleep(0.8)
     d.tap_text(item, exact=True)
-    d.time.sleep(1.2)
+    d.time.sleep(settle)
     return True
 
 
@@ -3266,7 +3266,7 @@ def t_stat_cards_menu():
     d.check("最上面一張是「收支」卡片，下面是分類（依分類／依標籤在卡片裡）",
             d.has(ns, "收支", True) and d.has(ns, "依分類", True) and d.first(ns, "收支", True).cy < d.first(ns, "依分類", True).cy, [n.text for n in ns if n.text][:30])
     # ••• 隱藏這張 → 復原
-    open_card_menu("收支", "隱藏這張")
+    open_card_menu("收支", "隱藏這張", settle=0.2)   # 提示只停 4 秒：馬上讀、馬上點復原
     ns = d.nodes()
     gone = not d.has(ns, "收支", True)
     msg = d.has(ns, "已隱藏「收支」", True)
@@ -3355,11 +3355,11 @@ def t_stat_cards_drag():
 
 
 def asset_seed():
-    """初始：現金 1,000、測試銀行 50,000；兩個多月前收入 20,000、一個多月前支出 3,000、今天支出 1,000 → 現在 67,000，上個月底 68,000"""
+    """初始：現金 1,000、測試銀行 50,000；兩個多月前收入 20,000、一個多月前支出 3,000、今天支出 1,000（都是銀行）→ 現在 67,000，上個月底 68,000"""
     s = S.Seed(f.today())
     s.income(-65, 20000, acc=S.BANK, note="bonus")
-    s.expense(-35, 3000, S.C_SHOP, note="shoes")
-    s.expense(0, 1000, S.C_FOOD, note="dinner")
+    s.expense(-35, 3000, S.C_SHOP, acc=S.BANK, note="shoes")
+    s.expense(0, 1000, S.C_FOOD, acc=S.BANK, note="dinner")
     return s.json()
 
 

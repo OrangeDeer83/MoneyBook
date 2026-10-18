@@ -164,6 +164,7 @@ def t_dark_misc():
         d.tap_text("餐飲", exact=True, lowest=True)
         d.time.sleep(1.5)
         d.shot("深色：統計展開／下鑽", contrast=True)
+        d.tap_back()
     safe("統計下鑽", drill)
 
     def acc():
