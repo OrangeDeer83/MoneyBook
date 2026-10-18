@@ -3539,3 +3539,45 @@ def t_suggest_notes_names():
         d.time.sleep(1)
     ns = d.shot("點 Amanda")
     d.check("名字填上 Amanda", any(e.text == "Amanda" for e in d.edits()), [e.text for e in d.edits()])
+
+
+def find_scroll(text, exact=True, tries=4):
+    """在畫面（或視窗）裡往下捲找字"""
+    for _ in range(tries):
+        n = d.first(d.nodes(), text, exact)
+        if n is not None and n.cy < 2050:
+            return n
+        d.swipe(540, 1500, 540, 1000, 500)
+    return d.first(d.nodes(), text, exact)
+
+
+@case(D, "投資帳戶設定買賣預設的扣款帳戶：買進時預設從那個帳戶付款", visual=True)
+def t_invest_pay_account():
+    d.fresh(empty_seed(invest=True).json())
+    open_account("測試證券")
+    d.tap_text("買進", exact=True)
+    d.wait_text("買進", timeout=10)
+    lab = find_scroll("從哪個帳戶付款")
+    ns = d.shot("沒設定時的預設")
+    d.check("沒設定時預設是常用／第一個台幣帳戶（現金）", lab is not None and d.has(ns, "現金", True), [n.text for n in ns if n.text][-12:])
+    d.tap_text("取消", exact=True)
+    d.time.sleep(1)
+    n = next((x for x in d.nodes() if x.desc == "編輯" or x.text == "編輯"), None)
+    d.tap(n)
+    d.wait_text("編輯帳戶", timeout=10)
+    pick = find_scroll("沒設定（用常用帳戶）")
+    ns = d.shot("編輯帳戶：買賣預設的扣款帳戶")
+    d.check("投資帳戶有「買賣預設的扣款帳戶」，預設寫「沒設定（用常用帳戶）」", d.has(ns, "買賣預設的扣款帳戶", True) and pick is not None, [n.text for n in ns if n.text][-15:])
+    d.tap(pick)
+    d.time.sleep(1)
+    d.tap_text("測試銀行", exact=True, lowest=True)
+    d.time.sleep(1)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    d.tap_text("買進", exact=True)
+    d.wait_text("買進", timeout=10)
+    find_scroll("從哪個帳戶付款")
+    ns = d.shot("設定後買進")
+    lab = d.first(ns, "從哪個帳戶付款", True)
+    btn = next((x for x in ns if lab and x.cy > lab.cy and x.text == "測試銀行"), None)
+    d.check("買進視窗預設從「測試銀行」付款", btn is not None, [x.text for x in ns if x.text][-12:])

@@ -48,7 +48,7 @@ object Codec {
                         .put("badge", a.badge).put("badgeColor", a.badgeColor)
                         .put("badgeFrom", a.badgeFrom).put("badgeTo", a.badgeTo)
                         .put("creditLimit", a.creditLimit).put("statementDay", a.statementDay).put("dueDay", a.dueDay)
-                        .put("sharedLimitOf", a.sharedLimitOf)
+                        .put("sharedLimitOf", a.sharedLimitOf).put("payAccountId", a.payAccountId)
                         .put("favorite", a.favorite).put("currency", a.currency)
                 )
             }
@@ -152,6 +152,7 @@ object Codec {
                 statementDay = o.optInt("statementDay", 0),
                 dueDay = o.optInt("dueDay", 0),
                 sharedLimitOf = o.optLong("sharedLimitOf", 0L),
+                payAccountId = o.optLong("payAccountId", 0L),
             )
         }
         val categories = objects(root.optJSONArray("categories")) { o ->

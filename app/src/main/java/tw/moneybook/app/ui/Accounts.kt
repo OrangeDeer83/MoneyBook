@@ -395,6 +395,7 @@ fun AccountDetailScreen(
             onShares = { vm.setSharedLimits(it) },
             onDelete = { vm.deleteAccount(a.id); editing = false; onBack() },
             onDismiss = { editing = false },
+            vm = vm,
         )
     }
 }

@@ -558,7 +558,8 @@ private fun TradeDialog(
     // 可以付款的帳戶：台幣帳戶，加上「幣別跟這檔一樣」的外幣帳戶（例如第一證券的美金）
     val cashAccs = d.visibleAccounts.filter { it.id != a.id && it.type != AccountType.INVEST && (!it.isForeign || (cur.isNotEmpty() && it.currency == cur)) }
     // null＝不連動，只記買賣
-    var cash by remember { mutableStateOf(if (edit != null) editCash else cashAccs.firstOrNull { !it.isForeign }?.id ?: cashAccs.firstOrNull()?.id) }
+    // 預設扣款帳戶：投資帳戶設定的，沒設定就用常用帳戶（見 defaultPayAccount）
+    var cash by remember { mutableStateOf(if (edit != null) editCash else d.defaultPayAccount(a, cashAccs)) }
     // 換了市場，原本選的外幣帳戶幣別對不上就改回台幣帳戶
     LaunchedEffect(cur) {
         val c = cash?.let { d.accMap[it] }

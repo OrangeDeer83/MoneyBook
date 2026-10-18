@@ -50,6 +50,8 @@ data class Account(
     val dueDay: Int = 0,
     /** 信用卡共用額度：這張卡的額度要跟哪一張「主卡」共用（主卡的帳戶 id），0 = 不共用、用自己的額度 */
     val sharedLimitOf: Long = 0L,
+    /** 投資帳戶：買賣預設的扣款帳戶（買進從這裡付、賣出轉回這裡）；0＝沒設定（用常用帳戶），-1＝不連動 */
+    val payAccountId: Long = 0L,
     /** 手動標了星號的常用帳戶：記一筆選帳戶時固定放在最上面 */
     val favorite: Boolean = false,
     /** 外幣帳戶的幣別代碼（例如 USD）；空白是台幣帳戶。外幣帳戶的初始金額與餘額都用該幣別的最小單位（美元是分） */
@@ -319,6 +321,18 @@ data class AppData(
     /** 記一筆預設的帳戶：選帳戶時最上面「常用帳戶」的第一個（打星號的優先，再來是最近用最多的），都沒有就第一個 */
     fun defaultAccount(choices: List<Account>): Long? =
         frequentAccounts(choices.size).firstOrNull { f -> choices.any { it.id == f.id } }?.id ?: choices.firstOrNull()?.id
+
+    /**
+     * 投資帳戶買賣預設的扣款帳戶：帳戶設定的（-1＝不連動，回傳 null）；沒設定就用常用帳戶裡第一個能用的
+     * （信用卡、貸款不當預設），再沒有就第一個台幣帳戶。choices 是這次可以選的帳戶。
+     */
+    fun defaultPayAccount(invest: Account, choices: List<Account>): Long? {
+        if (invest.payAccountId == -1L) return null
+        choices.firstOrNull { it.id == invest.payAccountId }?.let { return it.id }
+        val ok = choices.filter { it.type != AccountType.CARD && it.type != AccountType.LOAN }
+        frequentAccounts(choices.size).firstOrNull { f -> ok.any { it.id == f.id } }?.let { return it.id }
+        return ok.firstOrNull { !it.isForeign }?.id ?: choices.firstOrNull { !it.isForeign }?.id ?: choices.firstOrNull()?.id
+    }
 
     fun topCategories(kind: TxType): List<Category> =
         categories.filter { it.kind == kind && it.parentId == null }.sortedBy { it.order }

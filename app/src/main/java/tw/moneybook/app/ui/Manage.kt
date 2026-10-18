@@ -532,6 +532,7 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onAsset: () -> Un
             },
             onDelete = null,
             onDismiss = { adding = false },
+            vm = vm,
         )
     }
     d.accMap[askQuick]?.let { na ->
@@ -557,9 +558,14 @@ fun AccountDialog(
     onShares: (Map<Long, Long>) -> Unit = {},
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
+    /** 有傳才顯示投資帳戶的「買賣預設的扣款帳戶」（挑帳戶要用） */
+    vm: MoneyViewModel? = null,
 ) {
     val cute = LocalCute.current
     var name by remember { mutableStateOf(acc?.name ?: "") }
+    // 投資帳戶：買賣預設的扣款帳戶（0＝沒設定，-1＝不連動）
+    var pay by remember { mutableStateOf(acc?.payAccountId ?: 0L) }
+    var payPick by remember { mutableStateOf(false) }
     var type by remember { mutableStateOf(acc?.type ?: AccountType.BANK) }
     var emoji by remember { mutableStateOf(acc?.emoji ?: AccountType.BANK.emoji) }
     var useBadge by remember { mutableStateOf((acc?.badge ?: "").isNotBlank()) }
@@ -635,6 +641,7 @@ fun AccountDialog(
         statementDay = if (type == AccountType.CARD) (stmt.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
         dueDay = if (type == AccountType.CARD) (due.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
         sharedLimitOf = if (type == AccountType.CARD) (joinOwner?.id ?: sharedOf) else 0L,
+        payAccountId = if (type == AccountType.INVEST) pay else 0L,
     )
 
     /** 按儲存時，其他卡的共用額度要怎麼改 */
@@ -779,6 +786,28 @@ fun AccountDialog(
                     visualTransformation = ThousandsVisual,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (type == AccountType.INVEST && vm != null) {
+                    val choices = vm.data.visibleAccounts.filter { it.id != acc?.id && it.type != AccountType.INVEST && !it.isForeign }
+                    Text("買賣預設的扣款帳戶", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                    PickerButton(
+                        when (pay) {
+                            0L -> "沒設定（用常用帳戶）"
+                            -1L -> "不連動（只記買賣，不動帳戶）"
+                            else -> vm.data.accMap[pay]?.name ?: "沒設定（用常用帳戶）"
+                        },
+                        { payPick = true },
+                    )
+                    Text("買進從這個帳戶付款、賣出的錢轉回這個帳戶；買賣時還是可以改", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                    if (payPick) {
+                        AccountPickDialog(
+                            vm = vm, accounts = choices, selectedId = pay.takeIf { it > 0L },
+                            onPick = { c -> pay = c.id; payPick = false }, onDismiss = { payPick = false },
+                            title = "買賣預設的扣款帳戶",
+                            noneLabel = "不連動（只記買賣，不動帳戶）", noneSelected = pay == -1L,
+                            onNone = { pay = -1L; payPick = false },
+                        )
+                    }
+                }
                 if (type == AccountType.CARD) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconGlyph("img:acc_card", 18.sp)
