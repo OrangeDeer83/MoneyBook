@@ -3402,3 +3402,31 @@ def t_asset_page():
     ns = d.shot("全部")
     d.check("切到全部後還是有圖（從第一筆記錄的月份開始）", d.has(ns, "總資產變化", True) and any("到現在" in n.text for n in ns), [n.text for n in ns if n.text][:30])
 
+
+@case(D, "總資產：趨勢頁的總資產捷徑卡片點進總資產頁；總資產頁也可以調整排版", visual=True)
+def t_asset_shortcut():
+    d.fresh(asset_seed())
+    f.tab("統計")
+    d.time.sleep(2)
+    d.tap_text("趨勢", exact=True)
+    d.time.sleep(2)
+    ns = d.shot("趨勢：總資產捷徑")
+    d.check("趨勢最上面是總資產卡片：$67,000、比上個月 -$1,000、看變化 ›",
+            d.has(ns, "$67,000", True) and d.has(ns, "比上個月 -$1,000", True) and d.has(ns, "看變化 ›", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("看變化 ›", exact=True)
+    d.time.sleep(2)
+    ns = d.nodes()
+    d.check("進到總資產頁", d.has(ns, "現在的組成", True))
+    open_card_menu("現在的組成", "調整排版…")
+    ns = d.shot("調整排版：總資產")
+    d.check("調整排版・總資產：投資佔資產的比例在隱藏區", d.has(ns, "調整排版・總資產", True) and d.has(ns, "隱藏的卡片（1）", True) and d.has(ns, "投資佔資產的比例", True))
+    d.tap_text("＋ 顯示", exact=True)
+    d.time.sleep(1)
+    d.tap_text("完成", exact=True)
+    d.time.sleep(1.5)
+    for _ in range(4):
+        if d.has(d.nodes(), "投資佔資產的比例", True):
+            break
+        d.swipe(540, 1700, 540, 900, 500)
+    ns = d.shot("加回投資佔資產的比例")
+    d.check("總資產頁最下面多了「投資佔資產的比例」", d.has(ns, "投資佔資產的比例", True))

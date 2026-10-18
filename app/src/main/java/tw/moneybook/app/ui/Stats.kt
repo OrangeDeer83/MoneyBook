@@ -176,7 +176,7 @@ fun RangeBar(vm: MoneyViewModel) {
 }
 
 @Composable
-fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, onLayout: (String) -> Unit) {
+fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, onLayout: (String) -> Unit, onAsset: () -> Unit) {
     val d = vm.data
     val mode = vm.statMode
     var trendN by vm::statTrendN
@@ -226,6 +226,7 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
                     val t = TrendData(book, vm.month, trendN)
                     cardRows(layout, narrow, { true }, { onLayout(page.key) }) { id, half ->
                         when (id) {
+                            "asset" -> AssetShortcutCard(vm, half, menu, onAsset)
                             "saved" -> SavedCard(t, half, menu)
                             "savings" -> SavingsCard(t, menu)
                             "bars" -> TrendBarsCard(t, menu)
@@ -520,6 +521,23 @@ private class TrendData(book: List<Txn>, val end: YearMonth, val n: Int) {
     val labels: List<String> = months.map { if (n > 6 && it.monthValue % 2 == 0 && it != end) "" else "${it.monthValue}月" }
     // 長按圖表時資訊框的標題
     val titles: List<String> = months.map { "${it.year} 年 ${it.monthValue} 月" }
+}
+
+/** 總資產捷徑：現在的總資產、比上個月，點了進總資產頁 */
+@Composable
+private fun AssetShortcutCard(vm: MoneyViewModel, half: Boolean, menu: CardMenu, onAsset: () -> Unit) {
+    val cute = LocalCute.current
+    val d = vm.data
+    val s = androidx.compose.runtime.remember(d) { d.assetSummary() }
+    CuteCard(cardMod(half), onClick = onAsset) {
+        CardTitle("總資產", "asset", menu)
+        Text(formatMoney(s.now), style = MaterialTheme.typography.titleLarge, color = if (s.now < 0) cute.expense else cute.ink)
+        s.vsLastMonth?.let { v ->
+            Text("比上個月 ${signedMoney(v)}", style = MaterialTheme.typography.bodySmall, color = if (v >= 0) cute.income else cute.expense)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("看變化 ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.End))
+    }
 }
 
 /** 這個月存下（預設隱藏）：這個月的結餘、近 n 個月一共存下多少 */

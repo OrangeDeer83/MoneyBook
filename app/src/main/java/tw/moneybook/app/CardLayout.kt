@@ -176,12 +176,13 @@ object CardPages {
     val TREND = CardPage(
         "trend", "趨勢",
         listOf(
+            CardSpec("asset", "總資產", canHalf = true),
             CardSpec("saved", "這個月存下", canHalf = true),
             CardSpec("savings", "存錢趨勢"),
             CardSpec("bars", "近幾個月收支"),
             CardSpec("months", "每月明細"),
         ),
-        CardLayout(listOf(CardRow("savings"), CardRow("bars"), CardRow("months")), hidden = listOf("saved")),
+        CardLayout(listOf(CardRow("asset"), CardRow("savings"), CardRow("bars"), CardRow("months")), hidden = listOf("saved")),
     )
 
     /** 總資產頁 */
