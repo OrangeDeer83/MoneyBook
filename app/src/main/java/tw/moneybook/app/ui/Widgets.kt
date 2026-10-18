@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.input.pointer.pointerInput
@@ -501,6 +502,20 @@ fun sparseLabels(labels: List<String>, keep: Int = 7): List<String> {
     return labels.mapIndexed { i, l -> if ((labels.size - 1 - i) % step == 0) l else "" }
 }
 
+/** 跨年的地方畫一條虛線，旁邊寫年份（years：第幾個月份 → "2026"，那個月是 1 月） */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.yearMarks(
+    years: Map<Int, String>, n: Int, measurer: androidx.compose.ui.text.TextMeasurer, style: androidx.compose.ui.text.TextStyle, color: Color,
+) {
+    if (n == 0) return
+    val slot = size.width / n
+    years.forEach { (i, y) ->
+        if (i <= 0 || i >= n) return@forEach
+        val x = slot * i
+        drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+        drawText(measurer, y, Offset(x + 3.dp.toPx(), 0f), style.copy(color = color))
+    }
+}
+
 /**
  * 總資產堆疊柱：每個月一根，0 以上現金銀行（藍）＋投資（紫）往上疊，0 以下是負債（紅）；黑線是總資產（資產－負債）。
  * 長按看那個月各塊的金額、佔資產的百分比、比上個月；onPick 告訴外面現在選到哪個月（資訊框收起來時是 -1）。
@@ -512,9 +527,12 @@ fun AssetBars(
     titles: List<String>,
     modifier: Modifier = Modifier,
     key: String = "assetBars",
+    years: Map<Int, String> = emptyMap(),
     onPick: (Int) -> Unit = {},
 ) {
     val cute = LocalCute.current
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val yearStyle = MaterialTheme.typography.labelSmall
     val debtColor = cute.expense.copy(alpha = 0.7f)
     val n = points.size
     val sel = LocalChartPick.current?.of(key) ?: -1
@@ -548,6 +566,7 @@ fun AssetBars(
                     drawPath(path, cute.ink, style = Stroke(width = 2.5f.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
                 for (i in 0 until n) drawCircle(cute.ink, radius = (if (i == sel) 5f else 2.5f).dp.toPx(), center = Offset(cx(i), y(points[i].net)))
+                yearMarks(years, n, measurer, yearStyle, cute.sub)
             }
             if (sel in 0 until n) {
                 val p = points[sel]
@@ -575,8 +594,10 @@ fun AssetBars(
 
 /** 百分比堆疊：每個月一根一樣高，下面現金銀行、上面投資，看投資佔資產的比例 */
 @Composable
-fun AssetShareBars(labels: List<String>, points: List<tw.moneybook.app.NetWorthPoint>, modifier: Modifier = Modifier) {
+fun AssetShareBars(labels: List<String>, points: List<tw.moneybook.app.NetWorthPoint>, modifier: Modifier = Modifier, years: Map<Int, String> = emptyMap()) {
     val cute = LocalCute.current
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val yearStyle = MaterialTheme.typography.labelSmall
     val n = points.size
     Column(modifier) {
         Canvas(Modifier.fillMaxWidth().height(140.dp)) {
@@ -594,6 +615,7 @@ fun AssetShareBars(labels: List<String>, points: List<tw.moneybook.app.NetWorthP
                 drawRect(AssetInvestColor, Offset(x0, 0f), Size(barW, ci))
                 drawRect(AssetCashColor, Offset(x0, ci), Size(barW, size.height - ci))
             }
+            yearMarks(years, n, measurer, yearStyle, cute.sub)
         }
         Row(Modifier.fillMaxWidth()) {
             sparseLabels(labels).forEach { l ->

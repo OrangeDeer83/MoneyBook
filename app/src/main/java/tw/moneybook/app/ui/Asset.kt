@@ -80,7 +80,10 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
     val menu = CardMenu(onHide = { vm.hideCard(page, it) }, onLayout = { onLayout(page.key) })
     val months = remember(d, vm.assetRange) { d.assetMonths(vm.assetRange) }
     val points = remember(d, months) { d.netWorthMonths(months) }
-    val labels = months.map { if (it.monthValue == 1 || it == months.first()) "${it.year % 100}/${it.monthValue}" else "${it.monthValue}月" }
+    // 月份只寫「5月」，年份寫在標題下面（2026/5 ～ 2026/10），跨年的地方畫虛線寫年份
+    val labels = months.map { "${it.monthValue}月" }
+    val years = months.withIndex().filter { it.index > 0 && it.value.monthValue == 1 }.associate { it.index to "${it.value.year}" }
+    val span = "${months.first().year}/${months.first().monthValue} ～ ${months.last().year}/${months.last().monthValue}"
     val titles = months.map { "${it.year} 年 ${it.monthValue} 月" }
     // 「變化的原因」看哪個月：長按圖上的月份會換過去，資訊框收起來就回到最近一個月
     var picked by remember(months) { mutableIntStateOf(months.size - 1) }
@@ -105,9 +108,9 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
                     cardRows(layout, narrow, { true }, { onLayout(page.key) }) { id, _ ->
                         when (id) {
                             "compose" -> ComposeCard(points.last(), menu)
-                            "change" -> ChangeCard(vm.assetRange, months, labels, titles, points, menu) { picked = if (it < 0) months.size - 1 else it }
+                            "change" -> ChangeCard(vm.assetRange, span, years, labels, titles, points, menu) { picked = if (it < 0) months.size - 1 else it }
                             "reasons" -> ReasonsCard(d, months[picked.coerceIn(months.indices)], menu)
-                            "share" -> ShareCard(labels, points, menu)
+                            "share" -> ShareCard(span, years, labels, points, menu)
                         }
                     }
                 }
@@ -165,22 +168,23 @@ private fun ComposeCard(p: NetWorthPoint, menu: CardMenu) {
 /** 總資產變化：堆疊柱＋總資產線，長按看那個月 */
 @Composable
 private fun ChangeCard(
-    range: Int, months: List<YearMonth>, labels: List<String>, titles: List<String>, points: List<NetWorthPoint>,
+    range: Int, span: String, years: Map<Int, String>, labels: List<String>, titles: List<String>, points: List<NetWorthPoint>,
     menu: CardMenu, onPick: (Int) -> Unit,
 ) {
     val cute = LocalCute.current
     val diff = points.last().net - points.first().net
-    val span = if (range > 0) "近 $range 個月" else "${months.first().year}/${months.first().monthValue} 到現在"
+    val period = if (range > 0) "近 $range 個月" else "這段期間"
     CuteCard(Modifier.fillMaxWidth()) {
         CardTitle("總資產變化", "change", menu)
+        Text(span, style = MaterialTheme.typography.labelMedium, color = cute.sub)
         if (points.size >= 2) {
             Text(
-                if (diff >= 0) "${span}多了 ${formatMoney(diff)}" else "${span}少了 ${formatMoney(-diff)}",
+                if (diff >= 0) "${period}多了 ${formatMoney(diff)}" else "${period}少了 ${formatMoney(-diff)}",
                 style = MaterialTheme.typography.bodyMedium, color = if (diff >= 0) cute.income else cute.expense,
             )
         }
         Spacer(Modifier.height(12.dp))
-        AssetBars(labels, points, titles, onPick = onPick)
+        AssetBars(labels, points, titles, years = years, onPick = onPick)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf(AssetCashColor to "現金銀行", AssetInvestColor to "投資", cute.expense.copy(alpha = 0.7f) to "負債").forEach { (c, l) ->
@@ -239,13 +243,14 @@ private fun ReasonsCard(d: AppData, m: YearMonth, menu: CardMenu) {
 
 /** 投資佔資產的比例（預設隱藏）：百分比堆疊 */
 @Composable
-private fun ShareCard(labels: List<String>, points: List<NetWorthPoint>, menu: CardMenu) {
+private fun ShareCard(span: String, years: Map<Int, String>, labels: List<String>, points: List<NetWorthPoint>, menu: CardMenu) {
     val cute = LocalCute.current
     fun share(p: NetWorthPoint) = if (p.assets > 0) Math.round(p.invest * 100.0 / p.assets) else 0L
     CuteCard(Modifier.fillMaxWidth()) {
         CardTitle("投資佔資產的比例", "share", menu)
+        Text(span, style = MaterialTheme.typography.labelMedium, color = cute.sub)
         Spacer(Modifier.height(10.dp))
-        AssetShareBars(labels, points)
+        AssetShareBars(labels, points, years = years)
         Spacer(Modifier.height(6.dp))
         val a = share(points.first())
         val b = share(points.last())

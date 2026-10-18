@@ -3404,7 +3404,10 @@ def t_asset_page():
     d.tap_text("全部", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("全部")
-    d.check("切到全部後還是有圖（從第一筆記錄的月份開始）", d.has(ns, "總資產變化", True) and any("到現在" in n.text for n in ns), [n.text for n in ns if n.text][:30])
+    first = f.today() - S.datetime.timedelta(days=65)
+    d.check(f"切到全部：從第一筆記錄的月份開始（{first.year}/{first.month} ～ …），寫「這段期間多了」",
+            any(n.text.startswith(f"{first.year}/{first.month} ～ ") for n in ns) and any(n.text.startswith("這段期間") for n in ns), [n.text for n in ns if n.text][:30])
+    d.check("月份標籤只寫「N月」，沒有 26/5 這種寫法", not any(re.fullmatch(r"\d{2}/\d{1,2}", n.text) for n in ns), [n.text for n in ns if "/" in n.text])
 
 
 @case(D, "總資產：趨勢頁的總資產捷徑卡片點進總資產頁；總資產頁也可以調整排版", visual=True)
