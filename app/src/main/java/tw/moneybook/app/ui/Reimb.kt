@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import tw.moneybook.app.filterSuggestions
+import tw.moneybook.app.mergeSameNames
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
@@ -274,15 +275,22 @@ fun ReimbEditPage(
         val dl = drows.filter { it.isLocked || rowTwd(it) > 0L || (pending1(drows) && it.who.isNotBlank()) }
         if (debtAllowed && dl.any { !it.isLocked && it.who.isBlank() }) { tab = 1; err = "欠款要填欠誰"; return }
         if (debtAllowed && actual > 0L && debtTotal > actual) { tab = 1; err = "欠款合計 ${formatMoney(debtTotal)} 超過實付 ${formatMoney(actual)}"; return }
-        val debtList = if (!debtAllowed) emptyList() else dl.map { r -> r.lockedDebt ?: DebtItem(r.who.trim(), rowTwd(r)) }
+        // 名字一樣的幾欄合成一個人、金額加總（已經有收款／還款的那欄不能改，不合併）；外幣消費用外幣加總再換台幣
+        fun units(r: ReimbRow): Long = if (fxOn) parseFx(r.amt, fdec) ?: 0L else r.amt.toLongOrNull() ?: 0L
+        fun merged(list: List<ReimbRow>): List<Pair<String, Long>> =
+            mergeSameNames(list.filter { !it.isLocked }.map { it.who to units(it) }).map { (w, u) -> w to (if (fxOn) twdOf(u) else u) }
+        val debtList = if (!debtAllowed) emptyList() else
+            dl.mapNotNull { it.lockedDebt } + merged(dl).map { (w, v) -> DebtItem(w, v) }
         val dj = DebtCodec.encode(debtList)
         val rl = rows.filter { it.isLocked || rowTwd(it) > 0L }
+        val rLocked = rl.mapNotNull { it.locked }
+        val rFree = merged(rl)
         when {
             rl.isEmpty() && pending1(rows) -> onDone(true, true, initJson, rows.first { !it.isLocked && it.who.isNotBlank() }.who.trim(), dj)
             rl.isEmpty() -> onDone(false, true, "", "", dj)
             // 只有一個人、而且是全額：存成「一人・全額」，之後帳目金額改了，報銷金額跟著走
-            rl.size == 1 && !rl[0].isLocked && rowTwd(rl[0]) == actual -> onDone(true, true, initJson, rl[0].who.trim(), dj)
-            else -> onDone(true, false, ReimbCodec.encode(rl.map { r -> r.locked ?: ReimbItem(r.who.trim(), rowTwd(r)) }), "", dj)
+            rLocked.isEmpty() && rFree.size == 1 && rFree[0].second == actual -> onDone(true, true, initJson, rFree[0].first, dj)
+            else -> onDone(true, false, ReimbCodec.encode(rLocked + rFree.map { (w, v) -> ReimbItem(w, v) }), "", dj)
         }
     }
 

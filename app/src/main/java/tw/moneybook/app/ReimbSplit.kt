@@ -20,3 +20,24 @@ fun splitAmounts(includeSelf: Boolean, pool: Long, targets: Int): SplitResult {
         SplitResult(List(targets) { i -> if (i == 0) per + p % targets else per }, 0L)
     }
 }
+
+/**
+ * 報銷／欠款名單裡名字一樣的幾欄合成一個人，金額加總（名字前後的空白不算、英文不分大小寫），
+ * 保留第一次出現的寫法和順序；沒填名字的各自一欄，不合併。金額用同一種單位（台幣，或外幣的最小單位）。
+ */
+fun mergeSameNames(rows: List<Pair<String, Long>>): List<Pair<String, Long>> {
+    val out = ArrayList<Pair<String, Long>>()
+    val at = HashMap<String, Int>()
+    for ((who, amt) in rows) {
+        val name = who.trim()
+        val key = name.lowercase()
+        val i = if (name.isEmpty()) null else at[key]
+        if (i == null) {
+            if (name.isNotEmpty()) at[key] = out.size
+            out.add(name to amt)
+        } else {
+            out[i] = out[i].first to out[i].second + amt
+        }
+    }
+    return out
+}
