@@ -474,9 +474,9 @@ fun EditScreen(
             } else null,
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).onFocusChanged { noteFocused = it.isFocused },
         )
-        // 點備註時：用過 2 次以上的備註（同分類的排前面），打字時跟著篩選，點一下填上
+        // 點備註時：這個分類用過 2 次以上的備註，打字時跟著篩選，點一下填上
         if (noteFocused) {
-            val sugg = remember(d, catId) { d.noteSuggestions(catId) }
+            val sugg = remember(d, catId, type) { d.noteSuggestions(if (type == TxType.TRANSFER) null else catId, type) }
             SuggestRow("常用備註", filterSuggestions(sugg, note).take(8), note, { s -> note = s; focus.clearFocus() }, Modifier.padding(bottom = 8.dp))
         }
 
