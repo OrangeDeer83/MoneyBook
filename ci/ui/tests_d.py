@@ -3955,7 +3955,12 @@ def t_when_spend():
         d.time.sleep(1)
     ns = d.shot("長按晚上")
     d.check("資訊框：晚上 18～23、$900、1 筆", d.has(ns, "晚上 18～23", True) and d.has(ns, "$900", True) and d.has(ns, "1 筆", True), [n.text for n in ns if n.text][:40])
-    heat = find_scroll("每天熱度")
+    find_scroll("每天熱度")
+    for _ in range(4):      # 捲到整張卡片露出來（最下面那行「花最多」）
+        if any(n.text.startswith("花最多") and n.cy < 2000 for n in d.nodes()):
+            break
+        d.swipe(540, 1500, 540, 1000, 500)
+    d.time.sleep(0.8)
     ns = d.shot("每天熱度")
     d.check(f"每天熱度寫花最多：{t.month}/{t.day} $1,300", d.has(ns, f"花最多：{t.month}/{t.day} $1,300（點了看那天）", True), [n.text for n in ns if n.text][-20:])
     title = d.first(ns, "每天熱度", True)
