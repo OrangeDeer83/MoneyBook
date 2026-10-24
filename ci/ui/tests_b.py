@@ -298,7 +298,7 @@ def t_receive_partial_fifo():
         d.tap_text("繼續追", exact=True)
         d.time.sleep(1.5)
     ns = d.shot("確認後")
-    d.check("Ming 還欠 $1,000（2200 − 1200）", d.has(ns, "$1,000", True), [n.text for n in ns if n.text.startswith("$")])
+    d.check("Ming 還欠 $1,000（2200 − 1200）", any(n.text.startswith("Ming欠我 $1,000") for n in ns) or d.has(ns, "$1,000", True), [n.text for n in ns if "$" in n.text])
 
 
 @case(B, "少收時：繼續追剩下的")

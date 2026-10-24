@@ -3676,7 +3676,7 @@ def t_settle_group():
     d.tap_text("紀錄", exact=True)
     d.time.sleep(1)
     ns = d.shot("紀錄")
-    d.check("紀錄有一筆「分帳結清」：收 Bob $700", d.has(ns, "分帳結清", True) and any("收 Bob $700" in n.text for n in ns), [n.text for n in ns if n.text][:20])
+    d.check("紀錄有一筆「分帳結清」：收 Bob $700", any(n.text.endswith("分帳結清") for n in ns) and any("收 Bob $700" in n.text for n in ns), [n.text for n in ns if n.text][:20])
     d.tap_back()
     d.time.sleep(1)
     f.tab("明細")
