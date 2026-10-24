@@ -979,6 +979,12 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteTemplate(id: Long) = update { d -> d.copy(templates = d.templates.filter { it.id != id }) }
 
+    /** 常用記帳排序（記一筆的「常用」、桌面小工具都照這個順序）：ids 是拖曳後的順序 */
+    fun reorderTemplates(ids: List<Long>) {
+        val pos = ids.withIndex().associate { it.value to it.index }
+        update { d -> d.copy(templates = d.templates.sortedBy { pos[it.id] ?: Int.MAX_VALUE }) }
+    }
+
     // ───────── 外觀 ─────────
 
     fun setPalette(key: String) = update { it.copy(prefs = it.prefs.copy(palette = key)) }

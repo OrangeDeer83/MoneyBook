@@ -1128,17 +1128,18 @@ fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> U
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 Text(
-                    "常用記帳會出現在記一筆畫面的「常用」分類裡，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤。",
+                    "常用記帳會出現在記一筆畫面的「常用」分類裡和桌面小工具上，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤；按住右邊的 ≡ 可以拖曳排序。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
             if (d.templates.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "還沒有常用記帳\n按下面的按鈕新增一個吧") }
             }
-            items(d.templates, key = { it.id }) { t ->
+            item {
+              ReorderColumn(d.templates, { it.id }, { vm.reorderTemplates(it) }) { t, handle, _ ->
                 val c = t.categoryId?.let { d.catMap[it] }
                 val a = t.accountId?.let { d.accMap[it] }
-                CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(t.id) }) {
+                CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(t.id) }, padding = PaddingValues(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CatBubble(c?.emoji ?: "img:ui_transfer", c?.color ?: 5, 40.dp)
                         Spacer(Modifier.width(12.dp))
@@ -1160,9 +1161,10 @@ fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> U
                                 )
                             }
                         }
-                        Icon(AppIcons.ChevronRight, contentDescription = null, tint = cute.sub)
+                        DragHandle(handle)
                     }
                 }
+              }
             }
             item { OutlinedButton(onClick = { onOpen(null) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增常用記帳") } }
         }
