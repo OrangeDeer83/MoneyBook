@@ -6,7 +6,16 @@ import android.content.Intent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.Composable
 import androidx.glance.GlanceId
+import androidx.glance.LocalSize
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.layout.fillMaxHeight
+import tw.moneybook.app.R
+import tw.moneybook.app.Template
+import tw.moneybook.app.ui.AppImages
+import tw.moneybook.app.ui.AppLines
+import tw.moneybook.app.ui.catColor
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
@@ -65,10 +74,11 @@ private class WTheme(p: Pal) {
     val primary = ColorProvider(Color(p.primary), Color(p.dPrimary))
     val soft = ColorProvider(Color(p.soft), Color(p.dSoft))
     val exp = ColorProvider(Color(p.exp), Color(p.dExp))
+    val inc = ColorProvider(Color(p.inc), Color(p.dInc))
     val onPrimary = ColorProvider(Color.White, Color(p.dBg))
 }
 
-/** 點小工具開啟 App：open = add（記一筆）、reimb（報銷）、空白（首頁） */
+/** 點小工具開啟 App：open = add（記一筆）、reimb（報銷）、templates（常用記帳頁）、tpl:<id>（用那個常用記帳記一筆）、空白（首頁） */
 private fun openApp(context: Context, open: String?): androidx.glance.action.Action {
     val intent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -94,6 +104,7 @@ suspend fun updateAllWidgets(context: Context) {
     MonthWidget().updateAll(context)
     BudgetWidget().updateAll(context)
     ReimbWidget().updateAll(context)
+    TemplateWidget().updateAll(context)
 }
 
 // ───────────────────────── 快速記一筆 ─────────────────────────
@@ -263,4 +274,106 @@ class ReimbWidget : GlanceAppWidget() {
 
 class ReimbWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = ReimbWidget()
+}
+
+// ───────────────────────── 常用記帳 ─────────────────────────
+
+/** 一格至少要多寬、多高（dp）：放得下圖示＋四個字的名稱＋金額 */
+private const val TPL_CELL_W = 92f
+private const val TPL_CELL_H = 56f
+
+/**
+ * 常用記帳：照「我的 → 常用記帳」的順序放得下幾個就幾個，最後一格是 ＋（空白的記一筆）。
+ * 寬度決定一排幾格、高度決定幾排；常用記帳比格子少時格子變寬，不留空格。點一格打開記一筆、內容帶好，按完成才記
+ */
+class TemplateWidget : GlanceAppWidget() {
+    override val sizeMode: SizeMode = SizeMode.Exact
+
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val d = loadData(context)
+        val t = WTheme(palOf(d.prefs.palette))
+        provideContent {
+            val size = LocalSize.current
+            val cols = ((size.width.value - 12f) / TPL_CELL_W).toInt().coerceAtLeast(1)
+            val rows = ((size.height.value - 12f) / TPL_CELL_H).toInt().coerceAtLeast(1)
+            Column(GlanceModifier.fillMaxSize().background(t.bg).cornerRadius(24.dp).padding(5.dp)) {
+                if (d.templates.isEmpty()) {
+                    Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            GlanceModifier.defaultWeight().fillMaxHeight().cornerRadius(18.dp).clickable(openApp(context, "templates")).padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("還沒有常用記帳", style = TextStyle(color = t.ink, fontSize = 15.sp), maxLines = 1)
+                            Text("點這裡新增（我的 → 常用記帳）", style = TextStyle(color = t.sub, fontSize = 12.sp), maxLines = 1)
+                        }
+                        Box(GlanceModifier.width(TPL_CELL_W.dp).fillMaxHeight().padding(3.dp)) { TplPlus(context, t) }
+                    }
+                } else {
+                    // 最後一格留給 ＋；排數用到幾排就幾排，每排平均分
+                    val cells: List<Template?> = d.templates.take(cols * rows - 1) + null
+                    val used = (cells.size + cols - 1) / cols
+                    val per = (cells.size + used - 1) / used
+                    cells.chunked(per).forEach { row ->
+                        Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
+                            row.forEach { tp ->
+                                Box(GlanceModifier.defaultWeight().fillMaxHeight().padding(3.dp)) {
+                                    if (tp == null) TplPlus(context, t) else TplCell(context, d, tp, t)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TplPlus(context: Context, t: WTheme) {
+    Box(
+        GlanceModifier.fillMaxSize().background(t.primary).cornerRadius(14.dp).clickable(openApp(context, "add")),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("＋", style = TextStyle(color = t.onPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold))
+    }
+}
+
+/** 一格常用記帳：分類圖示、名稱、金額（沒有固定金額寫「自訂」，收入寫 +） */
+@Composable
+private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme) {
+    val cat = tp.categoryId?.let { d.catMap[it] }
+    val emoji = cat?.emoji ?: if (tp.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box"
+    Row(
+        GlanceModifier.fillMaxSize().background(t.soft).cornerRadius(14.dp).clickable(openApp(context, "tpl:${tp.id}")).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            GlanceModifier.size(28.dp).background(androidx.glance.unit.ColorProvider(catColor(cat?.color ?: 5).copy(alpha = 0.35f))).cornerRadius(9.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (AppLines.isLine(emoji) || AppImages.isImg(emoji)) {
+                // 線條圖示小工具畫不出來，用箱子代替
+                Image(ImageProvider(AppImages.all[emoji] ?: R.drawable.img_cat_box), contentDescription = null, modifier = GlanceModifier.size(20.dp))
+            } else {
+                Text(emoji, style = TextStyle(fontSize = 15.sp))
+            }
+        }
+        Spacer(GlanceModifier.width(5.dp))
+        Column {
+            Text(tp.name, style = TextStyle(color = t.ink, fontSize = 14.sp), maxLines = 1)
+            Text(
+                when {
+                    tp.amount <= 0L -> "自訂"
+                    tp.type == TxType.INCOME -> "+" + formatMoney(tp.amount)
+                    else -> formatMoney(tp.amount)
+                },
+                style = TextStyle(color = if (tp.type == TxType.INCOME && tp.amount > 0L) t.inc else t.sub, fontSize = 11.sp),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+class TemplateWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = TemplateWidget()
 }

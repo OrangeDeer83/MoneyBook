@@ -137,11 +137,17 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
         stack = stack + r
     }
 
-    // 桌面小工具點下去：直接開記一筆或報銷
+    // 桌面小工具點下去：直接開記一筆、報銷、常用記帳
     LaunchedEffect(openRequest) {
         when (openRequest) {
             "add" -> { stack = emptyList(); push(Route.Edit(null)) }
             "reimb" -> { stack = emptyList(); push(Route.Page("reimb")) }
+            "templates" -> { stack = emptyList(); push(Route.Page("templates")) }
+            else -> {
+                // 常用記帳小工具：tpl:<id> → 記一筆帶好那個常用記帳的內容，按完成才記
+                val tid = openRequest?.takeIf { it.startsWith("tpl:") }?.removePrefix("tpl:")?.toLongOrNull()
+                if (tid != null) { stack = emptyList(); push(Route.Edit(null, tplId = tid)) }
+            }
         }
         if (openRequest != null) onOpenHandled()
     }
