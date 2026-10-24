@@ -3976,6 +3976,10 @@ def t_when_spend():
     d.time.sleep(1.5)
     ns = d.shot("返回統計")
     d.check("返回統計、還看得到每天熱度", d.has(ns, "每天熱度", True) and d.has(ns, "統計", True), [n.text for n in ns if n.text][:20])
+    for _ in range(8):      # 捲回最上面才看得到「年」
+        if d.has(d.nodes(), "年", True):
+            break
+        d.swipe(540, 700, 540, 1700, 300)
     d.tap_text("年", exact=True)
     d.time.sleep(1.5)
     for _ in range(5):
