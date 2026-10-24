@@ -3844,3 +3844,133 @@ def t_card_bill_batch():
         d.shot("改完（找不到復原）")
     ns = d.shot("復原")
     d.check("按復原後 cardA、cardB 回來", d.has(ns, "cardA", True) and d.has(ns, "cardB", True), [n.text for n in ns if n.text][:25])
+
+
+def out_seed(budget=10000):
+    """預算 10,000；醫療預設不算預算。今天午餐 lunchX 3,000、看醫生 doctor 2,000"""
+    import json
+    s = S.Seed(f.today(), budget=budget)
+    s.expense(0, 3000, S.C_LUNCH, note="lunchX")
+    s.expense(0, 2000, S.C_MED, note="doctor")
+    j = json.loads(s.json())
+    for c in j["categories"]:
+        if c["id"] == S.C_MED:
+            c["budgetMode"] = 1
+    return json.dumps(j, ensure_ascii=False)
+
+
+def tag_near(ns, text, tag="預算外"):
+    """明細列 text（備註）旁邊（同一列）有沒有 tag"""
+    row = d.first(ns, text, True)
+    return row is not None and any(n.text == tag and abs(n.cy - row.cy) < 90 for n in ns)
+
+
+@case(D, "預算外：分類預設不算預算的支出不算進首頁預算、另寫一行，明細標預算外；記一筆可以單筆改成預算外", visual=True)
+def t_budget_out_home():
+    d.fresh(out_seed())
+    d.time.sleep(1.5)
+    ns = d.shot("首頁預算")
+    d.check("預算只算午餐：已花 $3,000・還剩 $7,000（預算 $10,000）", d.has(ns, "已花 $3,000・還剩 $7,000（預算 $10,000）", True), [n.text for n in ns if n.text][:25])
+    d.check("下面多一行「另有預算外 $2,000（不算在預算裡）」", d.has(ns, "另有預算外 $2,000（不算在預算裡）", True))
+    d.check("本月支出還是全部 $5,000", d.has(ns, "$5,000", True))
+    row = find_scroll("doctor")
+    ns = d.shot("明細列")
+    d.check("看醫生那筆標「預算外」，午餐沒有", tag_near(ns, "doctor") and not tag_near(ns, "lunchX"), [n.text for n in ns if n.text][-20:])
+    d.tap_text("lunchX", exact=True)
+    f.edit_open()
+    f.chip_scroll("預算外", "新增標籤")
+    d.time.sleep(0.6)
+    d.shot("午餐按預算外")
+    f.save_edit()
+    d.time.sleep(1.5)
+    d.swipe(540, 900, 540, 1700, 400)
+    d.time.sleep(1)
+    ns = d.shot("改完的首頁")
+    d.check("午餐也改成預算外：已花 $0・還剩 $10,000，另有預算外 $5,000",
+            d.has(ns, "已花 $0・還剩 $10,000（預算 $10,000）", True) and d.has(ns, "另有預算外 $5,000（不算在預算裡）", True), [n.text for n in ns if n.text][:25])
+
+
+@case(D, "預算外：分類管理的大分類有「預設不算預算」開關、子分類三選一，清單標預算外", visual=True)
+def t_budget_out_category():
+    d.fresh(out_seed())
+    f.me_page("分類管理")
+    ns = d.shot("分類管理")
+    d.check("醫療旁邊標「預算外」", tag_near(ns, "醫療"), [n.text for n in ns if n.text][:30])
+    d.tap_text("醫療", exact=True)
+    d.wait_text("編輯分類", timeout=8)
+    ns = d.shot("編輯醫療")
+    sw = next((n for n in ns if n.checkable and n.cy > (d.first(ns, "預設不算預算", True) or ns[0]).cy - 60), None)
+    d.check("大分類有「預設不算預算」開關，醫療是打開的", d.has(ns, "預設不算預算", True) and sw is not None and sw.checked, [n.text for n in ns if n.text])
+    d.tap_text("取消", exact=True)
+    d.time.sleep(1)
+    d.tap_text("捷運", exact=True)
+    d.wait_text("編輯分類", timeout=8)
+    ns = d.shot("編輯捷運")
+    d.check("子分類可以選：跟著大分類／預算外／算預算", all(d.has(ns, t, True) for t in ("跟著大分類", "預算外", "算預算")), [n.text for n in ns if n.text])
+    d.tap_text("預算外", exact=True)
+    d.time.sleep(0.5)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("捷運改成預算外")
+    d.check("捷運旁邊也標「預算外」、交通沒有", tag_near(ns, "捷運") and not tag_near(ns, "交通"), [n.text for n in ns if n.text][:30])
+
+
+@case(D, "預算外：統計多一張「預算內／外」，點預算外看那些記錄", visual=True)
+def t_budget_out_stats():
+    d.fresh(out_seed())
+    f.tab("統計")
+    d.time.sleep(2)
+    find_scroll("預算內／外")
+    ns = d.shot("預算內／外卡片")
+    d.check("預算內 $3,000・60%、預算外 $2,000・40% ›", d.has(ns, "$3,000・60%", True) and d.has(ns, "$2,000・40% ›", True), [n.text for n in ns if n.text][:30])
+    d.check("整排時列預算外主要是醫療", d.has(ns, "預算外主要是", True) and d.has(ns, "醫療", True))
+    d.tap_text("$2,000・40% ›", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("預算外的記錄")
+    d.check("點進去是預算外：只有 doctor", d.has(ns, "預算外", True) and d.has(ns, "doctor", True) and not d.has(ns, "lunchX", True), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "什麼時候花錢：平日／週末、時段（長按看金額筆數）、每天熱度；點熱度某一天開那一天的明細，返回回到熱度", visual=True)
+def t_when_spend():
+    t = f.today()
+    s = S.Seed(t)
+    s.expense(0, 900, S.C_DINNER, note="night", time=19 * 60)
+    s.expense(0, 300, S.C_LUNCH, note="noon", time=12 * 60)
+    s.expense(0, 100, S.C_DRINK, note="notime")
+    d.fresh(s.json())
+    f.tab("統計")
+    d.time.sleep(2)
+    find_scroll("平日／週末")
+    ns = d.shot("平日／週末、時段")
+    d.check("平日／週末和時段兩張並排", d.has(ns, "平日／週末", True) and d.has(ns, "時段", True)
+            and abs(d.first(ns, "平日／週末", True).cy - d.first(ns, "時段", True).cy) < 30, [n.text for n in ns if n.text][:30])
+    d.check("時段：最常在晚上、有 2 筆記了時間", d.has(ns, "最常在晚上", True) and d.has(ns, "有 2 筆記了時間", True), [n.text for n in ns if n.text][:30])
+    # 長按「晚」那根柱子
+    lab = next((n for n in ns if n.text == "晚" and n.cy > d.first(ns, "時段", True).cy), None)
+    if lab:
+        d.swipe(lab.cx, lab.cy - 120, lab.cx, lab.cy - 120, 900)
+        d.time.sleep(1)
+    ns = d.shot("長按晚上")
+    d.check("資訊框：晚上 18～23、$900、1 筆", d.has(ns, "晚上 18～23", True) and d.has(ns, "$900", True) and d.has(ns, "1 筆", True), [n.text for n in ns if n.text][:40])
+    heat = find_scroll("每天熱度")
+    ns = d.shot("每天熱度")
+    d.check(f"每天熱度寫花最多：{t.month}/{t.day} $1,300", d.has(ns, f"花最多：{t.month}/{t.day} $1,300（點了看那天）", True), [n.text for n in ns if n.text][-20:])
+    title = d.first(ns, "每天熱度", True)
+    cell = next((n for n in ns if n.text == str(t.day) and title and n.cy > title.cy), None)
+    d.check("找到今天那一格", cell is not None)
+    d.tap(cell)
+    d.time.sleep(1.5)
+    wk = "一二三四五六日"[t.weekday()]
+    ns = d.shot("那一天的明細")
+    d.check(f"開「{t.month} 月 {t.day} 日 週{wk}」：這天支出 $1,300，三筆都在", d.has(ns, f"{t.month} 月 {t.day} 日 週{wk}", True) and d.has(ns, "這天支出", True)
+            and d.has(ns, "$1,300", True) and all(d.has(ns, x, True) for x in ("night", "noon", "notime")), [n.text for n in ns if n.text][:20])
+    d.tap_back()
+    d.time.sleep(1.5)
+    ns = d.shot("返回統計")
+    d.check("返回統計、還看得到每天熱度", d.has(ns, "每天熱度", True) and d.has(ns, "統計", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("年", exact=True)
+    d.time.sleep(1.5)
+    for _ in range(5):
+        d.swipe(540, 1600, 540, 900, 400)
+    ns = d.shot("年")
+    d.check("年：有平日／週末、時段，沒有每天熱度", d.has(ns, "平日／週末", True) and not d.has(ns, "每天熱度", True), [n.text for n in ns if n.text][:30])
