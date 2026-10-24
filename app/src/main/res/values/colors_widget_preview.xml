@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 選小工具時的預覽圖用的顏色：預設配色「奶茶可可」（預覽是固定的範例畫面，放到桌面上才換成使用者的配色） -->
+<resources>
+    <color name="wp_card">#FFFCF8</color>
+    <color name="wp_soft">#EFDDCB</color>
+    <color name="wp_primary">#B07F57</color>
+    <color name="wp_ink">#4D3B31</color>
+    <color name="wp_sub">#9A8272</color>
+    <color name="wp_exp">#E0675B</color>
+    <color name="wp_icon">#FFE2C9</color>
+</resources>

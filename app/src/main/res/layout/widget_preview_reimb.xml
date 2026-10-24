@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 選小工具時看到的預覽（範例數字） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/wp_card"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:padding="14dp">
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="還沒收到的報銷款"
+        android:textSize="12sp"
+        android:textColor="@color/wp_sub"
+        android:maxLines="1" />
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="$2,350"
+        android:textSize="26sp"
+        android:textColor="@color/wp_exp"
+        android:maxLines="1"
+        android:textStyle="bold" />
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="2 位・欠最久：Amy 12 天"
+        android:textSize="12sp"
+        android:textColor="@color/wp_sub"
+        android:maxLines="1"
+        android:layout_marginTop="4dp" />
+</LinearLayout>
