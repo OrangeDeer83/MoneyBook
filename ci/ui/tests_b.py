@@ -315,7 +315,7 @@ def t_short_chase():
     d.tap_text("繼續追", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("選繼續追後")
-    d.check("Hua 仍在待收清單，剩 $300", d.has(ns, "Hua", True) and d.has(ns, "$300", True))
+    d.check("Hua 仍在待收清單，剩 $300", any(n.text.startswith("Hua欠我 $300") for n in ns) or (d.has(ns, "Hua", True) and d.has(ns, "$300", True)), [n.text for n in ns if "Hua" in n.text])
 
 
 @case(B, "少收時：不追了（自己負擔）")
