@@ -85,6 +85,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tw.moneybook.app.categoryOutOfBudget
 import tw.moneybook.app.AppData
 import tw.moneybook.app.Calc
 import tw.moneybook.app.FxMode
@@ -310,6 +311,10 @@ fun EditScreen(
     val billSet = if (billAuto != null && billManual != null && billManual != billAuto) billMonth else 0
     val cat = catId?.let { d.catMap[it] }
     val parent = cat?.let { d.topOf(it) }
+    // 預算外：0＝跟著分類、1＝這筆預算外、2＝這筆算預算（見 Budget.kt）；和分類預設一樣時存 0
+    var budgetOut by rememberSaveable { mutableIntStateOf(orig?.budgetOut ?: 0) }
+    val catOut = d.categoryOutOfBudget(catId)
+    val outEff = when (budgetOut) { 1 -> true; 2 -> false; else -> catOut }
     // 外幣消費：一般（非外幣、非投資）帳戶的支出才有，分期不支援
     val fxsAcc = accId?.let { d.accMap[it] }
     // 欠款沒有帳戶，也可以是外幣欠款（朋友先墊外幣）
@@ -360,6 +365,7 @@ fun EditScreen(
         fxPending = fxsOn && fxsPending,
         // 先填欠款、後填金額：只有一個人、金額是 0 時就是整筆
         debtItems = if (debtList.size == 1 && debtList[0].amount <= 0L && debtList[0].pays.isEmpty()) listOf(debtList[0].copy(amount = actual)) else debtList,
+        budgetOut = if (type == TxType.EXPENSE) budgetOut else 0,
     )
 
     val initialDraft = remember { draft() }
@@ -661,6 +667,12 @@ fun EditScreen(
                     { dialog = "reimb" },
                     icon = if (reimbItems.isNotEmpty() && !debtOn && reimbItems.all { it.closed }) "vec:check" else "vec:receipt",
                 )
+            }
+            // 預算外：點一下切換；亮著＝這筆不算預算（分類預設不算預算時一進來就是亮的）
+            if (type == TxType.EXPENSE && !tplMode) {
+                CuteChip("預算外", outEff, {
+                    budgetOut = if (outEff) (if (!catOut) 0 else 2) else (if (catOut) 0 else 1)
+                })
             }
             if (orig == null && type == TxType.EXPENSE && !tplMode && plan.mode != FxMode.SPEND && !debtOn) {
                 CuteChip(if (inst > 1) "分 $inst 期" else "分期", inst > 1, { dialog = "inst" }, icon = "vec:repeat")

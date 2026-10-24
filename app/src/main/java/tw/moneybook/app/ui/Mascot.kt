@@ -1,5 +1,6 @@
 package tw.moneybook.app.ui
 
+import tw.moneybook.app.budgetSpent
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -57,7 +58,7 @@ fun moodOf(d: AppData, today: LocalDate = LocalDate.now(), now: LocalTime = Loca
     val book = d.currentBook
     val m = YearMonth.from(today)
     val list = d.bookTxns
-    val spent = list.inMonth(m).expenseSum()
+    val spent = d.budgetSpent(list.inMonth(m))
     val budget = book.budgetFor(m)
     if (budget > 0 && isBudgetWorried(spent, budget, today)) return Mood.WORRIED
     val todayEpoch = today.toEpochDay()
@@ -71,7 +72,7 @@ fun mascotLine(mood: Mood, d: AppData, today: LocalDate = LocalDate.now()): Stri
     val i = today.dayOfYear
     val book = d.currentBook
     if (mood != Mood.WORRIED) {
-        val spent = d.bookTxns.inMonth(YearMonth.from(today)).expenseSum()
+        val spent = d.budgetSpent(d.bookTxns.inMonth(YearMonth.from(today)))
         val budget = book.budgetFor(YearMonth.from(today))
         if (budget > 0 && spent * 10 >= budget * 8) return "這個月預算已經用了 ${spent * 100 / budget}% 囉，最後幾天穩穩收尾～"
     }
@@ -96,7 +97,7 @@ fun mascotLine(mood: Mood, d: AppData, today: LocalDate = LocalDate.now()): Stri
             "錢錢進來啦，記得存一點喔",
         )[i % 2]
         Mood.WORRIED -> {
-            val spent = d.bookTxns.inMonth(YearMonth.from(today)).expenseSum()
+            val spent = d.budgetSpent(d.bookTxns.inMonth(YearMonth.from(today)))
             val budget = book.budgetFor(YearMonth.from(today))
             if (budget in 1 until spent) "已經超過預算 ${tw.moneybook.app.formatMoney(spent - budget)} 了…這個月要節制一下 🥺"
             else "這個月花得有點快，剩下的日子省一點點喔"

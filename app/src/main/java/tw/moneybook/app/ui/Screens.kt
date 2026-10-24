@@ -52,6 +52,9 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tw.moneybook.app.isOutOfBudget
+import tw.moneybook.app.budgetSpent
+import tw.moneybook.app.outOfBudgetSpent
 import tw.moneybook.app.AppData
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.flowFor
@@ -355,6 +358,8 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     val hlAlpha = hlAnim.value
     // 標題列的狀態標籤（待請款、欠款、報銷）：完整寫法和放不下時的短寫法（拿掉金額，金額在下面那行小字或右邊都看得到）
     val tags = ArrayList<StatusTag>()
+    // 預算外（分類預設或這筆自己設的）：實心的小標籤，和其他狀態分得出來
+    if (!t.adjust && d.isOutOfBudget(t)) tags.add(StatusTag("預算外", "預算外", cute.onOut, cute.out))
     if (t.fxPending && t.isFxSpend) {
         // 外幣刷卡還沒請款：金額是預估的
         tags.add(StatusTag("待請款", "待請款", cute.ink, cute.accent2.copy(alpha = 0.4f)))
@@ -674,7 +679,10 @@ fun HomeScreen(
         val budget = book.budgetFor(month)
         item {
             if (budget > 0) {
-                val frac = expense.toFloat() / budget.toFloat()
+                // 預算只算「算預算」的支出；預算外的另外寫一行
+                val inBudget = d.budgetSpent(list)
+                val outSpent = expense - inBudget
+                val frac = inBudget.toFloat() / budget.toFloat()
                 val color = budgetColor(frac)
                 val level = when {
                     frac > 1f -> 2
@@ -729,12 +737,19 @@ fun HomeScreen(
                     RatioBar(frac, color, thick = level > 0)
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        if (frac > 1f) "超出 ${formatMoney(expense - budget)}（預算 ${formatMoney(budget)}）"
-                        else "已花 ${formatMoney(expense)}・還剩 ${formatMoney(budget - expense)}（預算 ${formatMoney(budget)}）",
+                        if (frac > 1f) "超出 ${formatMoney(inBudget - budget)}（預算 ${formatMoney(budget)}）"
+                        else "已花 ${formatMoney(inBudget)}・還剩 ${formatMoney(budget - inBudget)}（預算 ${formatMoney(budget)}）",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (level == 2) cute.expense else cute.sub,
                         fontWeight = if (level == 2) FontWeight.SemiBold else FontWeight.Normal,
                     )
+                    if (outSpent > 0) {
+                        Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(cute.out))
+                            Spacer(Modifier.width(5.dp))
+                            Text("另有預算外 ${formatMoney(outSpent)}（不算在預算裡）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                        }
+                    }
                 }
             } else {
                 Row(

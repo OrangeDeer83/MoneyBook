@@ -62,6 +62,7 @@ import tw.moneybook.app.BadgePreset
 import tw.moneybook.app.BadgePresets
 import tw.moneybook.app.Book
 import tw.moneybook.app.Category
+import tw.moneybook.app.categoryOutOfBudget
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.Currencies
 import tw.moneybook.app.cur
@@ -942,11 +943,11 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
                 ReorderColumn(d.topCategories(kind), { it.id }, { vm.reorderCategories(it) }) { c, handle, _ ->
                     val kids = d.childrenOf(c.id)
                     CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
-                        CatLine(c, onClick = { edit = CatEdit(c, kind, null) }, handle = handle)
+                        CatLine(c, onClick = { edit = CatEdit(c, kind, null) }, handle = handle, out = d.categoryOutOfBudget(c.id))
                         if (kids.isNotEmpty()) {
                             Box(Modifier.padding(start = 28.dp)) {
                                 ReorderColumn(kids, { it.id }, { vm.reorderCategories(it) }, spacing = 2.dp) { k, kHandle, _ ->
-                                    CatLine(k, onClick = { edit = CatEdit(k, kind, c.id) }, handle = kHandle, small = true)
+                                    CatLine(k, onClick = { edit = CatEdit(k, kind, c.id) }, handle = kHandle, small = true, out = d.categoryOutOfBudget(k.id))
                                 }
                             }
                         }
@@ -979,8 +980,9 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
         CategoryDialog(
             cat = e.cat,
             parent = parent,
-            onSave = { name, emoji, color ->
-                vm.saveCategory(e.cat?.id, name, emoji, color, e.kind, e.parentId)
+            kind = e.kind,
+            onSave = { name, emoji, color, mode ->
+                vm.saveCategory(e.cat?.id, name, emoji, color, e.kind, e.parentId, mode)
                 edit = null
             },
             onDelete = if (e.cat != null) ({ if (vm.deleteCategory(e.cat.id)) edit = null }) else null,
@@ -990,7 +992,7 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: Boolean = false) {
+private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: Boolean = false, out: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(LocalCute.current.card)
             .clickable(onClick = onClick).padding(vertical = 2.dp),
@@ -998,7 +1000,12 @@ private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: B
     ) {
         CatBubble(c.emoji, c.color, if (small) 32.dp else 40.dp)
         Spacer(Modifier.width(10.dp))
-        Text(c.name, modifier = Modifier.weight(1f), style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+        Text(c.name, modifier = Modifier.weight(1f, fill = false), style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+        if (out) {
+            Spacer(Modifier.width(6.dp))
+            OutTag()
+        }
+        Spacer(Modifier.weight(1f))
         DragHandle(handle)
     }
 }
@@ -1007,7 +1014,8 @@ private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: B
 private fun CategoryDialog(
     cat: Category?,
     parent: Category?,
-    onSave: (String, String, Int) -> Unit,
+    kind: TxType,
+    onSave: (String, String, Int, Int) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
@@ -1016,6 +1024,7 @@ private fun CategoryDialog(
     var color by remember { mutableStateOf(cat?.color ?: parent?.color ?: 0) }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
+    var mode by remember { mutableStateOf(cat?.budgetMode ?: 0) }
     val tries = rememberNeedTries()
     val need = firstNeed(if (name.isBlank()) Need("name", "請輸入分類名稱") else null)
     val nv = NeedView(need, tries.count)
@@ -1055,12 +1064,13 @@ private fun CategoryDialog(
                         }
                     }
                 }
+                if (kind == TxType.EXPENSE) BudgetModeSetting(parent, mode) { mode = it }
                 if (onDelete != null) {
                     SoftButton("刪除分類", { confirmDel = true }, Modifier.fillMaxWidth(), danger = true)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(name.trim(), emoji, color) }) { Text("儲存") } },
+        confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(name.trim(), emoji, color, mode) }) { Text("儲存") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
     if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false })
@@ -1073,6 +1083,39 @@ private fun CategoryDialog(
             { confirmDel = false },
         )
     }
+}
+
+/** 分類編輯裡的預算外設定：大分類是開關，子分類三選一（跟著大分類／預算外／算預算） */
+@Composable
+private fun BudgetModeSetting(parent: Category?, mode: Int, onMode: (Int) -> Unit) {
+    val cute = LocalCute.current
+    if (parent == null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("預設不算預算", style = MaterialTheme.typography.bodyLarge)
+                Text("醫療、房租這類不想算進每月預算的；記一筆時還是可以單筆改", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+            }
+            androidx.compose.material3.Switch(checked = mode == 1, onCheckedChange = { onMode(if (it) 1 else 0) })
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("算不算預算", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+            val follow = if (parent.budgetMode == 1) "跟著大分類（預算外）" else "跟著大分類（算預算）"
+            PillSegment(listOf("跟著大分類", "預算外", "算預算"), mode.coerceIn(0, 2), onMode)
+            if (mode == 0) Text(follow, style = MaterialTheme.typography.labelSmall, color = cute.sub)
+        }
+    }
+}
+
+/** 「預算外」小標籤（分類管理、記錄列） */
+@Composable
+fun OutTag(modifier: Modifier = Modifier) {
+    val cute = LocalCute.current
+    Text(
+        "預算外",
+        style = MaterialTheme.typography.labelSmall, color = cute.onOut, maxLines = 1,
+        modifier = modifier.clip(RoundedCornerShape(6.dp)).background(cute.out).padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 // ───────────────────────── 常用記帳 ─────────────────────────

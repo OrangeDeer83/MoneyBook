@@ -1,5 +1,6 @@
 package tw.moneybook.app.widget
 
+import tw.moneybook.app.budgetSpent
 import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.graphics.Color
@@ -76,14 +77,16 @@ private fun openApp(context: Context, open: String?): androidx.glance.action.Act
     return actionStartActivity(intent)
 }
 
-private class MonthInfo(val spent: Long, val budget: Long, val daysLeft: Int) {
+/** total＝本月全部支出；spent＝算預算的支出（預算外的不算，見 Budget.kt） */
+private class MonthInfo(val total: Long, val spent: Long, val budget: Long, val daysLeft: Int) {
     val left: Long get() = budget - spent
 }
 
 private fun monthInfo(d: AppData): MonthInfo {
     val m = YearMonth.now()
     val today = LocalDate.now()
-    return MonthInfo(d.bookTxns.inMonth(m).expenseSum(), d.currentBook.budgetFor(m), m.lengthOfMonth() - today.dayOfMonth + 1)
+    val list = d.bookTxns.inMonth(m)
+    return MonthInfo(list.expenseSum(), d.budgetSpent(list), d.currentBook.budgetFor(m), m.lengthOfMonth() - today.dayOfMonth + 1)
 }
 
 /** 記帳後呼叫，讓桌面上的小工具跟著更新 */
@@ -143,7 +146,7 @@ class MonthWidget : GlanceAppWidget() {
                 }
                 Column(modifier = GlanceModifier.fillMaxWidth()) {
                     Text("本月支出", style = TextStyle(color = t.sub, fontSize = 12.sp))
-                    Text(formatMoney(info.spent), style = TextStyle(color = t.ink, fontSize = 26.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+                    Text(formatMoney(info.total), style = TextStyle(color = t.ink, fontSize = 26.sp, fontWeight = FontWeight.Bold), maxLines = 1)
                     Spacer(GlanceModifier.height(6.dp))
                     if (info.budget > 0L) {
                         val over = info.spent > info.budget

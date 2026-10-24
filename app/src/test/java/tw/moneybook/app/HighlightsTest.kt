@@ -56,6 +56,18 @@ class HighlightsTest {
     }
 
     @Test
+    fun budgetOutNotCountedAndHasOwnSentence() {
+        // 交通預設不算預算；餐飲那筆單筆標預算外
+        val d0 = data(exp(day(10, 2), 3000), exp(day(10, 3), 2000, traffic), exp(day(10, 4), 500).copy(budgetOut = 1), budget = 10000)
+        val d = d0.copy(categories = d0.categories.map { if (it.id == traffic.id) it.copy(budgetMode = 1) else it })
+        val h = d.hl()
+        assertEquals("預算用了 30%，還剩 $7,000，接下來每天還能花 $500", h.of("budget")!!.text)
+        assertEquals("這個月預算外花了 $2,500，主要是「${traffic.name}」", h.of("outBudget")!!.text)
+        // 沒有預算外就不講
+        assertEquals(null, data(exp(day(10, 2), 3000)).hl().of("outBudget"))
+    }
+
+    @Test
     fun savedShareOfIncome() {
         val h = data(inc(day(10, 5), 50000), exp(day(10, 6), 10000)).hl()
         assertEquals("這個月到現在存下 $40,000，是收入的 80% 喔！", h.of("saved")!!.text)

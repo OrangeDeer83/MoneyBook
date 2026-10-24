@@ -38,6 +38,9 @@ class Pal(
     val exp: Long = 0xFFE0675B,
     val dInc: Long = 0xFF86CFA0,
     val dExp: Long = 0xFFF28B80,
+    /** 預算外支出的顏色：大多是紫色；本身就是藍紫色系的（藍莓草莓、薰衣草紫）用琥珀色才分得出來 */
+    val out: Long = 0xFF9C8FD0,
+    val dOut: Long = 0xFFB9AEF0,
 )
 
 val Palettes: List<Pal> = listOf(
@@ -51,10 +54,10 @@ val Palettes: List<Pal> = listOf(
         0xFFF59AAC, 0xFF241719, 0xFF33232A, 0xFF4A2C33, 0xFFF8E4E8, 0xFFC9A2AA),
     Pal("blueberry", "藍莓草莓", 0xFF7A8CE0, 0xFFF4A6C0, 0xFFF3F4FC, 0xFFFFFFFF, 0xFFDFE3FA, 0xFF363C5E, 0xFF858AA8,
         0xFFA3B0F2, 0xFF181A26, 0xFF232638, 0xFF30355A, 0xFFE6E8F7, 0xFFA7ABC9,
-        inc = 0xFF4FB3A6, exp = 0xFFE57A9A, dInc = 0xFF7FD3C8, dExp = 0xFFF29BB6),
+        inc = 0xFF4FB3A6, exp = 0xFFE57A9A, dInc = 0xFF7FD3C8, dExp = 0xFFF29BB6, out = 0xFFD9A441, dOut = 0xFFF0C46A),
     Pal("lavender", "薰衣草紫", 0xFF8C7BE0, 0xFFC7A8F0, 0xFFF5F3FC, 0xFFFFFFFF, 0xFFE6E0FA, 0xFF3A355E, 0xFF8A84A8,
         0xFFB3A6F2, 0xFF1A1826, 0xFF262338, 0xFF35305A, 0xFFE9E6F7, 0xFFABA7C9,
-        inc = 0xFF5AAFC9, exp = 0xFFE0789A, dInc = 0xFF8ACDE0, dExp = 0xFFF09AB5),
+        inc = 0xFF5AAFC9, exp = 0xFFE0789A, dInc = 0xFF8ACDE0, dExp = 0xFFF09AB5, out = 0xFFD9A441, dOut = 0xFFF0C46A),
     Pal("ocean", "海洋藍綠", 0xFF4A90D9, 0xFF6FCFD6, 0xFFF0F7FA, 0xFFFFFFFF, 0xFFD6EBF3, 0xFF2F4A5A, 0xFF7D98A6,
         0xFF7FB4EC, 0xFF151D22, 0xFF1E2A31, 0xFF294049, 0xFFE2EFF4, 0xFF9DB6C2,
         inc = 0xFF3FB58A, exp = 0xFFEF8A7C, dInc = 0xFF72D2AC, dExp = 0xFFF5A69B),
@@ -80,7 +83,12 @@ data class Cute(
     val sub: Color,
     val ink: Color,
     val dark: Boolean,
-)
+    /** 預算外支出（標籤底色、統計的條）；標籤上的字用 onOut */
+    val out: Color = Color(0xFF9C8FD0),
+) {
+    /** 預算外標籤上的字：淺色模式白字，深色模式顏色比較淺所以用深字 */
+    val onOut: Color get() = if (dark) Color(0xFF1E1A2E) else Color.White
+}
 
 val LocalCute = staticCompositionLocalOf {
     Cute(Color(0xFF5FAE7E), Color(0xFFE0675B), Color.White, Color(0xFFEFDDCB), Color(0xFFE7B77B), Color.Gray, Color.Black, false)
@@ -145,9 +153,9 @@ fun MoneyTheme(paletteKey: String, dark: Boolean, content: @Composable () -> Uni
         )
     }
     val cute = if (dark) {
-        Cute(Color(p.dInc), Color(p.dExp), Color(p.dCard), Color(p.dSoft), Color(p.accent2), Color(p.dSub), Color(p.dInk), true)
+        Cute(Color(p.dInc), Color(p.dExp), Color(p.dCard), Color(p.dSoft), Color(p.accent2), Color(p.dSub), Color(p.dInk), true, Color(p.dOut))
     } else {
-        Cute(Color(p.inc), Color(p.exp), Color(p.card), Color(p.soft), Color(p.accent2), Color(p.sub), Color(p.ink), false)
+        Cute(Color(p.inc), Color(p.exp), Color(p.card), Color(p.soft), Color(p.accent2), Color(p.sub), Color(p.ink), false, Color(p.out))
     }
     CompositionLocalProvider(LocalCute provides cute) {
         MaterialTheme(colorScheme = scheme, typography = AppTypography, shapes = AppShapes) {

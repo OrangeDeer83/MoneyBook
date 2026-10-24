@@ -53,6 +53,8 @@ data class TxnDraft(
     val fxPending: Boolean = false,
     /** 欠款：別人先幫我付的部分，每個人一項（空的＝沒有欠款）；帳戶只扣剩下我自己付的那一份（見 Debt.kt） */
     val debtItems: List<DebtItem> = emptyList(),
+    /** 預算外：0＝跟著分類、1＝預算外、2＝算預算（只有支出有意義，見 Budget.kt） */
+    val budgetOut: Int = 0,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -236,6 +238,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 fxAmount = dr.fxAmount,
                 billMonth = dr.billMonth,
                 fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
+                budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
             )
             t = if (locked) {
                 t.copy(
@@ -266,6 +269,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     billMonth = dr.billMonth,
                     // 分期（n > 1）不支援外幣消費：這裡只有單筆
                     fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
+                    budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
                 ).let { withDebt(it, dr.debtItems) }.let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
@@ -291,6 +295,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                         billMonth = billMonthFromCode(dr.billMonth)?.let { m -> billCode(m.plusMonths(i.toLong())) } ?: 0,
                         fee = if (i == 0) dr.fee else 0L,
                         discount = if (i == 0) dr.discount else 0L,
+                        budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
                     ).let {
                         // 每個報銷對象的金額也平均分到每一期
                         val shares = dr.reimbItems.map { r ->
@@ -883,15 +888,15 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     // ───────── 分類 ─────────
 
-    fun saveCategory(id: Long?, name: String, emoji: String, color: Int, kind: TxType, parentId: Long?) {
+    fun saveCategory(id: Long?, name: String, emoji: String, color: Int, kind: TxType, parentId: Long?, budgetMode: Int = 0) {
         update { d ->
             if (id == null) {
                 val order = d.categories.count { it.kind == kind && it.parentId == parentId }
-                val c = Category(d.nextId, name, emoji, color, kind, parentId, order)
+                val c = Category(d.nextId, name, emoji, color, kind, parentId, order, budgetMode = budgetMode)
                 d.copy(categories = d.categories + c, nextId = d.nextId + 1)
             } else {
                 d.copy(categories = d.categories.map {
-                    if (it.id == id) it.copy(name = name, emoji = emoji, color = color)
+                    if (it.id == id) it.copy(name = name, emoji = emoji, color = color, budgetMode = budgetMode)
                     else if (it.parentId == id) it.copy(color = color) else it
                 })
             }

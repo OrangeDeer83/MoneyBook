@@ -90,29 +90,39 @@ fun AppData.highlights(p: HlPeriod): List<Highlight> {
     val prevScope = book.filter { it.day in ps..pe }
     val spends = scope.filter { it.type == TxType.EXPENSE && it.spent > 0 }
 
-    // 預算（只有月、有設預算）
+    // 預算（只有月、有設預算）：只算「算預算」的支出，預算外的另外一句
     val budget = p.month?.let { currentBook.budgetFor(it) } ?: 0L
+    val bud = budgetSpent(scope)
     if (budget > 0) {
         out.add(
             if (p.current) {
                 val daysLeft = (p.month!!.lengthOfMonth() - p.today.dayOfMonth + 1).coerceAtLeast(1)
-                if (exp > budget) say("budget", Feel.WORRIED) {
-                    t("預算已經超過 "); bad(formatMoney(exp - budget)); t(" 了…還有 $daysLeft 天，我們一起省一點好嗎？")
+                if (bud > budget) say("budget", Feel.WORRIED) {
+                    t("預算已經超過 "); bad(formatMoney(bud - budget)); t(" 了…還有 $daysLeft 天，我們一起省一點好嗎？")
                 } else {
-                    val left = budget - exp
+                    val left = budget - bud
                     // 花的比例比過的日子快 10% 以上就擔心
-                    val fast = pct(exp, budget) > pct(p.today.dayOfMonth.toLong(), p.month.lengthOfMonth().toLong()) + 10
+                    val fast = pct(bud, budget) > pct(p.today.dayOfMonth.toLong(), p.month.lengthOfMonth().toLong()) + 10
                     say("budget", if (fast) Feel.WORRIED else Feel.HAPPY) {
-                        t("預算用了 ${pct(exp, budget)}%，還剩 "); if (fast) bad(formatMoney(left)) else good(formatMoney(left))
+                        t("預算用了 ${pct(bud, budget)}%，還剩 "); if (fast) bad(formatMoney(left)) else good(formatMoney(left))
                         t("，接下來每天還能花 ${formatMoney(left / daysLeft)}")
                     }
                 }
-            } else if (exp > budget) say("budget", Feel.WORRIED) {
-                t("${p.label}超過預算 "); bad(formatMoney(exp - budget)); t("，下個月再加油")
+            } else if (bud > budget) say("budget", Feel.WORRIED) {
+                t("${p.label}超過預算 "); bad(formatMoney(bud - budget)); t("，下個月再加油")
             } else say("budget", Feel.HAPPY) {
-                t("${p.label}預算守住了！還剩 "); good(formatMoney(budget - exp))
+                t("${p.label}預算守住了！還剩 "); good(formatMoney(budget - bud))
             }
         )
+    }
+
+    // 預算外花了多少，主要是哪個大分類
+    val outs = spends.filter { isOutOfBudget(it) }
+    if (outs.isNotEmpty()) {
+        val main = outs.groupBy { topId(it) }.maxByOrNull { e -> e.value.sumOf { it.spent } }!!
+        out.add(say("outBudget", Feel.NORMAL) {
+            t("${p.label}預算外花了 ${formatMoney(outs.sumOf { it.spent })}，主要是「"); name(topName(main.value.first())); t("」")
+        })
     }
 
     // 存下多少
