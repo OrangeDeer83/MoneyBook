@@ -3831,8 +3831,8 @@ def t_card_bill_batch():
     d.tap_text("改入帳月份（2 筆）", exact=True)
     d.wait_text("2 筆改到哪一期帳單", timeout=8)
     d.tap_text(f"{nxt[0]} 年 {nxt[1]} 月帳單", exact=True)
-    d.time.sleep(1)
-    ns = d.shot("改完")
+    d.time.sleep(0.6)
+    ns = d.nodes()      # 提示只停 4 秒：先讀畫面，等一下馬上點復原，截圖放到後面
     d.check(f"停在 {cur[1]} 月帳單：cardA、cardB 不見了，cardC 還在，提示改到 {nxt[1]} 月帳單",
             not d.has(ns, "cardA", True) and not d.has(ns, "cardB", True) and d.has(ns, "cardC", True)
             and any(n.text == f"2 筆改到 {nxt[1]} 月帳單" for n in ns) and d.has(ns, f"{cur[0]} 年 {cur[1]} 月帳單", True), [n.text for n in ns if n.text][:25])
@@ -3840,5 +3840,7 @@ def t_card_bill_batch():
     if undo:
         d.tap(undo)
         d.time.sleep(1.2)
+    else:
+        d.shot("改完（找不到復原）")
     ns = d.shot("復原")
     d.check("按復原後 cardA、cardB 回來", d.has(ns, "cardA", True) and d.has(ns, "cardB", True), [n.text for n in ns if n.text][:25])
