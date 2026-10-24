@@ -74,6 +74,7 @@ import tw.moneybook.app.accountMonthFor
 import tw.moneybook.app.cardBillSpending
 import tw.moneybook.app.autoBillMonth
 import tw.moneybook.app.billRange
+import tw.moneybook.app.billMovable
 import tw.moneybook.app.fxPendingList
 import tw.moneybook.app.cardBillSpendingAfter
 import tw.moneybook.app.cardCycle
@@ -153,6 +154,10 @@ fun AccountDetailScreen(
     var editing by remember { mutableStateOf(false) }
     var adjusting by remember { mutableStateOf(false) }
     var rateDialog by remember { mutableStateOf(false) }
+    // 信用卡多選：勾幾筆一次改入帳月份
+    var selecting by remember { mutableStateOf(false) }
+    val picked = remember { androidx.compose.runtime.mutableStateListOf<Long>() }
+    var billPick by remember { mutableStateOf(false) }
     var fetchAsk by remember { mutableStateOf(false) }
     // 點進某一筆再返回，要留在原本看的月份（切換月份時記在 vm）
     // （有設結帳日的信用卡是「一期一期」看帳單：預設是現在這一期）
@@ -199,7 +204,13 @@ fun AccountDetailScreen(
         (m != month).also { if (it) month = m }
     }) { txnItemIndex(dayGroups, listBase, it) }
 
-    SubPage(a.name, onBack) {
+    val canSelect = a.type == AccountType.CARD && a.statementDay in 1..31
+    androidx.activity.compose.BackHandler(enabled = selecting) { selecting = false; picked.clear() }
+    LaunchedEffect(month) { picked.clear() }
+    SubPage(a.name, onBack, actions = if (canSelect && !selecting) ({
+        CuteChip("多選", false, { selecting = true })
+        Spacer(Modifier.width(8.dp))
+    }) else null) {
       Box(Modifier.fillMaxSize()) {
         // 底下多留空間，最後一筆不會被右下角的 + 蓋住
         LazyColumn(state = listState, contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -322,6 +333,19 @@ fun AccountDetailScreen(
                     }
                 }
             }
+            if (selecting) {
+                item {
+                    val movable = monthList.filter { it.billMovable(a) }
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft).padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("已選 ${picked.size} 筆", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { picked.clear(); picked.addAll(movable.map { it.id }) }) { Text("全選") }
+                        TextButton(onClick = { selecting = false; picked.clear() }) { Text("取消") }
+                    }
+                }
+            }
             if (monthList.isEmpty() && reimbIn.isEmpty() && settleIn.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "這個月這個帳戶沒有記錄") }
             }
@@ -329,7 +353,15 @@ fun AccountDetailScreen(
                 item(key = "d$day") { DayHeader(day, list.mapNotNull { it.txn }) }
                 items(list, key = { it.key }) { e ->
                     val t = e.txn
-                    if (t != null) {
+                    if (t != null && selecting) {
+                        // 多選：點一筆＝勾／取消（不會跳去修改）；不能改入帳月份的（轉帳、餘額調整）沒有勾選框
+                        val ok = t.billMovable(a)
+                        val toggle = { if (t.id in picked) picked.remove(t.id) else picked.add(t.id) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (ok) androidx.compose.material3.Checkbox(t.id in picked, { toggle() }) else Spacer(Modifier.width(48.dp))
+                            Box(Modifier.weight(1f)) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"]) { if (ok) toggle() } }
+                        }
+                    } else if (t != null) {
                         SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"], highlight = t.id == accHl) { onEdit(t.id) } }
                     } else if (e.settle != null) {
                         val b = running[e.settle.runKey]
@@ -342,8 +374,15 @@ fun AccountDetailScreen(
                 }
             }
         }
+        // 多選時下面是「改入帳月份」，不是記一筆
+        if (selecting && picked.isNotEmpty()) {
+            androidx.compose.material3.Button(
+                onClick = { billPick = true },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth().height(52.dp),
+            ) { Text("改入帳月份（${picked.size} 筆）", style = MaterialTheme.typography.titleSmall) }
+        }
         // 右下角：在這個帳戶記一筆（帳戶自動帶入）
-        Box(
+        if (!selecting) Box(
             Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 20.dp, bottom = 20.dp)
@@ -363,6 +402,38 @@ fun AccountDetailScreen(
             )
         }
       }
+    }
+    if (billPick) {
+        AlertDialog(
+            onDismissRequest = { billPick = false },
+            title = { Text("${picked.size} 筆改到哪一期帳單") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("只能往後挪（刷卡和實際入帳跨期時用）", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                    val opts: List<Pair<java.time.YearMonth?, String>> = listOf(1L, 2L).map { k -> month.plusMonths(k) to "${month.plusMonths(k).year} 年 ${month.plusMonths(k).monthValue} 月帳單" } +
+                        listOf(null to "依消費日期自動")
+                    opts.forEach { (m, label) ->
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft)
+                                .clickable {
+                                    vm.setBillMonths(a.id, picked.toSet(), m)
+                                    picked.clear()
+                                    billPick = false
+                                }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                        ) {
+                            Text(label, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                m?.let { val (rs, re) = billRange(a.statementDay, it); "${rs.monthValue}/${rs.dayOfMonth}～${re.monthValue}/${re.dayOfMonth}" } ?: "各自回到原本那一期",
+                                style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { billPick = false }) { Text("取消") } },
+        )
     }
     if (adjusting) {
         AdjustBalanceDialog(

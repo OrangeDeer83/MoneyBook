@@ -3809,3 +3809,36 @@ def t_back_keeps_page_state():
     d.time.sleep(1.5)
     ns = d.shot("改帳返回搜尋")
     d.check("返回搜尋頁：關鍵字 row07 和結果都還在", any(e.text == "row07" for e in d.edits()) and sum(1 for n in ns if n.text == "row07") >= 2, [n.text for n in ns if n.text][:20])
+
+
+@case(D, "信用卡多選：勾兩筆一次改到下一期帳單，停在原本這一期、可以復原", visual=True)
+def t_card_bill_batch():
+    s = S.Seed(f.today())
+    for n in ("cardA", "cardB", "cardC"):
+        s.expense(0, 300, S.C_FOOD, acc=S.CARD, note=n)
+    d.fresh(s.json())
+    open_account("測試信用卡")
+    d.tap_text("多選", exact=True)
+    d.time.sleep(1)
+    for n in ("cardA", "cardB"):
+        d.tap_text(n, exact=True)
+        d.time.sleep(0.5)
+    ns = d.shot("勾兩筆")
+    d.check("上面寫已選 2 筆，下面有「改入帳月份（2 筆）」", d.has(ns, "已選 2 筆", True) and d.has(ns, "改入帳月份（2 筆）", True), [n.text for n in ns if n.text][:20])
+    t = f.today()
+    cur = (t.year, t.month) if t.day <= 25 else ((t.year + (t.month == 12)), t.month % 12 + 1)
+    nxt = (cur[0] + (cur[1] == 12), cur[1] % 12 + 1)
+    d.tap_text("改入帳月份（2 筆）", exact=True)
+    d.wait_text("2 筆改到哪一期帳單", timeout=8)
+    d.tap_text(f"{nxt[0]} 年 {nxt[1]} 月帳單", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("改完")
+    d.check(f"停在 {cur[1]} 月帳單：cardA、cardB 不見了，cardC 還在，提示改到 {nxt[1]} 月帳單",
+            not d.has(ns, "cardA", True) and not d.has(ns, "cardB", True) and d.has(ns, "cardC", True)
+            and any(n.text == f"2 筆改到 {nxt[1]} 月帳單" for n in ns) and d.has(ns, f"{cur[0]} 年 {cur[1]} 月帳單", True), [n.text for n in ns if n.text][:25])
+    undo = d.first(ns, "復原", True)
+    if undo:
+        d.tap(undo)
+        d.time.sleep(1.2)
+    ns = d.shot("復原")
+    d.check("按復原後 cardA、cardB 回來", d.has(ns, "cardA", True) and d.has(ns, "cardB", True), [n.text for n in ns if n.text][:25])

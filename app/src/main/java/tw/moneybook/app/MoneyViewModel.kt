@@ -441,6 +441,18 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 刪掉一次互相抵銷（兩邊一起），可以復原 */
+    /** 信用卡多選：一次改好幾筆的入帳月份（target null＝依消費日期自動），可以復原；不會跳到那一期 */
+    fun setBillMonths(accountId: Long, ids: Set<Long>, target: YearMonth?) {
+        val d = data
+        val a = d.accMap[accountId] ?: return
+        val before = d.txns.filter { it.id in ids }.associateBy { it.id }
+        commit(d.withBillMonths(a, ids, target))
+        _messages.tryEmit(UiMsg(if (target == null) "${ids.size} 筆改回依消費日期" else "${ids.size} 筆改到 ${target.monthValue} 月帳單", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { before[it.id] ?: it }))
+        })
+    }
+
     /** 依分帳結論結清（見 withSettle）；成功回傳 true，跳提示可以復原 */
     fun settleUp(
         reimbKeys: List<ItemKey>, debtKeys: List<ItemKey>, moves: List<SettleMove>, day: Long, time: Int,

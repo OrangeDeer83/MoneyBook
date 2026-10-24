@@ -83,12 +83,12 @@ import java.time.format.DateTimeFormatter
 
 /** 子頁面的共用外框 */
 @Composable
-fun SubPage(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+fun SubPage(title: String, onBack: () -> Unit, actions: @Composable (() -> Unit)? = null, content: @Composable () -> Unit) {
     androidx.activity.compose.BackHandler { onBack() }
     Column(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding()
     ) {
-        SubTopBar(title, onBack)
+        SubTopBar(title, onBack, actions)
         Box(Modifier.weight(1f)) { content() }
     }
 }

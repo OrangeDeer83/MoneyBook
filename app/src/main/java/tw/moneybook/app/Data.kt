@@ -521,6 +521,24 @@ fun Txn.billMonthFor(a: Account): YearMonth? {
     return if (manual != null && manual >= auto) manual else auto
 }
 
+/** 這筆可以在信用卡 a 改入帳月份嗎：記在這張卡（設了結帳日）的支出／收入，餘額調整不算 */
+fun Txn.billMovable(a: Account): Boolean =
+    a.type == AccountType.CARD && a.statementDay in 1..31 && accountId == a.id && type != TxType.TRANSFER && !adjust
+
+/**
+ * 一次改好幾筆在信用卡 a 的入帳月份：target 是 null＝依消費日期自動；
+ * 只能往後挪，target 比那筆自動算的月份早或一樣就回到自動。不能改的那幾筆不動。
+ */
+fun AppData.withBillMonths(a: Account, ids: Set<Long>, target: YearMonth?): AppData = copy(
+    txns = txns.map { t ->
+        if (t.id !in ids || !t.billMovable(a)) t
+        else {
+            val auto = autoBillMonth(a.statementDay, t.date)
+            t.copy(billMonth = if (target != null && target > auto) billCode(target) else 0)
+        }
+    },
+)
+
 /** 某信用卡某一期帳單的刷卡金額（含手動指定入帳月份的）：消費、轉出算正的，退款（收入）算負的 */
 fun AppData.cardBillSpending(a: Account, bill: YearMonth): Long {
     var sum = 0L
