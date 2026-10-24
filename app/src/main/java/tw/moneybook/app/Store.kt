@@ -58,7 +58,7 @@ object Codec {
                 put(
                     JSONObject().put("id", c.id).put("name", c.name).put("emoji", c.emoji)
                         .put("color", c.color).put("kind", c.kind.name)
-                        .put("parentId", nullable(c.parentId)).put("order", c.order)
+                        .put("parentId", nullable(c.parentId)).put("order", c.order).put("budgetMode", c.budgetMode)
                 )
             }
         })
@@ -77,7 +77,7 @@ object Codec {
                         .put("reimbItems", ReimbCodec.toJson(t.reimbItems))
                         .put("adjust", t.adjust).put("time", t.time).put("fxAmount", t.fxAmount).put("billMonth", t.billMonth)
                         .put("fxSpendAmount", t.fxSpendAmount).put("fxSpendCur", t.fxSpendCur).put("fxPending", t.fxPending)
-                        .put("debtItems", DebtCodec.itemsToJson(t.debtItems)).put("debtSelf", t.debtSelf)
+                        .put("debtItems", DebtCodec.itemsToJson(t.debtItems)).put("debtSelf", t.debtSelf).put("budgetOut", t.budgetOut)
                 )
             }
         })
@@ -175,6 +175,7 @@ object Codec {
                 kind = runCatching { TxType.valueOf(o.getString("kind")) }.getOrDefault(TxType.EXPENSE),
                 parentId = o.optLongOrNull("parentId"),
                 order = o.optInt("order", 0),
+                budgetMode = o.optInt("budgetMode", 0),
             )
         }
         val txns = objects(root.optJSONArray("txns")) { o ->
@@ -208,6 +209,7 @@ object Codec {
                 fxPending = o.optBoolean("fxPending", false),
                 debtItems = DebtCodec.itemsFromJson(o.optJSONArray("debtItems")),
                 debtSelf = o.optLong("debtSelf", 0L),
+                budgetOut = o.optInt("budgetOut", 0),
             ).let { t0 -> DebtCodec.migrateV1(t0, o) }
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t

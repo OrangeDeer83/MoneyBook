@@ -66,6 +66,8 @@ data class Category(
     val kind: TxType,
     val parentId: Long?,
     val order: Int,
+    /** 預算外（見 Budget.kt）：0＝跟著大分類（大分類的 0＝算預算）、1＝預算外、2＝算預算 */
+    val budgetMode: Int = 0,
 )
 
 /**
@@ -170,6 +172,8 @@ data class Txn(
     val debtItems: List<DebtItem> = emptyList(),
     /** 有欠款時我自己付的那一份（台幣，從 accountId 扣）；外幣消費還沒請款時是預估，請款後是實際 */
     val debtSelf: Long = 0L,
+    /** 預算外（見 Budget.kt）：0＝跟著分類、1＝預算外、2＝算預算 */
+    val budgetOut: Int = 0,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
