@@ -167,10 +167,11 @@ object CardPages {
         listOf(
             CardSpec("tips", "本月重點（年沒有）"),
             CardSpec("sum", "收支", canHalf = true),
+            CardSpec("inout", "預算內／外（有設預算外才有）", canHalf = true),
             CardSpec("cat", "分類（圓環圖＋清單）"),
             CardSpec("yearBars", "每月收支（只有年）"),
         ),
-        CardLayout(listOf(CardRow("tips"), CardRow("sum"), CardRow("cat"), CardRow("yearBars"))),
+        CardLayout(listOf(CardRow("tips"), CardRow("sum"), CardRow("inout"), CardRow("cat"), CardRow("yearBars"))),
     )
 
     /** 統計 → 趨勢 */

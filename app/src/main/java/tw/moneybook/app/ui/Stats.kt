@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import tw.moneybook.app.AppData
+import tw.moneybook.app.budgetSpent
+import tw.moneybook.app.isOutOfBudget
 import tw.moneybook.app.CardPages
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.TxType
@@ -236,10 +238,13 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
                 } else {
                     item { PeriodBar(vm, mode) }
                     val scope = periodFilter(book, mode, vm)
-                    cardRows(layout, narrow, { id -> (id != "yearBars" || mode == 1) && (id != "tips" || mode != 1) }, { onLayout(page.key) }) { id, half ->
+                    // 預算內／外：有分類預設不算預算、或有一筆標了預算外才出現
+                    val usesOut = d.categories.any { it.budgetMode == 1 } || book.any { it.budgetOut == 1 }
+                    cardRows(layout, narrow, { id -> (id != "yearBars" || mode == 1) && (id != "tips" || mode != 1) && (id != "inout" || usesOut) }, { onLayout(page.key) }) { id, half ->
                         when (id) {
                             "tips" -> TipsCard(vm, mode, menu)
                             "sum" -> SumCard(vm, mode, scope, half, menu)
+                            "inout" -> InOutCard(vm, mode, scope, half, onDrill, menu)
                             "cat" -> CategoryCard(vm, mode, scope, onDrill, menu)
                             "yearBars" -> YearBarsCard(scope, vm.statYear, menu)
                         }
@@ -293,6 +298,69 @@ private fun SumCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, half: Boole
         }
         Spacer(Modifier.height(8.dp))
         Text("平均每天支出 ${formatMoney(exp / days)}・共 ${scope.size} 筆記錄", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+    }
+}
+
+/**
+ * 預算內／外：一條分成兩段的條（算預算的用主色、預算外用預算外的顏色），下面兩個金額；
+ * 點預算外看那些記錄；整排時多列預算外最多的 3 個大分類
+ */
+@Composable
+private fun InOutCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, half: Boolean, onDrill: () -> Unit, menu: CardMenu) {
+    val d = vm.data
+    val cute = LocalCute.current
+    val total = scope.expenseSum()
+    val inB = d.budgetSpent(scope)
+    val outB = total - inB
+    val primary = MaterialTheme.colorScheme.primary
+    val openOut = {
+        vm.drill = tw.moneybook.app.Drill("預算外", mode, { t -> t.spent > 0 && d.isOutOfBudget(t) }, { t -> t.spent })
+        onDrill()
+    }
+    CuteCard(cardMod(half)) {
+        CardTitle("預算內／外", "inout", menu)
+        Spacer(Modifier.height(6.dp))
+        if (total <= 0L) {
+            Text("這段期間沒有支出", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+            return@CuteCard
+        }
+        Row(Modifier.fillMaxWidth().height(12.dp).clip(CircleShape).background(cute.soft)) {
+            if (inB > 0) Box(Modifier.weight(inB.toFloat()).fillMaxHeight().background(primary))
+            if (outB > 0) Box(Modifier.weight(outB.toFloat()).fillMaxHeight().background(cute.out))
+        }
+        Spacer(Modifier.height(8.dp))
+        @Composable
+        fun line(dot: Color, label: String, v: Long, onClick: (() -> Unit)?) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(9.dp).clip(CircleShape).background(dot))
+                Spacer(Modifier.width(6.dp))
+                Text(label + if (onClick != null) " ›" else "", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f), maxLines = 1)
+                Text(formatMoney(v), style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                if (!half) Text("  ${Math.round(v * 100.0 / total)}%", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+            }
+        }
+        line(primary, "算預算", inB, null)
+        line(cute.out, "預算外", outB, if (outB > 0) openOut else null)
+        if (!half && outB > 0) {
+            // 預算外最多的幾個大分類
+            val tops = scope.filter { it.spent > 0 && d.isOutOfBudget(it) }
+                .groupBy { t -> t.categoryId?.let { d.catMap[it] }?.let { d.topOf(it) } }
+                .map { (c, ts) -> c to ts.sumOf { it.spent } }.sortedByDescending { it.second }.take(3)
+            Spacer(Modifier.height(4.dp))
+            Text("預算外主要是", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+            tops.forEach { (c, v) ->
+                Row(Modifier.fillMaxWidth().padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CatBubble(c?.emoji ?: "img:cat_box", c?.color ?: 8, 24.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(c?.name ?: "未分類", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                    Text(formatMoney(v), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
     }
 }
 
