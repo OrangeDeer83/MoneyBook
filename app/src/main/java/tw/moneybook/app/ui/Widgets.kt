@@ -389,6 +389,55 @@ fun PairBars(
 }
 
 /**
+ * 單排長條圖（例如時段）：每組一根、各自的顏色，下方有標籤；長按看那一組的金額和筆數（titles 是資訊框的標題）。
+ */
+@Composable
+fun SlotBars(
+    labels: List<String>,
+    values: List<Long>,
+    colors: List<Color>,
+    titles: List<String>,
+    counts: List<Int>,
+    modifier: Modifier = Modifier,
+    key: String = "slots",
+) {
+    val max = values.maxOrNull()?.takeIf { it > 0 } ?: 1L
+    val cute = LocalCute.current
+    val sub = cute.sub
+    val n = labels.size.coerceAtLeast(1)
+    val sel = LocalChartPick.current?.of(key) ?: -1
+    Column(modifier) {
+        Box(Modifier.chartPick(key, labels.size)) {
+            Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+                val slot = size.width / n
+                val barW = (slot * 0.55f).coerceAtMost(22.dp.toPx())
+                for (i in 0 until n) {
+                    val cx = slot * i + slot / 2f
+                    if (i == sel) drawRoundRect(sub.copy(alpha = 0.25f), Offset(slot * i + 2f, 0f), Size(slot - 4f, size.height), CornerRadius(8.dp.toPx()))
+                    val h = size.height * 0.92f * (values.getOrElse(i) { 0L }.toFloat() / max)
+                    if (h > 0f) drawRoundRect(colors.getOrElse(i) { sub }, Offset(cx - barW / 2f, size.height - h), Size(barW, h), CornerRadius(barW / 4f))
+                }
+            }
+            if (sel in labels.indices) {
+                ChartTip(
+                    sel, n, titles.getOrElse(sel) { labels[sel] },
+                    listOf(
+                        TipLine("金額", formatMoney(values.getOrElse(sel) { 0L }), cute.expense),
+                        TipLine("筆數", "${counts.getOrElse(sel) { 0 }} 筆", cute.ink),
+                    ),
+                    tipWidth = 128.dp,
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            labels.forEach { l ->
+                Text(l, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, color = sub, maxLines = 1)
+            }
+        }
+    }
+}
+
+/**
  * 存錢折線圖：累積存款（粗線＋漸層）與每月結餘（細線）。每個月只有一個點（那個月的總數），點和點之間用直線連，不代表中間的日子。
  * titles 不是空的就可以長按看那個月的每月結餘、累積存款、收入、支出（incs／exps 和 monthly 對齊）。
  */

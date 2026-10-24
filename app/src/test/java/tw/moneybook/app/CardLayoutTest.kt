@@ -45,6 +45,20 @@ class CardLayoutTest {
     }
 
     @Test
+    fun newCardsKeepDefaultPairing() {
+        // 預設 b、c 並排：舊排版只有 a、big，新加的 b、c 照樣並排加到最下面；只缺 c 時 c 落單靠左
+        val p = CardPage("p", "測試", page.specs, CardLayout(listOf(CardRow("a"), CardRow("b", "c", true), CardRow("big")), hidden = listOf("new")))
+        assertEquals(lay(CardRow("big"), CardRow("a"), CardRow("b", "c", true), hidden = listOf("new")), p.normalize(lay(CardRow("big"), CardRow("a"))))
+        assertEquals(lay(CardRow("b"), CardRow("a"), CardRow("big"), CardRow("c", null, true), hidden = listOf("new")), p.normalize(lay(CardRow("b"), CardRow("a"), CardRow("big"))))
+        // 統計頁：舊版存的排版加上平日／週末、時段並排，每天熱度一整排
+        val old = lay(CardRow("tips"), CardRow("sum"), CardRow("cat"), CardRow("yearBars"))
+        assertEquals(
+            lay(CardRow("tips"), CardRow("sum"), CardRow("cat"), CardRow("yearBars"), CardRow("inout"), CardRow("weekday", "hours", true), CardRow("heat")),
+            CardPages.PERIOD.normalize(old),
+        )
+    }
+
+    @Test
     fun hideKeepsPartnerOnItsSideAndShowAddsToBottom() {
         val l = lay(CardRow("a", "b", true), CardRow("big"))
         val h = page.hide(l, "a")

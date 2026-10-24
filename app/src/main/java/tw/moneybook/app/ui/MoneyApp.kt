@@ -211,6 +211,9 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                     // 調整卡片排版：layout:<CardPage.key>
                     val cardPage = if (top.name.startsWith("layout:")) tw.moneybook.app.CardPages.of(top.name.removePrefix("layout:")) else null
                     if (cardPage != null) CardLayoutScreen(vm, cardPage) { pop() }
+                    // 那一天的明細（統計的每天熱度點進來）：day:<epochDay>
+                    val dayEp = top.name.removePrefix("day:").toLongOrNull()
+                    if (top.name.startsWith("day:") && dayEp != null) DayScreen(vm, dayEp, onEdit = { editTxn(it) }) { pop() }
                     val accId = top.name.removePrefix("account:").toLongOrNull()
                     if (cardPage == null && top.name.startsWith("account:") && accId != null) {
                         AccountDetailScreen(
@@ -299,7 +302,7 @@ private fun MainTabs(
                     onFxPending = { open("fxpending") },
                 )
                 1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") }, onAsset = { open("asset") })
-                2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") }, onLayout = { open("layout:$it") }, onAsset = { open("asset") })
+                2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") }, onLayout = { open("layout:$it") }, onAsset = { open("asset") }, onDay = { open("day:$it") })
                 else -> MeScreen(vm, open)
             }
         }

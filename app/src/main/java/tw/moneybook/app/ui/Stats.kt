@@ -178,7 +178,7 @@ fun RangeBar(vm: MoneyViewModel) {
 }
 
 @Composable
-fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, onLayout: (String) -> Unit, onAsset: () -> Unit) {
+fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, onLayout: (String) -> Unit, onAsset: () -> Unit, onDay: (Long) -> Unit) {
     val d = vm.data
     val mode = vm.statMode
     var trendN by vm::statTrendN
@@ -240,11 +240,14 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
                     val scope = periodFilter(book, mode, vm)
                     // 預算內／外：有分類預設不算預算、或有一筆標了預算外才出現
                     val usesOut = d.categories.any { it.budgetMode == 1 } || book.any { it.budgetOut == 1 }
-                    cardRows(layout, narrow, { id -> (id != "yearBars" || mode == 1) && (id != "tips" || mode != 1) && (id != "inout" || usesOut) }, { onLayout(page.key) }) { id, half ->
+                    cardRows(layout, narrow, { id -> (id != "yearBars" || mode == 1) && (id != "tips" || mode != 1) && (id != "inout" || usesOut) && (id != "heat" || mode == 0) }, { onLayout(page.key) }) { id, half ->
                         when (id) {
                             "tips" -> TipsCard(vm, mode, menu)
                             "sum" -> SumCard(vm, mode, scope, half, menu)
                             "inout" -> InOutCard(vm, mode, scope, half, onDrill, menu)
+                            "weekday" -> WeekdayCard(vm, mode, scope, half, menu)
+                            "hours" -> HoursCard(scope, half, menu)
+                            "heat" -> HeatCard(vm.month, scope, onDay, menu)
                             "cat" -> CategoryCard(vm, mode, scope, onDrill, menu)
                             "yearBars" -> YearBarsCard(scope, vm.statYear, menu)
                         }

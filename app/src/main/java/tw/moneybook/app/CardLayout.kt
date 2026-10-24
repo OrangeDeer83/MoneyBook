@@ -48,7 +48,7 @@ class CardPage(val key: String, val title: String, val specs: List<CardSpec>, va
 
     /**
      * 整理存起來的排版：拿掉不認識或重複的卡片、不能半排的卡片改成自己一整排、空的排拿掉；
-     * 舊排版沒有的新卡片：預設隱藏的放進隱藏區，其他加到最下面。沒有存過就用預設排版。
+     * 舊排版沒有的新卡片：預設隱藏的放進隱藏區，其他照預設排版的樣子（並排的照樣並排）加到最下面。沒有存過就用預設排版。
      */
     fun normalize(saved: CardLayout?): CardLayout {
         if (saved == null) return default
@@ -69,6 +69,13 @@ class CardPage(val key: String, val title: String, val specs: List<CardSpec>, va
             fullB?.let { rows.add(CardRow(it)) }
         }
         val hidden = saved.hidden.mapNotNull { take(it) }.toMutableList()
+        // 新卡片照預設排版的樣子加到最下面：預設並排的兩張都是新的就照樣並排
+        for (r in default.rows) {
+            val fresh = r.ids.filter { it !in seen }
+            if (fresh.isEmpty()) continue
+            fresh.forEach { seen.add(it) }
+            rows.add(if (r.half && fresh.size == r.ids.size) r else if (r.half) CardRow(fresh[0], null, true) else CardRow(fresh[0]))
+        }
         for (s in specs) {
             if (!seen.add(s.id)) continue
             if (s.id in default.hidden) hidden.add(s.id) else rows.add(CardRow(s.id))
@@ -169,9 +176,17 @@ object CardPages {
             CardSpec("sum", "收支", canHalf = true),
             CardSpec("inout", "預算內／外（有設預算外才有）", canHalf = true),
             CardSpec("cat", "分類（圓環圖＋清單）"),
+            CardSpec("weekday", "平日／週末", canHalf = true),
+            CardSpec("hours", "時段", canHalf = true),
+            CardSpec("heat", "每天熱度（只有月）"),
             CardSpec("yearBars", "每月收支（只有年）"),
         ),
-        CardLayout(listOf(CardRow("tips"), CardRow("sum"), CardRow("inout"), CardRow("cat"), CardRow("yearBars"))),
+        CardLayout(
+            listOf(
+                CardRow("tips"), CardRow("sum"), CardRow("inout"), CardRow("cat"),
+                CardRow("weekday", "hours", true), CardRow("heat"), CardRow("yearBars"),
+            )
+        ),
     )
 
     /** 統計 → 趨勢 */
