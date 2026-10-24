@@ -3986,3 +3986,61 @@ def t_when_spend():
         d.swipe(540, 1600, 540, 900, 400)
     ns = d.shot("年")
     d.check("年：有平日／週末、時段，沒有每天熱度", d.has(ns, "平日／週末", True) and not d.has(ns, "每天熱度", True), [n.text for n in ns if n.text][:30])
+
+
+def tpl_seed():
+    """常用記帳：早餐 65、捷運 35、午餐 120（備註 tplnote、標籤 work）"""
+    s = S.Seed(f.today())
+    s.template("早餐", 65, S.C_BREAKFAST)
+    s.template("捷運", 35, S.C_METRO)
+    s.template("午餐", 120, S.C_LUNCH, note="tplnote")
+    s.templates[-1]["tags"] = ["work"]
+    return s
+
+
+@case(D, "常用記帳可以拖曳排序，離開再進來還是新的順序", visual=True)
+def t_tpl_reorder():
+    d.fresh(tpl_seed().json())
+    f.me_page("常用記帳")
+    ns = d.shot("常用記帳")
+    handles = d.find(ns, "按住拖曳排序", True)
+    d.check("每個常用記帳右邊有拖曳把手（3 個）", len(handles) == 3, len(handles))
+    a, c = d.first(ns, "早餐", True), d.first(ns, "午餐", True)
+    hs = [h for h in handles if a and abs(h.cy - a.cy) < 90]
+    if hs and c:
+        d.swipe(hs[0].cx, hs[0].cy, hs[0].cx, c.cy + 60, 1200)
+        d.time.sleep(1)
+    def order(ns):
+        names = [n for n in ns if n.text in ("早餐", "捷運", "午餐")]
+        return [n.text for n in sorted(names, key=lambda n: n.cy)]
+    ns = d.shot("早餐拖到最下面")
+    d.check("順序變成捷運、午餐、早餐", order(ns) == ["捷運", "午餐", "早餐"], order(ns))
+    d.tap_back()
+    d.time.sleep(1)
+    f.me_page("常用記帳")
+    ns = d.shot("再進來")
+    d.check("離開再進來還是捷運、午餐、早餐", order(ns) == ["捷運", "午餐", "早餐"], order(ns))
+
+
+@case(D, "常用記帳小工具：點一格打開記一筆、內容帶好，按完成才記", visual=True)
+def t_tpl_widget_open():
+    s = tpl_seed()
+    tid = s.templates[-1]["id"]
+    d.fresh(s.json())
+    # 小工具點一格送出的就是 open=tpl:<id>（和真的點小工具一樣的進入方式）
+    d.sh(f"am start -n {d.PKG}/tw.moneybook.app.MainActivity --es open tpl:{tid}")
+    d.wait_text("備註（選填）", exact=False, timeout=15)
+    d.time.sleep(1)
+    ns = d.shot("小工具打開的記一筆")
+    d.check("記一筆帶好午餐的內容：金額 $120、備註 tplnote、標籤 #work",
+            d.has(ns, "$120", True) and any(e.text == "tplnote" for e in d.edits()) and any("#work" in n.text for n in ns),
+            [n.text for n in ns if n.text][:40])
+    f.save_edit()
+    d.time.sleep(1.5)
+    ns = d.shot("按完成之後")
+    d.check("按完成後首頁多一筆 tplnote -$120", d.has(ns, "tplnote", True) and d.has(ns, "-$120", True), [n.text for n in ns if n.text][:30])
+    # 沒有常用記帳時：open=templates 打開常用記帳頁
+    d.sh(f"am start -n {d.PKG}/tw.moneybook.app.MainActivity --es open templates")
+    d.time.sleep(2)
+    ns = d.shot("open=templates")
+    d.check("open=templates 打開常用記帳頁", d.has(ns, "＋ 新增常用記帳", True), [n.text for n in ns if n.text][:20])
