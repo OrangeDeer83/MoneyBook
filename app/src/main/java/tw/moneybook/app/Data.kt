@@ -269,6 +269,8 @@ data class AppData(
     /** 投資帳戶的買賣記錄與價格（舊資料沒有這兩個欄位，就是空的） */
     val trades: List<Trade> = emptyList(),
     val prices: List<PriceSnap> = emptyList(),
+    /** 分帳結清（見 Settle.kt），舊資料沒有這個欄位 */
+    val settles: List<Settle> = emptyList(),
 ) {
     val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }
@@ -352,6 +354,8 @@ data class AppData(
             for (p in t.items.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) + p.flowFor(a) } }
             for (p in t.debtItems.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> m[id] = (m[id] ?: 0L) - p.flowFor(a) } }
         }
+        // 分帳結清實際收到／付出的錢
+        for (s in settles) for (mv in s.moves) mv.accountId?.let { id -> if (id in m) m[id] = (m[id] ?: 0L) + if (mv.receive) mv.amount else -mv.amount }
         return m
     }
 
@@ -382,6 +386,10 @@ data class AppData(
                 if (p.accountId == accountId) ev.add(Ev("d${t.id}_$i", p.day, if (p.time >= 0) p.time else 1440, t.id * 1000 + 500 + i, -p.flowFor(a)))
             }
         }
+        // 分帳結清：沒有時間的算在當天最後，排在所有記錄後面（編號用結清的 id）
+        for (s in settles) s.moves.forEachIndexed { k, mv ->
+            if (mv.accountId == accountId) ev.add(Ev("s${s.id}_$k", s.day, if (s.time >= 0) s.time else 1440, s.id * 1000 + k, if (mv.receive) mv.amount else -mv.amount))
+        }
         ev.sortWith(compareBy({ it.day }, { it.time }, { it.order }))
         var bal = a.initial
         val out = HashMap<String, Long>()
@@ -405,6 +413,7 @@ data class AppData(
             for (p in t.items.flatMap { it.pays }) if (p.accountId == accountId && before(p.day, if (p.time >= 0) p.time else 1440)) bal += p.flowFor(a)
             for (p in t.debtItems.flatMap { it.pays }) if (p.accountId == accountId && before(p.day, if (p.time >= 0) p.time else 1440)) bal -= p.flowFor(a)
         }
+        for (s in settles) if (before(s.day, if (s.time >= 0) s.time else 1440)) bal += s.flowFor(accountId)
         return bal
     }
 

@@ -104,6 +104,17 @@ object Codec {
         root.put("prices", JSONArray().apply {
             d.prices.forEach { p -> put(JSONObject().put("symbol", p.symbol).put("day", p.day).put("price", p.price).put("currency", p.currency)) }
         })
+        root.put("settles", JSONArray().apply {
+            d.settles.forEach { st ->
+                put(
+                    JSONObject().put("id", st.id).put("bookId", st.bookId).put("day", st.day).put("time", st.time)
+                        .put("moves", JSONArray().apply {
+                            st.moves.forEach { mv -> put(JSONObject().put("receive", mv.receive).put("who", mv.who).put("amount", mv.amount).put("accountId", mv.accountId ?: JSONObject.NULL)) }
+                        })
+                        .put("closed", JSONArray(st.closed))
+                )
+            }
+        })
         root.put("rates", JSONArray().apply {
             d.rates.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
         })
@@ -251,8 +262,20 @@ object Codec {
             collapsedAccTypes = strings(po.optJSONArray("collapsedAccTypes")),
             cardLayouts = po.optJSONObject("cardLayouts")?.let { o -> o.keys().asSequence().associateWith { k -> strings(o.optJSONArray(k)) } } ?: emptyMap(),
         )
+        val settles = objects(root.optJSONArray("settles")) { o ->
+            Settle(
+                id = o.getLong("id"),
+                bookId = o.optLong("bookId", books.first().id),
+                day = o.optLong("day", 0L),
+                time = o.optInt("time", -1),
+                moves = objects(o.optJSONArray("moves")) { m ->
+                    SettleMove(m.optBoolean("receive", true), m.optString("who", ""), m.optLong("amount", 0L), if (m.isNull("accountId")) null else m.optLong("accountId"))
+                },
+                closed = strings(o.optJSONArray("closed")),
+            )
+        }
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
-            txns.map { it.id } + templates.map { it.id } + trades.map { it.id }).maxOrNull() ?: 0L
+            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id }).maxOrNull() ?: 0L
         return AppData(
             books = books,
             accounts = accounts,
@@ -264,6 +287,7 @@ object Codec {
             trades = trades,
             prices = prices,
             rates = rates,
+            settles = settles,
         )
     }
 

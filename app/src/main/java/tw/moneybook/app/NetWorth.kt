@@ -32,6 +32,7 @@ private fun AppData.flows(): List<Flow> {
         for (p in t.items.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> out.add(Flow(p.day, id, p.flowFor(a))) } }
         for (p in t.debtItems.flatMap { it.pays }) p.accountId?.let { id -> accMap[id]?.let { a -> out.add(Flow(p.day, id, -p.flowFor(a))) } }
     }
+    for (s in settles) for (mv in s.moves) mv.accountId?.let { id -> if (accMap[id] != null) out.add(Flow(s.day, id, if (mv.receive) mv.amount else -mv.amount)) }
     out.sortBy { it.day }
     return out
 }
