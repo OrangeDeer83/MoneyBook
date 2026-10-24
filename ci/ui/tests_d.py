@@ -3726,3 +3726,48 @@ def t_settle_keep():
     d.wait_text("別人欠我", timeout=10)
     ns = d.shot("結清之後")
     d.check("別人欠我 $200（Dan 150＋Amy 還欠 50）", amount_right_of(ns, "別人欠我") == "$200", [n.text for n in ns if n.text][:20])
+
+
+@case(D, "報銷／欠款：從某人的頁面、從記一筆改帳回來，停在原本捲到的位置", visual=True)
+def t_reimb_keep_scroll():
+    s = S.Seed(f.today())
+    for k in range(10):
+        s.expense(-1 - k, 100 + k, S.C_FOOD, note=f"bill{k}", reimb=1, reimb_amount=100 + k, items=[S.reimb_item(f"P{k}", 100 + k)])
+    for k in range(10):
+        s.expense(-20 - k, 50, S.C_FOOD, note=f"pz{k}", reimb=1, reimb_amount=50, items=[S.reimb_item("P0", 50)])
+    d.fresh(s.json())
+    f.open_reimb_home()
+    target = None
+    for _ in range(8):
+        target = next((n for n in d.nodes() if n.text == "P8"), None)
+        if target is not None and target.cy < 1900:
+            break
+        d.swipe(540, 1700, 540, 1000, 500)
+    d.check("往下捲找到 P8", target is not None)
+    d.tap(target)
+    d.wait_text("P8欠我", exact=False, timeout=8)
+    d.tap_back()
+    d.time.sleep(1.2)
+    ns = d.shot("從 P8 的頁面返回")
+    d.check("回到總覽時停在原本的位置（看得到 P8，看不到最上面的「別人欠我」）", d.has(ns, "P8", True) and not d.has(ns, "別人欠我", True), [n.text for n in ns if n.text][:12])
+    # 某人的頁面：捲到最下面點最舊的帳去修改，返回後還在下面
+    d.swipe(540, 900, 540, 1800, 400)
+    for _ in range(10):
+        if d.has(d.nodes(), "別人欠我", True):
+            break
+        d.swipe(540, 900, 540, 1800, 400)
+    f.tap_person("P0")
+    d.wait_text("P0欠我", exact=False, timeout=8)
+    bill = None
+    for _ in range(10):
+        bill = next((n for n in d.nodes() if n.text.startswith("pz9")), None)
+        if bill is not None and bill.cy < 1900:
+            break
+        d.swipe(540, 1700, 540, 1000, 500)
+    d.check("P0 的頁面往下捲找到最舊的 pz9", bill is not None)
+    d.tap(bill)
+    f.edit_open()
+    d.tap_back()
+    d.time.sleep(1.5)
+    ns = d.shot("改帳返回 P0 的頁面")
+    d.check("返回 P0 的頁面時還停在下面（看得到 pz9）", any(n.text.startswith("pz9") for n in ns), [n.text for n in ns if n.text][:12])

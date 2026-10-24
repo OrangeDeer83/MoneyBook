@@ -630,7 +630,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
     // 從人頁點帳單去記一筆修改，回來時這一頁會重新建立：停在原本那個人的頁面（記在 vm 裡）
     var page by remember { mutableStateOf<ReimbPage>(vm.reimbPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home) }
     androidx.compose.runtime.SideEffect { vm.reimbPerson = (page as? ReimbPage.Person)?.who }
-    val leave = { vm.reimbPerson = null; vm.reimbTab = 0; onBack() }
+    val leave = { vm.reimbPerson = null; vm.reimbTab = 0; vm.reimbLists.clear(); vm.reimbScrolls.clear(); onBack() }
     // 從人頁進去的收款／還款／抵銷，做完回到人頁；從總覽進去的回到總覽
     var fromPerson by remember { mutableStateOf<String?>(null) }
     fun back() { page = fromPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home }
@@ -746,6 +746,7 @@ private fun ReimbHome(
     SubPage("報銷／欠款", onBack) {
         LazyColumn(
             Modifier.fillMaxSize(),
+            state = vm.reimbLists.getOrPut(tab) { androidx.compose.foundation.lazy.LazyListState() },
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -1337,10 +1338,12 @@ private fun ReimbPersonPage(
     var menuFor by remember { mutableStateOf<Int?>(null) }
     var editing by remember { mutableStateOf<Triple<Claim, Int, ReimbPay>?>(null) }
 
+    // 從這裡點帳單去記一筆修改，回來時停在原本的位置
+    val scroll = remember(who) { vm.reimbScrolls.getOrPut("p:$who") { androidx.compose.foundation.ScrollState(0) } }
     SubPage(ownerLabel(who), onBack) {
         Column(Modifier.fillMaxSize()) {
             Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+                Modifier.weight(1f).verticalScroll(scroll).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 // 進度：報銷一條（收回多少了）、欠款每種幣別一條（還了多少了），只算還沒結清的帳；最後是淨額（外幣用預估匯率換成台幣）

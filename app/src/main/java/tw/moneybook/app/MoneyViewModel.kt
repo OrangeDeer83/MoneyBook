@@ -121,6 +121,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     // 報銷／欠款頁：正在看誰的頁面、總覽在哪個分頁；從那裡點帳單去記一筆修改，回來要停在原處
     var reimbPerson by mutableStateOf<String?>(null)
     var reimbTab by mutableIntStateOf(0)
+    // 報銷／欠款頁的捲動位置：總覽每個分頁一個、每個人的頁面一個；回到這一頁時停在原本的位置，離開報銷／欠款才清掉
+    val reimbLists = HashMap<Int, androidx.compose.foundation.lazy.LazyListState>()
+    val reimbScrolls = HashMap<String, androidx.compose.foundation.ScrollState>()
     val meListState = androidx.compose.foundation.lazy.LazyListState()
     val accListState = androidx.compose.foundation.lazy.LazyListState()
     // 帳戶分頁：是否顯示已隱藏的帳戶（每次開 App 都先隱藏）
