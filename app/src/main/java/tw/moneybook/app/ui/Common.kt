@@ -169,9 +169,13 @@ fun ChipRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 }
 
 @Composable
-fun CuteChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: String? = null) {
+fun CuteChip(
+    text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, icon: String? = null,
+    /** 選到時的底色和字色（預設主色），例如預算外用 cute.out */
+    color: Color? = null, onColor: Color? = null,
+) {
     val cute = LocalCute.current
-    val primary = MaterialTheme.colorScheme.primary
+    val primary = color ?: MaterialTheme.colorScheme.primary
     Box(
         modifier = modifier
             .clip(CircleShape)
@@ -180,7 +184,7 @@ fun CuteChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Mod
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        val textColor = if (selected) MaterialTheme.colorScheme.onPrimary else cute.ink
+        val textColor = if (selected) onColor ?: MaterialTheme.colorScheme.onPrimary else cute.ink
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 CompositionLocalProvider(LocalContentColor provides textColor) { IconGlyph(icon, 15.sp) }

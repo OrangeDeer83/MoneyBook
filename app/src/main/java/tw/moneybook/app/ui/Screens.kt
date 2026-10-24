@@ -744,11 +744,10 @@ fun HomeScreen(
                         fontWeight = if (level == 2) FontWeight.SemiBold else FontWeight.Normal,
                     )
                     if (outSpent > 0) {
-                        Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(8.dp).clip(CircleShape).background(cute.out))
-                            Spacer(Modifier.width(5.dp))
-                            Text("另有預算外 ${formatMoney(outSpent)}（不算在預算裡）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                        }
+                        Text(
+                            "另有預算外 ${formatMoney(outSpent)}（不算在預算裡）",
+                            style = MaterialTheme.typography.labelSmall, color = cute.out, modifier = Modifier.padding(top = 3.dp),
+                        )
                     }
                 }
             } else {

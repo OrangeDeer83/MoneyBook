@@ -632,6 +632,12 @@ fun EditScreen(
                     billSet != 0, { dialog = "bill" }, icon = "vec:calendar",
                 )
             }
+            // 預算外：點一下切換；亮著＝這筆不算預算（分類預設不算預算時一進來就是亮的）
+            if (type == TxType.EXPENSE && !tplMode) {
+                CuteChip("預算外", outEff, {
+                    budgetOut = if (outEff) (if (!catOut) 0 else 2) else (if (catOut) 0 else 1)
+                }, color = LocalCute.current.out, onColor = LocalCute.current.onOut)
+            }
             if (fxsEligible) {
                 CuteChip(
                     if (fxsOn) "外幣 $fxsCur" + (if (fxsPending && !debtAll) "・待請款" else "") else "外幣",
@@ -667,12 +673,6 @@ fun EditScreen(
                     { dialog = "reimb" },
                     icon = if (reimbItems.isNotEmpty() && !debtOn && reimbItems.all { it.closed }) "vec:check" else "vec:receipt",
                 )
-            }
-            // 預算外：點一下切換；亮著＝這筆不算預算（分類預設不算預算時一進來就是亮的）
-            if (type == TxType.EXPENSE && !tplMode) {
-                CuteChip("預算外", outEff, {
-                    budgetOut = if (outEff) (if (!catOut) 0 else 2) else (if (catOut) 0 else 1)
-                })
             }
             if (orig == null && type == TxType.EXPENSE && !tplMode && plan.mode != FxMode.SPEND && !debtOn) {
                 CuteChip(if (inst > 1) "分 $inst 期" else "分期", inst > 1, { dialog = "inst" }, icon = "vec:repeat")

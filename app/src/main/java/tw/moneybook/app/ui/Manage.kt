@@ -1093,7 +1093,7 @@ private fun BudgetModeSetting(parent: Category?, mode: Int, onMode: (Int) -> Uni
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("預設不算預算", style = MaterialTheme.typography.bodyLarge)
-                Text("醫療、房租這類不想算進每月預算的；記一筆時還是可以單筆改", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                Text("記在這個分類的支出算「預算外」，記一筆時可以單筆改", style = MaterialTheme.typography.labelSmall, color = cute.sub)
             }
             androidx.compose.material3.Switch(checked = mode == 1, onCheckedChange = { onMode(if (it) 1 else 0) })
         }

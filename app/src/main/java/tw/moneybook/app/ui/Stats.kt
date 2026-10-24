@@ -302,7 +302,7 @@ private fun SumCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, half: Boole
 }
 
 /**
- * 預算內／外：一條分成兩段的條（算預算的用主色、預算外用預算外的顏色），下面兩個金額；
+ * 預算內／外：一條分成兩段的條（預算內用支出的顏色、預算外用預算外的顏色），下面兩個金額和比例；
  * 點預算外看那些記錄；整排時多列預算外最多的 3 個大分類
  */
 @Composable
@@ -312,7 +312,7 @@ private fun InOutCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, half: Boo
     val total = scope.expenseSum()
     val inB = d.budgetSpent(scope)
     val outB = total - inB
-    val primary = MaterialTheme.colorScheme.primary
+    val inColor = cute.expense
     val openOut = {
         vm.drill = tw.moneybook.app.Drill("預算外", mode, { t -> t.spent > 0 && d.isOutOfBudget(t) }, { t -> t.spent })
         onDrill()
@@ -325,26 +325,27 @@ private fun InOutCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, half: Boo
             return@CuteCard
         }
         Row(Modifier.fillMaxWidth().height(12.dp).clip(CircleShape).background(cute.soft)) {
-            if (inB > 0) Box(Modifier.weight(inB.toFloat()).fillMaxHeight().background(primary))
+            if (inB > 0) Box(Modifier.weight(inB.toFloat()).fillMaxHeight().background(inColor))
             if (outB > 0) Box(Modifier.weight(outB.toFloat()).fillMaxHeight().background(cute.out))
         }
         Spacer(Modifier.height(8.dp))
         @Composable
-        fun line(dot: Color, label: String, v: Long, onClick: (() -> Unit)?) {
+        fun line(color: Color, label: String, v: Long, onClick: (() -> Unit)?) {
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                     .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(9.dp).clip(CircleShape).background(dot))
-                Spacer(Modifier.width(6.dp))
-                Text(label + if (onClick != null) " ›" else "", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f), maxLines = 1)
-                Text(formatMoney(v), style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                if (!half) Text("  ${Math.round(v * 100.0 / total)}%", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                Text(label, style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.weight(1f), maxLines = 1)
+                Text(
+                    "${formatMoney(v)}・${Math.round(v * 100.0 / total)}%" + if (onClick != null) " ›" else "",
+                    style = MaterialTheme.typography.titleSmall, color = color, maxLines = 1,
+                )
             }
         }
-        line(primary, "算預算", inB, null)
+        line(inColor, "預算內", inB, null)
         line(cute.out, "預算外", outB, if (outB > 0) openOut else null)
+        if (outB > 0) Text("點預算外看是哪幾筆", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(top = 2.dp))
         if (!half && outB > 0) {
             // 預算外最多的幾個大分類
             val tops = scope.filter { it.spent > 0 && d.isOutOfBudget(it) }
