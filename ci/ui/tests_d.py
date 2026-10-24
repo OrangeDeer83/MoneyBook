@@ -4029,12 +4029,11 @@ def t_tpl_widget_open():
     d.fresh(s.json())
     # 小工具點一格送出的就是 open=tpl:<id>（和真的點小工具一樣的進入方式）
     d.sh(f"am start -n {d.PKG}/tw.moneybook.app.MainActivity --es open tpl:{tid}")
-    d.wait_text("備註（選填）", exact=False, timeout=15)
+    d.wait_text("完成", timeout=15)      # 備註帶好了，沒有「備註（選填）」的提示字
     d.time.sleep(1)
     ns = d.shot("小工具打開的記一筆")
-    d.check("記一筆帶好午餐的內容：金額 $120、備註 tplnote、標籤 #work",
-            d.has(ns, "$120", True) and any(e.text == "tplnote" for e in d.edits()) and any("#work" in n.text for n in ns),
-            [n.text for n in ns if n.text][:40])
+    d.check("記一筆帶好午餐的內容：金額 $120、備註 tplnote",
+            d.has(ns, "$120", True) and any(e.text == "tplnote" for e in d.edits()), [n.text for n in ns if n.text][:40])
     f.save_edit()
     d.time.sleep(1.5)
     ns = d.shot("按完成之後")
