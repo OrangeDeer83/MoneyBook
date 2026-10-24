@@ -284,13 +284,11 @@ class TipLine(val label: String, val value: String, val color: Color)
 @Composable
 private fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, footer: List<TipLine> = emptyList(), tipWidth: androidx.compose.ui.unit.Dp = 176.dp) {
     val cute = LocalCute.current
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val tipW = tipWidth
-        val slot = maxWidth / n
-        val cx = slot * index + slot / 2
-        val left = (if (index >= n / 2.0) cx - tipW - 10.dp else cx + 10.dp).coerceIn(0.dp, (maxWidth - tipW).coerceAtLeast(0.dp))
+    // 不用 BoxWithConstraints：半排的卡片要量「內容的高度」（IntrinsicSize），BoxWithConstraints 不支援會閃退
+    Layout(
+        content = {
         Column(
-            Modifier.offset(x = left).width(tipW).clip(RoundedCornerShape(12.dp)).background(cute.card)
+            Modifier.clip(RoundedCornerShape(12.dp)).background(cute.card)
                 .border(1.dp, cute.soft, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -312,6 +310,18 @@ private fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, fo
                 }
             }
         }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { ms, c ->
+        // 放在選到的那一組旁邊（右半邊的放左邊），不超出圖的範圍
+        val gap = 10.dp.roundToPx()
+        val tipPx = if (c.hasBoundedWidth) tipWidth.roundToPx().coerceAtMost(c.maxWidth) else tipWidth.roundToPx()
+        val p = ms[0].measure(androidx.compose.ui.unit.Constraints.fixedWidth(tipPx))
+        val w = if (c.hasBoundedWidth) c.maxWidth else tipPx
+        val slot = w.toFloat() / n
+        val cx = (slot * index + slot / 2f).toInt()
+        val left = (if (index >= n / 2.0) cx - tipPx - gap else cx + gap).coerceIn(0, (w - tipPx).coerceAtLeast(0))
+        layout(w, p.height) { p.place(left, 0) }
     }
 }
 

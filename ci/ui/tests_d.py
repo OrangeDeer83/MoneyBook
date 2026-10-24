@@ -3894,6 +3894,7 @@ def t_budget_out_home():
 def t_budget_out_category():
     d.fresh(out_seed())
     f.me_page("分類管理")
+    find_scroll("醫療")
     ns = d.shot("分類管理")
     d.check("醫療旁邊標「預算外」", tag_near(ns, "醫療"), [n.text for n in ns if n.text][:30])
     d.tap_text("醫療", exact=True)
@@ -3941,6 +3942,8 @@ def t_when_spend():
     f.tab("統計")
     d.time.sleep(2)
     find_scroll("平日／週末")
+    d.swipe(540, 1500, 540, 900, 500)      # 讓兩張卡片整張露出來
+    d.time.sleep(1)
     ns = d.shot("平日／週末、時段")
     d.check("平日／週末和時段兩張並排", d.has(ns, "平日／週末", True) and d.has(ns, "時段", True)
             and abs(d.first(ns, "平日／週末", True).cy - d.first(ns, "時段", True).cy) < 30, [n.text for n in ns if n.text][:30])
