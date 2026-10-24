@@ -108,28 +108,70 @@ data class ReimbRecv(val t: Txn, val who: String, val pay: ReimbPay, val idx: In
     fun signedFlow(a: Account): Long = if (debt) -pay.flowFor(a) else pay.flowFor(a)
 }
 
-/** 明細列表的一列：一般記錄，或一筆報銷收款 */
-class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?) {
-    val day: Long get() = txn?.day ?: recv!!.pay.day
-    val time: Int get() = txn?.time ?: recv!!.pay.time
-
-    /** 排序用的時間：報銷收款沒有時間的當成當天最後（1440），和算餘額的順序一致 */
-    val sortTime: Int get() = txn?.time ?: recv!!.pay.time.let { if (it >= 0) it else 1440 }
-
-    /** 排序用的先後：一般記錄是 id×1000，收款接在它那筆記錄後面（依收款順序），和算餘額的順序一致 */
-    val sortOrder: Long get() = txn?.let { it.id * 1000 } ?: (recv!!.t.id * 1000 + 1 + recv.idx)
-
-    /** 列表用的 key：一般記錄用 id，收款用「r 原記錄 id _ 第幾筆」 */
-    val key: Any get() = txn?.id ?: "r${recv!!.t.id}_${recv.idx}"
+/** 分帳結清實際轉的一筆錢（第 k 筆）：明細、帳戶明細各自一列 */
+class SettleLine(val s: tw.moneybook.app.Settle, val k: Int) {
+    val move: tw.moneybook.app.SettleMove get() = s.moves[k]
+    /** 在 runningBalances 裡的 key */
+    val runKey: String get() = "s${s.id}_$k"
 }
 
-/** 這些記錄底下所有的報銷收款 */
-fun reimbRecvsOf(txns: List<Txn>): List<ReimbRecv> = txns.flatMap { t ->
-    t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) } +
+/** 某個帳本（或所有帳本）的分帳結清，每一筆實際轉的錢一列 */
+fun AppData.settleLines(bookId: Long? = null): List<SettleLine> =
+    settles.filter { bookId == null || it.bookId == bookId }.flatMap { s -> s.moves.indices.map { SettleLine(s, it) } }
+
+/** 明細列表的一列：一般記錄、一筆報銷收款，或分帳結清的一筆錢 */
+class LedgerEntry(val txn: Txn?, val recv: ReimbRecv?, val settle: SettleLine? = null) {
+    val day: Long get() = txn?.day ?: recv?.pay?.day ?: settle!!.s.day
+    val time: Int get() = txn?.time ?: recv?.pay?.time ?: settle!!.s.time
+
+    /** 排序用的時間：報銷收款、分帳結清沒有時間的當成當天最後（1440），和算餘額的順序一致 */
+    val sortTime: Int get() = txn?.time ?: (recv?.pay?.time ?: settle!!.s.time).let { if (it >= 0) it else 1440 }
+
+    /** 排序用的先後：一般記錄是 id×1000，收款接在它那筆記錄後面（依收款順序），分帳結清用它的 id，和算餘額的順序一致 */
+    val sortOrder: Long get() = txn?.let { it.id * 1000 } ?: recv?.let { it.t.id * 1000 + 1 + it.idx } ?: (settle!!.s.id * 1000 + settle.k)
+
+    /** 列表用的 key：一般記錄用 id，收款用「r 原記錄 id _ 第幾筆」，分帳結清用「s 結清 id _ 第幾筆」 */
+    val key: Any get() = txn?.id ?: recv?.let { "r${it.t.id}_${it.idx}" } ?: "s${settle!!.s.id}_${settle.k}"
+}
+
+/** 這些記錄底下所有的報銷收款（分帳結清的不列：它另外照實際轉的錢列，見 settleLines） */
+fun reimbRecvsOf(txns: List<Txn>, settleIds: Set<Long> = emptySet()): List<ReimbRecv> = txns.flatMap { t ->
+    t.items.flatMap { i -> i.pays.map { pay -> i.who to pay } }.mapIndexed { idx, (who, pay) -> ReimbRecv(t, who, pay, idx) }
+        .filter { it.pay.offsetId !in settleIds } +
         t.debtItems.flatMap { i -> i.pays.map { i.who to it } }
             .mapIndexed { k, (who, p) -> ReimbRecv(t, who, ReimbPay(p.day, p.accountId, p.amount, p.time, p.fxAmount, p.offsetId), DEBT_IDX + k, debt = true) }
             // 互相抵銷只列一次（報銷那一邊），欠款那一邊不重複列
             .filter { it.pay.offsetId == 0L }
+}
+
+/** 分帳結清的一筆錢（只顯示，不能點）：「分帳結清・收 Bob」，第二行寫一起結清了幾筆，金額是實際收到（＋）或付出（－）的錢 */
+@Composable
+fun SettleLineRow(d: AppData, line: SettleLine, showAcc: Boolean, balance: String? = null, balanceNegative: Boolean = false) {
+    val cute = LocalCute.current
+    val mv = line.move
+    val acc = mv.accountId?.let { d.accMap[it] }
+    val n = d.txns.sumOf { t -> t.items.count { i -> i.pays.any { it.offsetId == line.s.id } } + t.debtItems.count { i -> i.pays.any { it.offsetId == line.s.id } } }
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CatBubble("img:acc_receipt", 2, 40.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("分帳結清・" + (if (mv.receive) "收 " else "付給 ") + mv.who.ifBlank { "對方" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("一起結清 $n 筆報銷／欠款", style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1)
+            if (showAcc && acc != null) {
+                Row(Modifier.padding(top = 3.dp)) { TxnChip(acc.name) }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(horizontalAlignment = Alignment.End) {
+            Text((if (mv.receive) "+" else "-") + formatMoney(mv.amount), color = if (mv.receive) cute.income else cute.expense, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            if (balance != null) {
+                Text(balance, style = MaterialTheme.typography.labelSmall, color = if (balanceNegative) cute.expense else cute.sub, maxLines = 1)
+            }
+        }
+    }
 }
 
 /** 報銷結案時少收的金額（不追了的部分） */
@@ -192,8 +234,8 @@ fun debtWhoLabel(t: Txn): String {
  * 剛好相反，這樣同一天裡由下往上讀，餘額才會一筆一筆加上去，最上面那筆是當天最後的餘額：
  * 日期 → 時間（一般記錄沒有時間的排最前面；報銷收款沒有時間的排當天最後）→ 記錄編號（收款接在它那筆記錄後面、依收款順序）。
  */
-fun ledgerEntries(txns: List<Txn>, recvs: List<ReimbRecv>): List<LedgerEntry> =
-    (txns.map { LedgerEntry(it, null) } + recvs.map { LedgerEntry(null, it) })
+fun ledgerEntries(txns: List<Txn>, recvs: List<ReimbRecv>, settles: List<SettleLine> = emptyList()): List<LedgerEntry> =
+    (txns.map { LedgerEntry(it, null) } + recvs.map { LedgerEntry(null, it) } + settles.map { LedgerEntry(null, null, it) })
         .sortedWith(
             compareByDescending<LedgerEntry> { it.day }
                 .thenByDescending { it.sortTime }
@@ -574,8 +616,10 @@ fun HomeScreen(
     // 前面固定的項目：書本列、吉祥物（可以關）、預算、本月摘要
     val homeBase = 3 + if (mascot != "none") 1 else 0
     // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排
-    val homeRecvs = reimbRecvsOf(d.bookTxns).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.pay.day)) == month }
-    val homeEntries = ledgerEntries(list, homeRecvs)
+    val settleIds = d.settles.map { it.id }.toSet()
+    val homeRecvs = reimbRecvsOf(d.bookTxns, settleIds).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.pay.day)) == month }
+    val homeSettles = d.settleLines(d.currentBook.id).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.s.day)) == month }
+    val homeEntries = ledgerEntries(list, homeRecvs, homeSettles)
     val homeGroups = homeEntries.groupBy { it.day }
     val homeHl = CenterOnSaved(vm, vm.homeListState, homeBase + 1, month, switchTo = { t ->
         // 記在別的月份（例如現在看 10 月，記了 8/20）：切到那個月
@@ -771,6 +815,8 @@ fun HomeScreen(
                 val t = e.txn
                 if (t != null) {
                     SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, highlight = t.id == homeHl) { onEdit(t.id) } }
+                } else if (e.settle != null) {
+                    SettleLineRow(d, e.settle, showAcc = d.accounts.size > 1)
                 } else {
                     val r = e.recv!!
                     ReimbRecvRow(d, r, showAcc = d.accounts.size > 1, amount = formatMoney(r.pay.amount))
@@ -844,8 +890,8 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
     val weeks = (cells + 6) / 7
     val selList = byDay[selected] ?: emptyList()
     // 選到的那天收到的報銷款也列出來（只顯示）
-    val selRecvs = reimbRecvsOf(d.bookTxns).filter { it.pay.day == selected }
-    val selEntries = ledgerEntries(selList, selRecvs)
+    val selRecvs = reimbRecvsOf(d.bookTxns, d.settles.map { it.id }.toSet()).filter { it.pay.day == selected }
+    val selEntries = ledgerEntries(selList, selRecvs, d.settleLines(d.currentBook.id).filter { it.s.day == selected })
     // 前面固定 4 項（標題、本月收支、日曆、選到的日期）＋ 1 項（沒記錄的提示或小技巧，只有收款時兩個都沒有），選到的那天的明細接在後面
     val calFirst = 4 + if (selEntries.isEmpty() || selList.isNotEmpty()) 1 else 0
     val calHl = CenterOnSaved(vm, vm.calListState, calFirst, month to selected, switchTo = { t ->
@@ -985,7 +1031,9 @@ fun CalendarScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit) {
         }
         items(selEntries, key = { it.key }) { e ->
           val t = e.txn
-          if (t == null) {
+          if (t == null && e.settle != null) {
+            SettleLineRow(d, e.settle, showAcc = d.accounts.size > 1)
+          } else if (t == null) {
             val r = e.recv!!
             ReimbRecvRow(d, r, showAcc = d.accounts.size > 1, amount = formatMoney(r.pay.amount))
           } else {

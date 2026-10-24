@@ -168,24 +168,30 @@ fun AccountDetailScreen(
     val monthList = all.filter { it.accountMonthFor(a) == month }
     // 這個帳戶這個月收到的報銷款（每一筆收款各算一筆）
     // （idx：這一筆記錄所有報銷收款的編號，要和 runningBalances 的 key 對得上）
-    val reimbIn = reimbRecvsOf(d.txns)
+    val reimbIn = reimbRecvsOf(d.txns, d.settles.map { it.id }.toSet())
         .filter { it.pay.accountId == a.id }
         .filter {
             val rd = LocalDate.ofEpochDay(it.pay.day)
             (if (stmtDay > 0) autoBillMonth(stmtDay, rd) else java.time.YearMonth.from(rd)) == month
         }
+    // 分帳結清進出這個帳戶的錢（所有帳本）
+    val settleIn = d.settleLines().filter { it.move.accountId == a.id }.filter {
+        val rd = LocalDate.ofEpochDay(it.s.day)
+        (if (stmtDay > 0) autoBillMonth(stmtDay, rd) else java.time.YearMonth.from(rd)) == month
+    }
     // 每一筆做完之後的餘額
     val running = remember(d, a.id) { d.runningBalances(a.id) }
 
     fun flow(t: Txn): Long = t.flowFor(a)
-    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.signedFlow(a) }
+    val flows = monthList.filter { it.accountId == a.id || it.toAccountId == a.id }.map { flow(it) } + reimbIn.map { it.signedFlow(a) } +
+        settleIn.map { if (it.move.receive) it.move.amount else -it.move.amount }
     val inflow = flows.filter { it > 0 }.sum()
     val outflow = -flows.filter { it < 0 }.sum()
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     // 前面固定的項目：帳戶卡、（信用卡帳單／投資）、月份列、報銷入帳
     // 報銷收款和一般記錄合在一起照日期時間排（收款只顯示，不能點）
-    val dayGroups = ledgerEntries(monthList.filter { it.accountId == a.id || it.toAccountId == a.id }, reimbIn).groupBy { it.day }
+    val dayGroups = ledgerEntries(monthList.filter { it.accountId == a.id || it.toAccountId == a.id }, reimbIn, settleIn).groupBy { it.day }
     val listBase = 2 + (if (a.type == AccountType.CARD) 1 else 0) + (if (a.type == AccountType.INVEST) 1 else 0)
     val accHl = CenterOnSaved(vm, listState, listBase + 1, month, switchTo = { t ->
         // 記在別的月份：切到那個月（信用卡指定了入帳月份就是入帳的那個月）
@@ -316,7 +322,7 @@ fun AccountDetailScreen(
                     }
                 }
             }
-            if (monthList.isEmpty() && reimbIn.isEmpty()) {
+            if (monthList.isEmpty() && reimbIn.isEmpty() && settleIn.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "這個月這個帳戶沒有記錄") }
             }
             dayGroups.forEach { (day, list) ->
@@ -325,6 +331,9 @@ fun AccountDetailScreen(
                     val t = e.txn
                     if (t != null) {
                         SwipeRow(onDelete = { vm.deleteWithUndo(t.id) }) { TxnRow(d, t, signedFor = a.id, balance = running["t${t.id}"], highlight = t.id == accHl) { onEdit(t.id) } }
+                    } else if (e.settle != null) {
+                        val b = running[e.settle.runKey]
+                        SettleLineRow(d, e.settle, showAcc = false, balance = b?.let { "餘額 ${formatMoney(it)}" }, balanceNegative = (b ?: 0L) < 0)
                     } else {
                         val r = e.recv!!
                         val b = running[r.runKey]

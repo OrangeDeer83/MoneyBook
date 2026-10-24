@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import tw.moneybook.app.filterSuggestions
+import tw.moneybook.app.settleOf
 import tw.moneybook.app.mergeSameNames
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -615,6 +616,7 @@ private sealed class ReimbPage {
     class Person(val who: String) : ReimbPage()
     class Repay(val who: String) : ReimbPage()
     class Offset(val who: String) : ReimbPage()
+    object Settle : ReimbPage()
 }
 
 /**
@@ -637,7 +639,9 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             onPerson = { page = ReimbPage.Person(it) },
             onRepay = { fromPerson = null; page = ReimbPage.Repay(it) },
             onOffset = { fromPerson = null; page = ReimbPage.Offset(it) },
+            onSettle = { fromPerson = null; page = ReimbPage.Settle },
         )
+        is ReimbPage.Settle -> SettlePage(vm, onBack = { page = ReimbPage.Home }, onDone = { page = ReimbPage.Home })
         is ReimbPage.Receive -> ReimbReceivePage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Repay -> DebtRepayPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
@@ -725,6 +729,7 @@ private fun ReimbHome(
     onPerson: (String) -> Unit,
     onRepay: (String) -> Unit,
     onOffset: (String) -> Unit,
+    onSettle: () -> Unit,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -750,6 +755,10 @@ private fun ReimbHome(
                     AmountDivider()
                     AmountLine(if (oweMe >= iOwe) "淨收" else "淨欠", formatMoney(kotlin.math.abs(oweMe - iOwe)), cute.ink, strong = true)
                 }
+            }
+            // 用分帳軟體算完整團怎麼轉之後，照它的結論一次結清（收到的錢不一定是欠我的人給的）
+            if (people.isNotEmpty()) item {
+                Button(onClick = onSettle, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("依分帳結論結清", style = MaterialTheme.typography.titleSmall) }
             }
             item { PillSegment(listOf("依對象", "依帳單", "紀錄"), tab, { tab = it }, Modifier.fillMaxWidth(), equal = true) }
 
@@ -913,9 +922,30 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
         t.debtItems.forEach { item -> item.pays.forEach { p -> if (p.offsetId != 0L) fxOff.getOrPut(p.offsetId) { ArrayList() }.add(formatFx(p.units, t.debtCurrency)) } }
     }
     fun offFx(id: Long): String = fxOff[id]?.let { "・抵掉 " + it.joinToString("＋") } ?: ""
+    // 分帳結清：總覽的紀錄每次結清一列（寫實際轉的錢）；某人的頁面每一項各一列
+    fun movesText(s: tw.moneybook.app.Settle): String = s.moves.joinToString("、") { m ->
+        (if (m.receive) "收 " else "付給 ") + m.who.ifBlank { "對方" } + " " + formatMoney(m.amount) + (m.accountId?.let { d.accMap[it] }?.let { "（${it.name}）" } ?: "")
+    }
+    if (who == null) {
+        d.settles.filter { it.bookId == d.currentBook.id }.forEach { s ->
+            val n = d.bookTxns.sumOf { t -> t.items.count { i -> i.pays.any { it.offsetId == s.id } } + t.debtItems.count { i -> i.pays.any { it.offsetId == s.id } } }
+            out.add(Rec(
+                "", s.day, s.time, "分帳結清", movesText(s) + "・結清 $n 筆", (if (s.net >= 0L) "+" else "-") + formatMoney(kotlin.math.abs(s.net)), 2,
+                "分帳結清", movesText(s), { vm -> vm.deleteSettle(s.id) },
+            ))
+        }
+    }
     claims.filter { who == null || it.who == who }.forEach { c ->
         c.item.pays.forEachIndexed { n, pay ->
             val acc = pay.accountId?.let { d.accMap[it] }
+            val st = d.settleOf(pay.offsetId)
+            if (st != null) {
+                if (who != null) out.add(Rec(
+                    c.who, pay.day, pay.time, "分帳結清", "${billLabel(d, c.txn)}・${movesText(st)}", formatMoney(pay.amount), 2,
+                    "分帳結清 ${formatMoney(pay.amount)}", "${billLabel(d, c.txn)}・${movesText(st)}", { vm -> vm.deleteSettle(st.id) },
+                ))
+                return@forEachIndexed
+            }
             out.add(
                 if (pay.offsetId != 0L) Rec(
                     c.who, pay.day, pay.time, "和${ownerLabel(c.who)}互相抵銷", "${billLabel(d, c.txn)}・不動帳戶" + offFx(pay.offsetId), formatMoney(pay.amount), 2,
@@ -935,6 +965,11 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
         t.debtItems.forEachIndexed { i, item ->
             if (who != null && item.who.trim() != who) return@forEachIndexed
             item.pays.forEachIndexed { n, p ->
+                val st = d.settleOf(p.offsetId)
+                if (st != null && who != null) out.add(Rec(
+                    item.who.trim(), p.day, p.time, "分帳結清", "${billLabel(d, t)}・${movesText(st)}", formatMoney(p.amount), 2,
+                    "分帳結清 ${formatMoney(p.amount)}", "${billLabel(d, t)}・${movesText(st)}", { vm -> vm.deleteSettle(st.id) },
+                ))
                 if (p.offsetId != 0L) return@forEachIndexed
                 val acc = p.accountId?.let { d.accMap[it] }
                 val amt = if (acc != null && acc.isForeign) acc.fmt(p.fxAmount) else formatMoney(p.amount)
@@ -1914,4 +1949,302 @@ private fun OffsetPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDo
         }
     }
     if (pickDate) CuteDatePickerDialog(day, { day = it; pickDate = false }, { pickDate = false }, "抵銷的日期")
+}
+
+// ───────────────────────── 依分帳結論結清 ─────────────────────────
+
+/** 分帳結論裡和我有關的一筆錢（畫面上的一列） */
+private class SettleMoveRow(receive: Boolean, amt: String, acc: Long?) {
+    var receive by mutableStateOf(receive)
+    var who by mutableStateOf("")
+    var amt by mutableStateOf(amt)
+    var acc by mutableStateOf(acc)
+}
+
+/** 結清頁的一項：報銷（別人欠我）或欠款（我欠別人） */
+private class SettleItem(val key: tw.moneybook.app.ItemKey, val debt: Boolean, val txn: Txn, val who: String, val twd: Long, val fx: String) {
+    val id: String get() = (if (debt) "d" else "r") + "${key.txnId}_${key.index}"
+}
+
+/**
+ * 依分帳結論結清（見 Settle.kt）：第一步勾要一起結清的帳（可以用標籤、期間篩選，整個人或某幾筆取消），
+ * 第二步照分帳軟體的結論填實際收到／付出的錢；和照理說的不一樣時選「差的算我的」或「繼續欠」（勾差的留在哪幾筆）。
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Unit) {
+    val d = vm.data
+    val cute = LocalCute.current
+    val today = LocalDate.now().toEpochDay()
+    var step by remember { mutableStateOf(0) }
+    // 篩選：標籤（多選，有其中一個就算）、期間（0 全部、1 近 3 個月、2 自訂）
+    var tags by remember { mutableStateOf(setOf<String>()) }
+    var period by remember { mutableStateOf(0) }
+    var from by remember { mutableStateOf(today - 30) }
+    var to by remember { mutableStateOf(today) }
+    var pick by remember { mutableStateOf("") }
+    // 取消勾選的項目（SettleItem.id）
+    val off = remember { mutableStateListOf<String>() }
+
+    val all = remember(d) {
+        claimsOf(d.bookTxns).filter { !it.item.closed && it.item.remaining > 0L }
+            .map { SettleItem(tw.moneybook.app.ItemKey(it.txn.id, it.index), false, it.txn, it.who, it.item.remaining, "") } +
+            d.bookTxns.flatMap { t ->
+                t.debtItems.mapIndexedNotNull { i, it ->
+                    if (it.remainingUnits <= 0L) null
+                    else SettleItem(
+                        tw.moneybook.app.ItemKey(t.id, i), true, t, it.who.trim(), it.remainingTwd,
+                        if (t.debtCurrency.isNotEmpty()) formatFx(it.remainingUnits, t.debtCurrency) else "",
+                    )
+                }
+            }
+    }
+    val tagList = all.flatMap { it.txn.tags }.distinct().sorted()
+    val start3 = LocalDate.now().minusMonths(3).toEpochDay()
+    val shown = all.filter { s ->
+        (tags.isEmpty() || s.txn.tags.any { it in tags }) && when (period) {
+            1 -> s.txn.day >= start3
+            2 -> s.txn.day in from..to
+            else -> true
+        }
+    }
+    val sel = shown.filter { it.id !in off }
+    val oweMe = sel.filter { !it.debt }.sumOf { it.twd }
+    val iOwe = sel.filter { it.debt }.sumOf { it.twd }
+    val expected = oweMe - iOwe
+
+    // 第二步
+    val okAccs = d.visibleAccounts.filter { !it.isForeign }
+    val defAcc = d.frequentAccounts(okAccs.size.coerceAtLeast(3)).firstOrNull { f -> okAccs.any { it.id == f.id } && f.type != AccountType.CARD && f.type != AccountType.LOAN }?.id
+        ?: okAccs.firstOrNull { it.type != AccountType.CARD && it.type != AccountType.LOAN }?.id ?: okAccs.firstOrNull()?.id
+    val moves = remember { mutableStateListOf<SettleMoveRow>() }
+    var day by remember { mutableStateOf(today) }
+    var timeMin by remember { mutableStateOf(java.time.LocalTime.now().let { it.hour * 60 + it.minute }) }
+    var pickTime by remember { mutableStateOf(false) }
+    var pickAcc by remember { mutableStateOf(-1) }
+    var keepMode by remember { mutableStateOf(false) }
+    val keep = remember { mutableStateListOf<String>() }
+    val actual = moves.sumOf { m -> (m.amt.toLongOrNull() ?: 0L).let { if (m.receive) it else -it } }
+    val diff = actual - expected
+    // 繼續欠：少收留在報銷（別人欠我）、多收留在欠款（我欠別人），從最新的排
+    val keepChoices = sel.filter { it.debt == (diff > 0L) }.sortedWith(compareByDescending<SettleItem> { it.txn.day }.thenByDescending { it.txn.id })
+    val keepSum = keepChoices.filter { it.id in keep }.sumOf { it.twd }
+    val tries = rememberNeedTries()
+    val need = if (step == 0) firstNeed(if (sel.isEmpty()) Need("pick", "請至少勾一筆要結清的帳") else null)
+    else firstNeed(
+        *moves.mapIndexed { i, m ->
+            when {
+                (m.amt.toLongOrNull() ?: 0L) <= 0L -> Need("amt$i", "請輸入金額")
+                m.acc == null -> Need("acc$i", "請選錢進出哪個帳戶")
+                else -> null
+            }
+        }.toTypedArray(),
+        if (moves.isEmpty()) Need("moves", "請至少填一筆實際收到或付出的錢") else null,
+        if (diff != 0L && keepMode && keepChoices.isEmpty()) Need("keep", if (diff < 0L) "沒有別人欠我的帳可以留，請選「差的算我的」" else "沒有我欠別人的帳可以留，請選「差的算我的」") else null,
+        if (diff != 0L && keepMode && keepSum < kotlin.math.abs(diff)) Need("keep", "勾的帳加起來不夠留下 ${formatMoney(kotlin.math.abs(diff))}") else null,
+    )
+    val nv = NeedView(need, tries.count)
+
+    SubPage(if (step == 0) "依分帳結論結清" else "分帳軟體的結論", { if (step == 1) { step = 0 } else onBack() }) {
+        Column(Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (step == 0) {
+                    if (tagList.isNotEmpty()) item {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("標籤（可以多選，有其中一個就算）", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            ChipRow {
+                                tagList.forEach { tg -> CuteChip("#$tg", tg in tags, { tags = if (tg in tags) tags - tg else tags + tg }) }
+                            }
+                        }
+                    }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("期間", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            ChipRow {
+                                CuteChip("全部", period == 0, { period = 0 })
+                                CuteChip("近 3 個月", period == 1, { period = 1 })
+                                CuteChip(if (period == 2) "自訂 ${shortDate(from)}～${shortDate(to)}" else "自訂", period == 2, { period = 2; pick = "from" })
+                            }
+                        }
+                    }
+                    if (shown.isEmpty()) item { EmptyHint(d.prefs.mascot, "沒有符合的待報銷或欠款") }
+                    // 依人分組：別人欠我一組、我欠他一組
+                    shown.groupBy { it.debt to it.who }.forEach { (k, list) ->
+                        item(key = "g${k.first}_${k.second}") {
+                            val allOn = list.all { it.id !in off }
+                            CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(start = 4.dp, end = 14.dp, top = 6.dp, bottom = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    androidx.compose.material3.Checkbox(allOn, { on -> list.forEach { off.remove(it.id) }; if (!on) off.addAll(list.map { it.id }) })
+                                    Text(
+                                        if (k.first) "我欠${ownerLabel(k.second)}" else "${ownerLabel(k.second)}欠我",
+                                        style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f),
+                                    )
+                                    Text(
+                                        formatMoney(list.filter { it.id !in off }.sumOf { it.twd }),
+                                        style = MaterialTheme.typography.titleMedium, color = if (k.first) cute.expense else cute.income,
+                                    )
+                                }
+                                list.forEach { s ->
+                                    Row(Modifier.padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        androidx.compose.material3.Checkbox(s.id !in off, { on -> if (on) off.remove(s.id) else off.add(s.id) })
+                                        Text(billLabel(d, s.txn), style = MaterialTheme.typography.bodyMedium, color = if (s.id in off) cute.sub else cute.ink, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(
+                                            formatMoney(s.twd) + if (s.fx.isNotEmpty()) "（${s.fx}）" else "",
+                                            style = MaterialTheme.typography.bodyMedium, color = cute.sub, maxLines = 1,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        CuteCard(Modifier.fillMaxWidth()) {
+                            AmountLine("別人欠我", formatMoney(oweMe), cute.income)
+                            AmountLine("我欠別人", formatMoney(iOwe), cute.expense)
+                            AmountDivider()
+                            AmountLine(if (expected >= 0L) "照理說你會收到" else "照理說你要付出", formatMoney(kotlin.math.abs(expected)), cute.ink, strong = true)
+                        }
+                        nv.Message("pick")
+                    }
+                } else {
+                    item {
+                        Text("填你實際收到／付出的錢（分帳結論裡和你有關的那幾筆就好）", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                    }
+                    moves.forEachIndexed { i, m ->
+                        item(key = "m$i") {
+                            CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ChipRow(Modifier.weight(1f)) {
+                                        CuteChip("我收到", m.receive, { m.receive = true })
+                                        CuteChip("我付出", !m.receive, { m.receive = false })
+                                    }
+                                    if (moves.size > 1) {
+                                        Text(
+                                            "✕", color = cute.sub, style = MaterialTheme.typography.titleMedium,
+                                            modifier = Modifier.clip(CircleShape).clickable { moves.removeAt(i) }.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CompactField(m.who, { m.who = it.take(12) }, if (m.receive) "從誰（選填）" else "給誰（選填）", Modifier.weight(1f))
+                                    CompactField(
+                                        m.amt, { v -> m.amt = v.filter { it.isDigit() }.take(9) }, "金額", Modifier.width(120.dp),
+                                        number = true, prefix = tw.moneybook.app.Money.twd, error = nv.on("amt$i"),
+                                    )
+                                }
+                                nv.Message("amt$i")
+                                Spacer(Modifier.height(8.dp))
+                                Text(if (m.receive) "存進哪個帳戶" else "從哪個帳戶付", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                PickerButton(m.acc?.let { d.accMap[it]?.name } ?: "選帳戶", { pickAcc = i })
+                                nv.Message("acc$i")
+                            }
+                        }
+                    }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CuteChip("＋ 再加一筆", false, { moves.add(SettleMoveRow(expected >= 0L, "", defAcc)) })
+                            ChipRow {
+                                CuteChip(dayLabel(day), false, { pick = "day" }, icon = "vec:calendar")
+                                CuteChip(tw.moneybook.app.formatTime(timeMin), false, { pickTime = true }, icon = "vec:clock")
+                            }
+                        }
+                    }
+                    item {
+                        CuteCard(Modifier.fillMaxWidth()) {
+                            AmountLine(if (expected >= 0L) "照理說收到" else "照理說付出", formatMoney(kotlin.math.abs(expected)), cute.ink)
+                            AmountLine("實際收到－付出", (if (actual < 0L) "-" else "") + formatMoney(kotlin.math.abs(actual)), cute.ink)
+                            AmountDivider()
+                            Text(
+                                when {
+                                    diff == 0L -> "剛好，勾的帳全部結清"
+                                    diff < 0L -> "比照理說的少了 ${formatMoney(-diff)}，要怎麼算？"
+                                    else -> "比照理說的多了 ${formatMoney(diff)}，要怎麼算？"
+                                },
+                                style = MaterialTheme.typography.bodyLarge, color = if (diff == 0L) cute.income else cute.expense,
+                            )
+                            if (diff != 0L) {
+                                Spacer(Modifier.height(6.dp))
+                                listOf(
+                                    false to ("差的算我的" to (if (diff < 0L) "全部結清，少收的 ${formatMoney(-diff)} 算進我的支出" else "全部結清，多的 ${formatMoney(diff)} 從我的支出扣掉（或算收入）")),
+                                    true to ("繼續欠" to (if (diff < 0L) "差的 ${formatMoney(-diff)} 留在勾的帳上，之後再收" else "差的 ${formatMoney(diff)} 留在勾的帳上，我之後再還")),
+                                ).forEach { (k, txt) ->
+                                    Row(
+                                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                                            keepMode = k
+                                            if (k && keep.isEmpty()) {
+                                                // 預設勾最新的幾筆，剛好夠留下差額
+                                                var left = kotlin.math.abs(diff)
+                                                for (c in keepChoices) { if (left <= 0L) break; keep.add(c.id); left -= c.twd }
+                                            }
+                                        }.padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        androidx.compose.material3.RadioButton(keepMode == k, null)
+                                        Column {
+                                            Text(txt.first, style = MaterialTheme.typography.titleSmall)
+                                            Text(txt.second, style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                                        }
+                                    }
+                                }
+                                if (keepMode) {
+                                    Text(if (diff < 0L) "差的留在哪幾筆（還沒收的）" else "差的留在哪幾筆（我還欠的）", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(top = 6.dp))
+                                    keepChoices.forEach { s ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            androidx.compose.material3.Checkbox(s.id in keep, { on -> if (on) keep.add(s.id) else keep.remove(s.id) })
+                                            Text("${ownerLabel(s.who)}・${billLabel(d, s.txn)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(formatMoney(s.twd), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                                        }
+                                    }
+                                    nv.Message("keep")
+                                }
+                            }
+                        }
+                        nv.Message("moves")
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().padding(16.dp)) {
+                Button(
+                    onClick = {
+                        if (need != null) { tries.count++; return@Button }
+                        if (step == 0) {
+                            if (moves.isEmpty()) moves.add(SettleMoveRow(expected >= 0L, if (expected != 0L) kotlin.math.abs(expected).toString() else "", defAcc))
+                            keep.clear()
+                            keepMode = false
+                            step = 1
+                            return@Button
+                        }
+                        val ok = vm.settleUp(
+                            sel.filter { !it.debt }.map { it.key }, sel.filter { it.debt }.map { it.key },
+                            moves.map { tw.moneybook.app.SettleMove(it.receive, it.who.trim(), it.amt.toLongOrNull() ?: 0L, it.acc) },
+                            day, timeMin,
+                            if (keepMode) tw.moneybook.app.SettleDiff.KEEP else tw.moneybook.app.SettleDiff.SELF,
+                            keepChoices.filter { it.id in keep }.map { it.key },
+                        )
+                        if (ok) onDone()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) { Text(if (step == 0) "下一步" else "確認結清", style = MaterialTheme.typography.titleMedium) }
+            }
+        }
+    }
+    when (pick) {
+        "from" -> CuteDatePickerDialog(from, { from = it; pick = "to" }, { pick = "" }, "開始日期")
+        "to" -> CuteDatePickerDialog(to, { to = it; pick = "" }, { pick = "" }, "結束日期")
+        "day" -> CuteDatePickerDialog(day, { day = it; pick = "" }, { pick = "" }, "日期")
+    }
+    if (pickTime) TimePickerDialog(timeMin, { timeMin = it; pickTime = false }, { pickTime = false })
+    if (pickAcc >= 0 && pickAcc < moves.size) {
+        val m = moves[pickAcc]
+        AccountPickDialog(
+            vm = vm, accounts = okAccs, selectedId = m.acc,
+            onPick = { a -> m.acc = a.id; pickAcc = -1 }, onDismiss = { pickAcc = -1 },
+            title = if (m.receive) "存進哪個帳戶" else "從哪個帳戶付",
+        )
+    }
 }

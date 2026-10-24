@@ -438,6 +438,33 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 刪掉一次互相抵銷（兩邊一起），可以復原 */
+    /** 依分帳結論結清（見 withSettle）；成功回傳 true，跳提示可以復原 */
+    fun settleUp(
+        reimbKeys: List<ItemKey>, debtKeys: List<ItemKey>, moves: List<SettleMove>, day: Long, time: Int,
+        mode: SettleDiff, keepKeys: List<ItemKey>,
+    ): Boolean {
+        val after = data.withSettle(reimbKeys, debtKeys, moves, day, time, mode, keepKeys) ?: return false
+        commit(after)
+        val id = after.settles.last().id
+        _messages.tryEmit(UiMsg("已結清 ${reimbKeys.size + debtKeys.size} 筆", "復原") {
+            data.withSettleRemoved(id)?.let { commit(it) }
+        })
+        return true
+    }
+
+    /** 刪掉一次分帳結清：那幾筆恢復成沒結清，帳戶跟著回去；可以復原 */
+    fun deleteSettle(id: Long) {
+        val d = data
+        val s = d.settles.firstOrNull { it.id == id } ?: return
+        val after = d.withSettleRemoved(id) ?: return
+        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        commit(after)
+        _messages.tryEmit(UiMsg("已刪除這次分帳結清", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { before[it.id] ?: it }, settles = now.settles + s))
+        })
+    }
+
     fun deleteOffset(offsetId: Long) {
         val d = data
         val after = d.withOffsetRemoved(offsetId) ?: return

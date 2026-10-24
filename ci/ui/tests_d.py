@@ -3625,3 +3625,99 @@ def t_reimb_merge_same_name():
     ns = d.shot("再打開")
     ed = d.edits()
     d.check("只剩一個人 Amy，金額 500", [e.text for e in ed[:2]] == ["Amy", "500"] and len(ed) == 2, [e.text for e in ed])
+
+
+def settle_seed():
+    """東京旅行（標籤 tokyo）：Amy 欠我 600、Bob 欠我 300、我欠 Carol 200；另外 Dan 欠我 150（沒有標籤）"""
+    s = S.Seed(f.today())
+    s.expense(-5, 1000, S.C_FOOD, note="sushi", tags=("tokyo",), reimb=1, reimb_amount=600, items=[S.reimb_item("Amy", 600)])
+    s.expense(-4, 500, S.C_TRAFFIC, note="train", tags=("tokyo",), reimb=1, reimb_amount=300, items=[S.reimb_item("Bob", 300)])
+    t = s.expense(-3, 200, S.C_HOME, note="hotel", tags=("tokyo",))
+    t["accountId"] = None
+    t["debtSelf"] = 0
+    t["debtItems"] = [dict(who="Carol", amount=200, units=0, pays=[], done=False)]
+    s.expense(-2, 150, S.C_PLAY, note="movie", reimb=1, reimb_amount=150, items=[S.reimb_item("Dan", 150)])
+    return s.json()
+
+
+def amount_right_of(ns, label):
+    lb = d.first(ns, label, True)
+    if not lb:
+        return None
+    row = [n for n in ns if "$" in n.text and abs(n.cy - lb.cy) < 30 and n.x1 > lb.x1]
+    return min(row, key=lambda n: n.x1).text if row else None
+
+
+@case(D, "依分帳結論結清：用標籤篩出旅行的帳，Bob 給我 700，Amy、Bob、Carol 一次結清；帳戶只動 700", visual=True)
+def t_settle_group():
+    d.fresh(settle_seed())
+    f.open_reimb_home()
+    d.tap_text("依分帳結論結清", exact=True)
+    d.wait_text("照理說你會收到", timeout=10)
+    ns = d.shot("第一步：全部")
+    d.check("列出 Amy、Bob、Dan 欠我、我欠 Carol；照理說收到 $850", all(d.has(ns, t, True) for t in ("Amy欠我", "Bob欠我", "Dan欠我", "我欠Carol"))
+            and amount_right_of(ns, "照理說你會收到") == "$850", [n.text for n in ns if n.text][:40])
+    d.tap_text("#tokyo", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("篩 #tokyo")
+    d.check("篩 #tokyo：沒有 Dan，照理說收到 $700", not d.has(ns, "Dan欠我", True) and amount_right_of(ns, "照理說你會收到") == "$700", [n.text for n in ns if n.text][:40])
+    d.tap_text("下一步", exact=True)
+    d.wait_text("分帳軟體的結論", timeout=10)
+    ed = d.edits()
+    d.check("第二步：預設一筆「我收到」，金額帶 700", len(ed) >= 2 and ed[1].text == "700", [e.text for e in ed])
+    d.fill(ed[0], "Bob")
+    d.hide_ime()
+    ns = d.shot("填 Bob")
+    d.check("剛好，勾的帳全部結清", d.has(ns, "剛好，勾的帳全部結清", True))
+    d.tap_text("確認結清", exact=True)
+    d.wait_text("別人欠我", timeout=10)
+    ns = d.shot("結清之後的總覽")
+    d.check("總覽只剩 Dan 欠我 $150、我欠別人 $0", amount_right_of(ns, "別人欠我") == "$150" and amount_right_of(ns, "我欠別人") == "$0", [n.text for n in ns if n.text][:20])
+    d.tap_text("紀錄", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("紀錄")
+    d.check("紀錄有一筆「分帳結清」：收 Bob $700", d.has(ns, "分帳結清", True) and any("收 Bob $700" in n.text for n in ns), [n.text for n in ns if n.text][:20])
+    d.tap_back()
+    d.time.sleep(1)
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("首頁明細")
+    d.check("明細有「分帳結清・收 Bob」+$700", d.has(ns, "分帳結清・收 Bob", True) and d.has(ns, "+$700", True), [n.text for n in ns if n.text][:30])
+
+
+@case(D, "依分帳結論結清：實際少收 50 選「繼續欠」，差的留在勾的那筆（Amy 還欠 50）", visual=True)
+def t_settle_keep():
+    d.fresh(settle_seed())
+    f.open_reimb_home()
+    d.tap_text("依分帳結論結清", exact=True)
+    d.wait_text("照理說你會收到", timeout=10)
+    d.tap_text("#tokyo", exact=True)
+    d.time.sleep(1)
+    d.tap_text("下一步", exact=True)
+    d.wait_text("分帳軟體的結論", timeout=10)
+    ed = d.edits()
+    d.fill(ed[1], "650")
+    d.hide_ime()
+    ns = d.nodes()
+    d.check("提示少了 $50", any("少了 $50" in n.text for n in ns), [n.text for n in ns if n.text][-20:])
+    for _ in range(3):
+        if d.has(d.nodes(), "繼續欠", True):
+            break
+        d.swipe(540, 1600, 540, 1000, 500)
+    d.tap_text("繼續欠", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("選繼續欠")
+    d.check("出現「差的留在哪幾筆」，預設勾最新的（Bob・train）", d.has(ns, "差的留在哪幾筆（還沒收的）", True), [n.text for n in ns if n.text][-20:])
+    # 改成留在 Amy 那筆：取消 Bob、勾 Amy
+    for who in ("Bob", "Amy"):
+        row = next((n for n in ns if n.text.startswith(who + "・")), None)
+        if row:
+            boxes = [n for n in ns if n.checkable and abs(n.cy - row.cy) < 40]
+            if boxes:
+                d.tap(boxes[0])
+                d.time.sleep(0.5)
+    d.shot("改留在 Amy")
+    d.tap_text("確認結清", exact=True)
+    d.wait_text("別人欠我", timeout=10)
+    ns = d.shot("結清之後")
+    d.check("別人欠我 $200（Dan 150＋Amy 還欠 50）", amount_right_of(ns, "別人欠我") == "$200", [n.text for n in ns if n.text][:20])
