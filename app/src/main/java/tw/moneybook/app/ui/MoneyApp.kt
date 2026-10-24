@@ -73,16 +73,15 @@ sealed interface Route {
     data class Page(val name: String) : Route
 }
 
+/** 一頁存成一段文字（頁面堆疊存檔用，也當成記住那一頁狀態的 key） */
+private fun encodeRoute(r: Route): String = when (r) {
+    is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}|${r.presetFrom ?: ""}|${r.presetAcc ?: ""}"
+    is Route.Page -> "P|${r.name}"
+}
+
 /** 頁面堆疊要能撐過螢幕旋轉（Activity 重建）：每一頁存成一段文字 */
 private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
-    save = { list ->
-        ArrayList(list.map { r ->
-            when (r) {
-                is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}|${r.presetFrom ?: ""}|${r.presetAcc ?: ""}"
-                is Route.Page -> "P|${r.name}"
-            }
-        })
-    },
+    save = { list -> ArrayList(list.map { encodeRoute(it) }) },
     restore = { saved ->
         saved.mapNotNull { s ->
             val p = s.split("|", limit = 9)
@@ -156,6 +155,17 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
         if (vm.linkedTradeOf(id) != null) vm.linkedEditAsk = id else push(Route.Edit(id))
     }
 
+    // 每一頁的狀態（捲動位置、輸入的字…）記在這裡：點進下一頁再返回時還原，不會跳回最上面；
+    // 那一頁離開堆疊（按返回退出）後才清掉，下次進來從頭開始
+    val pageStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val liveKeys = remember { HashSet<String>() }
+    LaunchedEffect(stack) {
+        val now = stack.map { encodeRoute(it) }.toSet()
+        (liveKeys - now).forEach { pageStates.removeState(it) }
+        liveKeys.clear()
+        liveKeys.addAll(now)
+    }
+
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         AnimatedContent(
             targetState = stack.lastOrNull(),
@@ -172,6 +182,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
             },
             label = "route",
         ) { top ->
+        pageStates.SaveableStateProvider(top?.let { encodeRoute(it) } ?: "tabs") {
         when (top) {
             null -> MainTabs(
                 vm = vm,
@@ -213,6 +224,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                     }
                 }
             }
+        }
         }
         }
         // 買賣連動的轉帳：點進去改 → 提示去改買賣；左滑刪除 → 問要不要連買賣一起刪

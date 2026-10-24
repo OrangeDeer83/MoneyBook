@@ -3771,3 +3771,41 @@ def t_reimb_keep_scroll():
     d.time.sleep(1.5)
     ns = d.shot("改帳返回 P0 的頁面")
     d.check("返回 P0 的頁面時還停在下面（看得到 pz9）", any(n.text.startswith("pz9") for n in ns), [n.text for n in ns if n.text][:12])
+
+
+@case(D, "點進記一筆修改再返回：帳戶明細停在原本捲到的位置、搜尋的關鍵字和結果還在", visual=True)
+def t_back_keeps_page_state():
+    s = S.Seed(f.today())
+    for k in range(25):
+        s.expense(-k, 100 + k, S.C_FOOD, acc=S.BANK, note=f"row{k:02d}")
+    d.fresh(s.json())
+    open_account("測試銀行")
+    row = None
+    for _ in range(12):
+        row = next((n for n in d.nodes() if n.text == "row20"), None)
+        if row is not None and row.cy < 1900:
+            break
+        d.swipe(540, 1700, 540, 1000, 500)
+    d.check("帳戶明細往下捲找到 row20", row is not None)
+    d.tap(row)
+    f.edit_open()
+    d.tap_back()
+    d.time.sleep(1.5)
+    ns = d.shot("改帳返回帳戶明細")
+    d.check("返回後還停在下面（看得到 row20、看不到最上面的「更新餘額」）", d.has(ns, "row20", True) and not d.has(ns, "更新餘額", True), [n.text for n in ns if n.text][:12])
+    # 搜尋
+    d.tap_back()
+    d.time.sleep(1)
+    f.tab("統計")
+    d.time.sleep(1.5)
+    d.tap(d.wait(lambda n: n.text.startswith("搜尋記錄"), 8, "搜尋列"))
+    d.time.sleep(1.5)
+    d.fill(d.edits()[0], "row07")
+    d.hide_ime()
+    d.time.sleep(1)
+    d.tap_text("row07", exact=True, lowest=True)
+    f.edit_open()
+    d.tap_back()
+    d.time.sleep(1.5)
+    ns = d.shot("改帳返回搜尋")
+    d.check("返回搜尋頁：關鍵字 row07 和結果都還在", any(e.text == "row07" for e in d.edits()) and sum(1 for n in ns if n.text == "row07") >= 2, [n.text for n in ns if n.text][:20])

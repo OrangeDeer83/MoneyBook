@@ -68,9 +68,10 @@ fun SearchScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit)
     var keyword by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(if (vm.statMode in 0..2) vm.statMode else 0) } // 0 月 1 年 2 區間 3 全部
     var type by rememberSaveable { mutableIntStateOf(0) } // 0 全部 1 支出 2 收入 3 轉帳
-    var catIds by remember { mutableStateOf(setOf<Long>()) }
+    // 點進一筆修改再返回時要還原（頁面狀態由 MoneyApp 記住），所以用 rememberSaveable
+    var catIds by rememberSaveable(stateSaver = androidx.compose.runtime.saveable.listSaver<Set<Long>, Long>({ it.toList() }, { it.toSet() })) { mutableStateOf(setOf<Long>()) }
     var catDialog by remember { mutableStateOf(false) }
-    var tagSel by remember { mutableStateOf(setOf<String>()) }
+    var tagSel by rememberSaveable(stateSaver = androidx.compose.runtime.saveable.listSaver<Set<String>, String>({ it.toList() }, { it.toSet() })) { mutableStateOf(setOf<String>()) }
     var tagDialog by remember { mutableStateOf(false) }
 
     val catFilter = catIds + catIds.flatMap { id -> d.childrenOf(id).map { it.id } }
