@@ -51,6 +51,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import tw.moneybook.app.filterSuggestions
 import tw.moneybook.app.settleOf
+import tw.moneybook.app.debtNames
+import androidx.compose.foundation.layout.heightIn
 import tw.moneybook.app.mergeSameNames
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -2022,6 +2024,8 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
     var timeMin by remember { mutableStateOf(java.time.LocalTime.now().let { it.hour * 60 + it.minute }) }
     var pickTime by remember { mutableStateOf(false) }
     var pickAcc by remember { mutableStateOf(-1) }
+    // 正在挑第幾筆錢的「從誰／給誰」（-1 是沒有）
+    var pickWho by remember { mutableStateOf(-1) }
     var keepMode by remember { mutableStateOf(false) }
     val keep = remember { mutableStateListOf<String>() }
     val actual = moves.sumOf { m -> (m.amt.toLongOrNull() ?: 0L).let { if (m.receive) it else -it } }
@@ -2131,7 +2135,7 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    CompactField(m.who, { m.who = it.take(12) }, if (m.receive) "從誰（選填）" else "給誰（選填）", Modifier.weight(1f))
+                                    PickerButton(m.who.ifBlank { if (m.receive) "從誰（選填）" else "給誰（選填）" }, { pickWho = i }, Modifier.weight(1f))
                                     CompactField(
                                         m.amt, { v -> m.amt = v.filter { it.isDigit() }.take(9) }, "金額", Modifier.width(120.dp),
                                         number = true, prefix = tw.moneybook.app.Money.twd, error = nv.on("amt$i"),
@@ -2239,6 +2243,16 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
         "day" -> CuteDatePickerDialog(day, { day = it; pick = "" }, { pick = "" }, "日期")
     }
     if (pickTime) TimePickerDialog(timeMin, { timeMin = it; pickTime = false }, { pickTime = false })
+    if (pickWho >= 0 && pickWho < moves.size) {
+        val m = moves[pickWho]
+        // 這次勾的帳裡的人排前面，其他人照以前用過的次數
+        val here = sel.map { it.who }.filter { it.isNotBlank() }.distinct()
+        val others = (d.reimbNames() + d.debtNames()).distinct().filter { it !in here }
+        SettleWhoDialog(
+            if (m.receive) "從誰" else "給誰", m.who, here, others,
+            onPick = { w -> m.who = w; pickWho = -1 }, onDismiss = { pickWho = -1 },
+        )
+    }
     if (pickAcc >= 0 && pickAcc < moves.size) {
         val m = moves[pickAcc]
         AccountPickDialog(
@@ -2247,4 +2261,52 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
             title = if (m.receive) "存進哪個帳戶" else "從哪個帳戶付",
         )
     }
+}
+
+/**
+ * 分帳結清的「從誰／給誰」：上面可以打字（篩選下面的名字，或直接用打的名字），
+ * 下面是這次勾的帳裡的人、其他以前用過的人；最下面可以清掉不填。
+ */
+@Composable
+private fun SettleWhoDialog(title: String, current: String, here: List<String>, others: List<String>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val cute = LocalCute.current
+    var q by remember { mutableStateOf("") }
+    fun match(l: List<String>) = if (q.isBlank()) l else l.filter { it.contains(q.trim(), ignoreCase = true) }
+    val hereF = match(here)
+    val othersF = match(others)
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                CompactField(q, { q = it.take(12) }, "打字篩選，或輸入其他名字", Modifier.fillMaxWidth())
+                val typed = q.trim()
+                if (typed.isNotEmpty() && (here + others).none { it.equals(typed, true) }) {
+                    WhoRow("用「$typed」", typed == current) { onPick(typed) }
+                }
+                if (hereF.isNotEmpty()) {
+                    Text("這次結清的人", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(top = 8.dp))
+                    hereF.forEach { w -> WhoRow(w, w == current) { onPick(w) } }
+                }
+                if (othersF.isNotEmpty()) {
+                    Text("其他人", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(top = 8.dp))
+                    othersF.forEach { w -> WhoRow(w, w == current) { onPick(w) } }
+                }
+                if (current.isNotBlank()) {
+                    WhoRow("不填", false) { onPick("") }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun WhoRow(name: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        name, style = MaterialTheme.typography.bodyLarge,
+        color = if (selected) MaterialTheme.colorScheme.primary else LocalCute.current.ink,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 10.dp),
+    )
 }
