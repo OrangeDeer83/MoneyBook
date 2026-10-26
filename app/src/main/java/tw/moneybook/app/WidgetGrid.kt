@@ -6,14 +6,20 @@ import kotlin.math.ln
 /*
  * 常用記帳小工具的格子怎麼排（單位都是 dp）：
  * 小工具外框留 5.5、每格四周留 2.5 → 格子離邊緣 8、格子之間隔 5（按鈕圓角＝外框圓角－8 才會同心）。
+ * 字的大小是使用者試過三種後選的「中」（10/26）；格子只放圖示和名稱，不放金額。
  */
 const val GRID_OUTER_PAD = 5.5f
 const val GRID_CELL_PAD = 2.5f
-/** 一格至少要這麼寬、這麼高才放得下圖示＋名稱＋金額 */
-const val GRID_MIN_W = 110f
-const val GRID_MIN_H = 52f
+/** 一格至少要這麼寬、這麼高 */
+const val GRID_MIN_W = 135f
+const val GRID_MIN_H = 62f
 /** 格子高到這樣就改成圖示在上、名稱在下 */
-const val GRID_TALL = 84f
+const val GRID_TALL = 100f
+/** 名稱的字（sp）、圖示框（橫的格子、直的格子）、＋ 的大小 */
+const val TPL_NAME_SP = 17
+const val TPL_ICON = 26
+const val TPL_ICON_TALL = 36
+const val TPL_PLUS_SP = 30
 /** 想要的格子形狀（寬÷高）：比較扁的長方形 */
 private const val GRID_RATIO = 1.4f
 
@@ -48,4 +54,34 @@ fun tplGrid(n: Int, w: Float, h: Float): TplGrid {
         }
     }
     return best ?: TplGrid(listOf(total), total - 1, availW / total - 2 * GRID_CELL_PAD, availH - 2 * GRID_CELL_PAD)
+}
+
+/** 估一個字有多寬（以字的大小為 1）：中文、全形 1，英數半形約 0.55 */
+private fun charEm(c: Char): Float = if (c.code < 0x2E80) 0.55f else 1f
+
+private fun widthEm(s: String): Float = s.sumOf { charEm(it).toDouble() }.toFloat()
+
+/**
+ * 名稱一行放不下、要兩行時，兩行平均分（例如「禮拜三羽毛球」→「禮拜三／羽毛球」）：
+ * 挑兩行裡比較長的那行最短的斷法，有空白就優先斷在空白（空白拿掉），不在英文字或數字中間斷。
+ * maxEm＝一行放得下幾個字寬（以字的大小為 1）；放得下就不斷，回傳原本的名稱
+ */
+fun splitName(name: String, maxEm: Float): String {
+    val s = name.trim()
+    if (s.length < 2 || widthEm(s) <= maxEm) return s
+    var best = s
+    var bestScore = Float.MAX_VALUE
+    for (i in 1 until s.length) {
+        val a = s.substring(0, i).trimEnd()
+        val b = s.substring(i).trimStart()
+        if (a.isEmpty() || b.isEmpty()) continue
+        val atSpace = s[i - 1] == ' ' || s[i] == ' '
+        val inWord = s[i - 1].isLetterOrDigit() && s[i].isLetterOrDigit() && s[i - 1].code < 0x2E80 && s[i].code < 0x2E80
+        val score = maxOf(widthEm(a), widthEm(b)) - (if (atSpace) 0.6f else 0f) + (if (inWord) 3f else 0f)
+        if (score < bestScore) {
+            bestScore = score
+            best = "$a\n$b"
+        }
+    }
+    return best
 }

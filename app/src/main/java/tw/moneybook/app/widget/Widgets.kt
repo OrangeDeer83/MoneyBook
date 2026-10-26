@@ -13,9 +13,14 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.layout.fillMaxHeight
 import tw.moneybook.app.R
 import tw.moneybook.app.GRID_CELL_PAD
-import tw.moneybook.app.GRID_MIN_W
 import tw.moneybook.app.GRID_OUTER_PAD
+import tw.moneybook.app.GRID_MIN_W
 import tw.moneybook.app.GRID_TALL
+import tw.moneybook.app.TPL_ICON
+import tw.moneybook.app.TPL_ICON_TALL
+import tw.moneybook.app.TPL_NAME_SP
+import tw.moneybook.app.TPL_PLUS_SP
+import tw.moneybook.app.splitName
 import tw.moneybook.app.Template
 import tw.moneybook.app.tplGrid
 import tw.moneybook.app.ui.AppImages
@@ -286,7 +291,7 @@ class ReimbWidgetReceiver : GlanceAppWidgetReceiver() {
 /**
  * 常用記帳：照「我的 → 常用記帳」的順序放得下幾個就幾個，最後一格是 ＋（空白的記一筆）。
  * 怎麼排見 tplGrid（常用記帳不多時排成比較扁的格子）；點一格打開記一筆、內容帶好，按完成才記。
- * 外框圓角跟著手機的小工具圓角，格子圓角用系統的「內層圓角」（＝外框－8dp，和外框同心）
+ * 格子只有分類圖示和名稱（不放金額）；外框圓角跟著手機的小工具圓角，格子圓角用系統的「內層圓角」（＝外框－8dp，和外框同心）
  */
 class TemplateWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Exact
@@ -315,8 +320,9 @@ class TemplateWidget : GlanceAppWidget() {
                     val g = tplGrid(d.templates.size, size.width.value, size.height.value)
                     val cells: List<Template?> = d.templates.take(g.shown) + null
                     val tall = g.cellH >= GRID_TALL
-                    // 名稱夠高就可以兩行（矮的格子只有一行）
-                    val nameLines = if (tall || g.cellH >= 55f) 2 else 1
+                    // 名稱一行放得下幾個字：格子寬扣掉左右留白（橫的格子再扣圖示）
+                    val textW = if (tall) g.cellW - 12f else g.cellW - 10f - TPL_ICON - 5f
+                    val maxEm = textW / TPL_NAME_SP
                     var k = 0
                     g.rows.forEach { count ->
                         val row = cells.subList(k, k + count)
@@ -324,7 +330,7 @@ class TemplateWidget : GlanceAppWidget() {
                         Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
                             row.forEach { tp ->
                                 Box(GlanceModifier.defaultWeight().fillMaxHeight().padding(GRID_CELL_PAD.dp)) {
-                                    if (tp == null) TplPlus(context, t) else TplCell(context, d, tp, t, tall, nameLines)
+                                    if (tp == null) TplPlus(context, t) else TplCell(context, d, tp, t, tall, maxEm)
                                 }
                             }
                         }
@@ -342,13 +348,14 @@ private fun TplPlus(context: Context, t: WTheme) {
         GlanceModifier.fillMaxSize().background(t.soft).cornerRadius(android.R.dimen.system_app_widget_inner_radius).clickable(openApp(context, "add")),
         contentAlignment = Alignment.Center,
     ) {
-        Text("＋", style = TextStyle(color = t.primary, fontSize = 26.sp, fontWeight = FontWeight.Bold))
+        Text("＋", style = TextStyle(color = t.primary, fontSize = TPL_PLUS_SP.sp, fontWeight = FontWeight.Bold))
     }
 }
 
 /** 分類圖示：圖片圖示用 App 裡的圖，表情符號用文字，線條圖示（小工具畫不出來）用箱子 */
 @Composable
-private fun TplIcon(emoji: String, color: Int, box: Int, img: Int) {
+private fun TplIcon(emoji: String, color: Int, box: Int) {
+    val img = box * 3 / 4
     Box(
         GlanceModifier.size(box.dp).background(androidx.glance.unit.ColorProvider(catColor(color).copy(alpha = 0.35f))).cornerRadius((box / 3).dp),
         contentAlignment = Alignment.Center,
@@ -362,39 +369,27 @@ private fun TplIcon(emoji: String, color: Int, box: Int, img: Int) {
 }
 
 /**
- * 一格常用記帳：分類圖示、名稱、金額（沒有固定金額寫「自訂」，收入寫 +）。
+ * 一格常用記帳：分類圖示、名稱（一行放不下就平均分成兩行，見 splitName）。
  * tall：格子高，圖示在上、名稱在下置中；不然圖示在左、名稱在右
  */
 @Composable
-private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme, tall: Boolean, nameLines: Int) {
+private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme, tall: Boolean, maxEm: Float) {
     val cat = tp.categoryId?.let { d.catMap[it] }
     val emoji = cat?.emoji ?: if (tp.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box"
-    val amount = when {
-        tp.amount <= 0L -> "自訂"
-        tp.type == TxType.INCOME -> "+" + formatMoney(tp.amount)
-        else -> formatMoney(tp.amount)
-    }
-    val amountColor = if (tp.type == TxType.INCOME && tp.amount > 0L) t.inc else t.sub
+    val name = splitName(tp.name, maxEm)
     val base = GlanceModifier.fillMaxSize().background(t.soft).cornerRadius(android.R.dimen.system_app_widget_inner_radius)
         .clickable(openApp(context, "tpl:${tp.id}"))
     if (tall) {
         Column(base.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {
-            TplIcon(emoji, cat?.color ?: 5, 30, 22)
-            Spacer(GlanceModifier.height(4.dp))
-            Text(
-                tp.name, style = TextStyle(color = t.ink, fontSize = 14.sp, textAlign = androidx.glance.text.TextAlign.Center),
-                maxLines = nameLines,
-            )
-            Text(amount, style = TextStyle(color = amountColor, fontSize = 11.sp), maxLines = 1)
+            TplIcon(emoji, cat?.color ?: 5, TPL_ICON_TALL)
+            Spacer(GlanceModifier.height(5.dp))
+            Text(name, style = TextStyle(color = t.ink, fontSize = TPL_NAME_SP.sp, textAlign = androidx.glance.text.TextAlign.Center), maxLines = 2)
         }
     } else {
         Row(base.padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            TplIcon(emoji, cat?.color ?: 5, 22, 16)
+            TplIcon(emoji, cat?.color ?: 5, TPL_ICON)
             Spacer(GlanceModifier.width(5.dp))
-            Column {
-                Text(tp.name, style = TextStyle(color = t.ink, fontSize = 14.sp), maxLines = nameLines)
-                Text(amount, style = TextStyle(color = amountColor, fontSize = 11.sp), maxLines = 1)
-            }
+            Text(name, style = TextStyle(color = t.ink, fontSize = TPL_NAME_SP.sp), maxLines = 2)
         }
     }
 }
