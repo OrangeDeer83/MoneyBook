@@ -13,9 +13,8 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.layout.fillMaxHeight
 import tw.moneybook.app.R
 import tw.moneybook.app.GRID_CELL_PAD
-import tw.moneybook.app.GRID_MIN_W
 import tw.moneybook.app.GRID_OUTER_PAD
-import tw.moneybook.app.GRID_TALL
+import tw.moneybook.app.TplStyle
 import tw.moneybook.app.Template
 import tw.moneybook.app.tplGrid
 import tw.moneybook.app.ui.AppImages
@@ -110,6 +109,8 @@ suspend fun updateAllWidgets(context: Context) {
     BudgetWidget().updateAll(context)
     ReimbWidget().updateAll(context)
     TemplateWidget().updateAll(context)
+    TemplateWidgetM().updateAll(context)
+    TemplateWidgetL().updateAll(context)
 }
 
 // ───────────────────────── 快速記一筆 ─────────────────────────
@@ -288,7 +289,7 @@ class ReimbWidgetReceiver : GlanceAppWidgetReceiver() {
  * 怎麼排見 tplGrid（常用記帳不多時排成比較扁的格子）；點一格打開記一筆、內容帶好，按完成才記。
  * 外框圓角跟著手機的小工具圓角，格子圓角用系統的「內層圓角」（＝外框－8dp，和外框同心）
  */
-class TemplateWidget : GlanceAppWidget() {
+open class TemplateWidget(private val st: TplStyle = TplStyle.SMALL) : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -309,14 +310,14 @@ class TemplateWidget : GlanceAppWidget() {
                             Text("還沒有常用記帳", style = TextStyle(color = t.ink, fontSize = 15.sp), maxLines = 1)
                             Text("點這裡新增（我的 → 常用記帳）", style = TextStyle(color = t.sub, fontSize = 12.sp), maxLines = 2)
                         }
-                        Box(GlanceModifier.width((GRID_MIN_W + 2 * GRID_CELL_PAD).dp).fillMaxHeight().padding(GRID_CELL_PAD.dp)) { TplPlus(context, t) }
+                        Box(GlanceModifier.width((st.minW + 2 * GRID_CELL_PAD).dp).fillMaxHeight().padding(GRID_CELL_PAD.dp)) { TplPlus(context, t, st) }
                     }
                 } else {
-                    val g = tplGrid(d.templates.size, size.width.value, size.height.value)
+                    val g = tplGrid(d.templates.size, size.width.value, size.height.value, st)
                     val cells: List<Template?> = d.templates.take(g.shown) + null
-                    val tall = g.cellH >= GRID_TALL
-                    // 名稱夠高就可以兩行（矮的格子只有一行）
-                    val nameLines = if (tall || g.cellH >= 55f) 2 else 1
+                    val tall = g.cellH >= st.tall
+                    // 名稱夠高就可以兩行（放得下兩行名稱＋一行金額；矮的格子只有一行）
+                    val nameLines = if (tall || g.cellH >= (st.name * 2 + st.amount) * 1.3f + 4f) 2 else 1
                     var k = 0
                     g.rows.forEach { count ->
                         val row = cells.subList(k, k + count)
@@ -324,7 +325,7 @@ class TemplateWidget : GlanceAppWidget() {
                         Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
                             row.forEach { tp ->
                                 Box(GlanceModifier.defaultWeight().fillMaxHeight().padding(GRID_CELL_PAD.dp)) {
-                                    if (tp == null) TplPlus(context, t) else TplCell(context, d, tp, t, tall, nameLines)
+                                    if (tp == null) TplPlus(context, t, st) else TplCell(context, d, tp, t, st, tall, nameLines)
                                 }
                             }
                         }
@@ -337,12 +338,12 @@ class TemplateWidget : GlanceAppWidget() {
 
 /** ＋：底色和其他格子一樣，只有 ＋ 是主色 */
 @Composable
-private fun TplPlus(context: Context, t: WTheme) {
+private fun TplPlus(context: Context, t: WTheme, st: TplStyle) {
     Box(
         GlanceModifier.fillMaxSize().background(t.soft).cornerRadius(android.R.dimen.system_app_widget_inner_radius).clickable(openApp(context, "add")),
         contentAlignment = Alignment.Center,
     ) {
-        Text("＋", style = TextStyle(color = t.primary, fontSize = 26.sp, fontWeight = FontWeight.Bold))
+        Text("＋", style = TextStyle(color = t.primary, fontSize = st.plus.sp, fontWeight = FontWeight.Bold))
     }
 }
 
@@ -366,7 +367,7 @@ private fun TplIcon(emoji: String, color: Int, box: Int, img: Int) {
  * tall：格子高，圖示在上、名稱在下置中；不然圖示在左、名稱在右
  */
 @Composable
-private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme, tall: Boolean, nameLines: Int) {
+private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme, st: TplStyle, tall: Boolean, nameLines: Int) {
     val cat = tp.categoryId?.let { d.catMap[it] }
     val emoji = cat?.emoji ?: if (tp.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box"
     val amount = when {
@@ -379,21 +380,21 @@ private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme, tall:
         .clickable(openApp(context, "tpl:${tp.id}"))
     if (tall) {
         Column(base.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {
-            TplIcon(emoji, cat?.color ?: 5, 30, 22)
+            TplIcon(emoji, cat?.color ?: 5, st.iconTall, st.iconTall * 3 / 4)
             Spacer(GlanceModifier.height(4.dp))
             Text(
-                tp.name, style = TextStyle(color = t.ink, fontSize = 14.sp, textAlign = androidx.glance.text.TextAlign.Center),
+                tp.name, style = TextStyle(color = t.ink, fontSize = st.name.sp, textAlign = androidx.glance.text.TextAlign.Center),
                 maxLines = nameLines,
             )
-            Text(amount, style = TextStyle(color = amountColor, fontSize = 11.sp), maxLines = 1)
+            Text(amount, style = TextStyle(color = amountColor, fontSize = st.amount.sp), maxLines = 1)
         }
     } else {
         Row(base.padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-            TplIcon(emoji, cat?.color ?: 5, 22, 16)
+            TplIcon(emoji, cat?.color ?: 5, st.icon, st.icon * 3 / 4)
             Spacer(GlanceModifier.width(5.dp))
             Column {
-                Text(tp.name, style = TextStyle(color = t.ink, fontSize = 14.sp), maxLines = nameLines)
-                Text(amount, style = TextStyle(color = amountColor, fontSize = 11.sp), maxLines = 1)
+                Text(tp.name, style = TextStyle(color = t.ink, fontSize = st.name.sp), maxLines = nameLines)
+                Text(amount, style = TextStyle(color = amountColor, fontSize = st.amount.sp), maxLines = 1)
             }
         }
     }
@@ -401,4 +402,16 @@ private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme, tall:
 
 class TemplateWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = TemplateWidget()
+}
+
+// 試用：字大一點的兩種（使用者挑好後只留一種）；更新小工具是照類別找，所以每種大小要各自一個類別
+class TemplateWidgetM : TemplateWidget(TplStyle.MEDIUM)
+class TemplateWidgetL : TemplateWidget(TplStyle.LARGE)
+
+class TemplateWidgetMReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = TemplateWidgetM()
+}
+
+class TemplateWidgetLReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = TemplateWidgetL()
 }

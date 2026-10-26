@@ -12,7 +12,7 @@ class WidgetGridTest {
         val g = tplGrid(4, 415f, 285f)
         assertEquals(listOf(3, 2), g.rows)
         assertEquals(4, g.shown)
-        assertTrue(g.cellH >= GRID_TALL)        // 格子還是高：圖示在上
+        assertTrue(g.cellH >= TplStyle.SMALL.tall)        // 格子還是高：圖示在上
     }
 
     @Test
@@ -22,7 +22,7 @@ class WidgetGridTest {
         assertEquals(8, g.shown)
         assertEquals(9, g.rows.sum())
         assertTrue(g.rows.all { it <= 3 })
-        assertTrue(g.cellW >= GRID_MIN_W && g.cellH >= GRID_MIN_H)
+        assertTrue(g.cellW >= TplStyle.SMALL.minW && g.cellH >= TplStyle.SMALL.minH)
     }
 
     @Test
@@ -31,9 +31,17 @@ class WidgetGridTest {
         val g = tplGrid(8, 400f, 74f)
         assertEquals(listOf(3), g.rows)
         assertEquals(2, g.shown)
-        assertTrue(g.cellW >= GRID_MIN_W)
+        assertTrue(g.cellW >= TplStyle.SMALL.minW)
         // 寬一點的一排：4 個＋1
         assertEquals(listOf(5), tplGrid(8, 610f, 74f).rows)
+    }
+
+    @Test
+    fun biggerTextFitsFewer() {
+        // 4×2 約 415×160：小 5 個、中 3 個、大只剩 1 個（兩排放不下）
+        assertEquals(5, tplGrid(8, 415f, 160f, TplStyle.SMALL).shown)
+        assertEquals(3, tplGrid(8, 415f, 160f, TplStyle.MEDIUM).shown)
+        assertEquals(1, tplGrid(8, 415f, 160f, TplStyle.LARGE).shown)
     }
 
     @Test

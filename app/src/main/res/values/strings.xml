@@ -3,7 +3,9 @@
     <string name="app_name">記帳本</string>
     <string name="widget_quick_name">快速記一筆</string>
     <string name="widget_quick_desc">一點就進記一筆畫面</string>
-    <string name="widget_tpl_name">常用記帳</string>
+    <string name="widget_tpl_name">常用記帳（小）</string>
+    <string name="widget_tpl_m_name">常用記帳（中）</string>
+    <string name="widget_tpl_l_name">常用記帳（大）</string>
     <string name="widget_tpl_desc">常用記帳一點就帶好內容，按完成就記好</string>
     <string name="widget_month_name">本月支出</string>
     <string name="widget_month_desc">本月支出、剩餘預算，加上吉祥物的表情</string>
