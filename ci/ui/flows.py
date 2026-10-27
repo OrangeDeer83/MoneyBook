@@ -162,6 +162,29 @@ def tap_person(who):
     d.tap(d.wait(lambda n: n.text == who, 5, who))
 
 
+def person_page(timeout=10):
+    """某個人的報銷／欠款頁：等分頁列出現（最後一個分頁是「紀錄 N」）"""
+    d.wait(lambda n: n.text.startswith("紀錄 "), timeout, "某人頁的分頁")
+    d.time.sleep(0.6)
+
+
+def person_tab(name):
+    """某個人的頁面切分頁：name＝「欠我」「我欠」「紀錄」（分頁上寫「Amy欠我 3」「我欠Amy 2」「紀錄 9」）"""
+    def hit(n):
+        if name == "紀錄":
+            return n.text.startswith("紀錄 ")
+        return name in n.text and n.text.rsplit(" ", 1)[-1].isdigit()
+    d.tap(d.wait(hit, 8, "分頁 " + name))
+    d.time.sleep(0.8)
+
+
+def person_unfold():
+    """某個人的頁面：展開「已收齊的 N 筆」「已還清的 N 筆」"""
+    n = d.wait(lambda n: n.text.startswith("已收齊的") or n.text.startswith("已還清的"), 8, "已結清的 N 筆")
+    d.tap(n)
+    d.time.sleep(0.8)
+
+
 def to_receive(who):
     """報銷／欠款總覽：點人名進他的頁面，再按下面的「收款」"""
     tap_person(who)

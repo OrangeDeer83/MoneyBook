@@ -41,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -630,7 +631,10 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
     // 從人頁點帳單去記一筆修改，回來時這一頁會重新建立：停在原本那個人的頁面（記在 vm 裡）
     var page by remember { mutableStateOf<ReimbPage>(vm.reimbPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home) }
     androidx.compose.runtime.SideEffect { vm.reimbPerson = (page as? ReimbPage.Person)?.who }
-    val leave = { vm.reimbPerson = null; vm.reimbTab = 0; vm.reimbLists.clear(); vm.reimbScrolls.clear(); onBack() }
+    val leave = {
+        vm.reimbPerson = null; vm.reimbTab = 0; vm.reimbLists.clear(); vm.reimbScrolls.clear()
+        vm.reimbPersonTab.clear(); vm.reimbPersonLists.clear(); vm.reimbOpenFolds.clear(); onBack()
+    }
     // 從人頁進去的收款／還款／抵銷，做完回到人頁；從總覽進去的回到總覽
     var fromPerson by remember { mutableStateOf<String?>(null) }
     fun back() { page = fromPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home }
@@ -1319,6 +1323,69 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
 // ───────────────────────── 某人的報銷與欠款 ─────────────────────────
 
 @Composable
+private fun FoldRow(label: String, folded: Boolean, onToggle: () -> Unit) {
+    val cute = LocalCute.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft).clickable(onClick = onToggle)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f))
+        Icon(if (folded) AppIcons.ChevronDown else AppIcons.ChevronUp, contentDescription = if (folded) "展開" else "收起", tint = cute.sub)
+    }
+}
+
+/** 某個人的頁面：一張報銷的帳（他欠我），點了到記一筆修改 */
+@Composable
+private fun ClaimBill(d: tw.moneybook.app.AppData, c: Claim, onClick: () -> Unit) {
+    val cute = LocalCute.current
+    val item = c.item
+    val status = when {
+        !item.closed -> "待收 ${formatMoney(item.remaining)}"
+        item.received < item.amount -> "不追了，少收 ${formatMoney(item.amount - item.received)}"
+        else -> "已收齊"
+    }
+    CuteCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge)
+                Text("應收 ${formatMoney(item.amount)}" + if (item.received > 0L) "・已收 ${formatMoney(item.received)}" else "", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+            }
+            Text(status, style = MaterialTheme.typography.labelLarge, color = if (!item.closed) cute.income else cute.sub)
+        }
+    }
+}
+
+/** 某個人的頁面：一張欠款的帳（我欠他），點了到記一筆修改 */
+@Composable
+private fun DebtBill(d: tw.moneybook.app.AppData, r: DebtRef, onClick: () -> Unit) {
+    val cute = LocalCute.current
+    val item = r.item
+    val back = item.pays.sumOf { it.amount }
+    val status = when {
+        !item.done -> "待還 " + if (r.currency.isEmpty()) formatMoney(item.remainingTwd) else formatFx(item.remainingUnits, r.currency)
+        item.effective < item.amount -> "已還清，免 ${formatMoney(item.amount - item.effective)}"
+        item.effective > item.amount -> "已還清，多付 ${formatMoney(item.effective - item.amount)}"
+        else -> "已還清"
+    }
+    CuteCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "欠 " + (if (r.currency.isEmpty()) formatMoney(item.amount) else "${formatFx(item.totalUnits, r.currency)}（約 ${formatMoney(item.amount)}）") +
+                        if (back > 0L) "・已還 ${formatMoney(back)}" else "",
+                    style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                )
+            }
+            Text(status, style = MaterialTheme.typography.labelLarge, color = if (!item.done) cute.expense else cute.sub)
+        }
+    }
+}
+
+/** 某個人的報銷／欠款頁：上面摘要、中間三個分頁（欠我／我欠／紀錄）、下面收款／還款／抵銷 */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
 private fun ReimbPersonPage(
     vm: MoneyViewModel, who: String, onBack: () -> Unit, onReceive: () -> Unit,
     onRepay: () -> Unit, onOffset: () -> Unit,
@@ -1338,124 +1405,129 @@ private fun ReimbPersonPage(
     var menuFor by remember { mutableStateOf<Int?>(null) }
     var editing by remember { mutableStateOf<Triple<Claim, Int, ReimbPay>?>(null) }
 
-    // 從這裡點帳單去記一筆修改，回來時停在原本的位置
-    val scroll = remember(who) { vm.reimbScrolls.getOrPut("p:$who") { androidx.compose.foundation.ScrollState(0) } }
+    // 分頁：0 欠我、1 我欠、2 紀錄；只有一個方向時只有那一個和紀錄。一進來是還欠比較多的那一邊（都結清了是紀錄）
+    val tabs = listOfNotNull(if (claims.isNotEmpty()) 0 else null, if (debtRefs.isNotEmpty()) 1 else null, 2)
+    var tab by remember(who) {
+        mutableIntStateOf(vm.reimbPersonTab[who] ?: when {
+            owed <= 0L && iOwe <= 0L -> 2
+            owed >= iOwe && claims.isNotEmpty() -> 0
+            debtRefs.isNotEmpty() -> 1
+            else -> 0
+        })
+    }
+    if (tab !in tabs) tab = tabs.first()
+    // 每個分頁各自記住捲到哪裡：切分頁、點帳單去記一筆修改再回來都停在原本的位置
+    val listState = vm.reimbPersonLists.getOrPut("$who:$tab") { androidx.compose.foundation.lazy.LazyListState() }
+    // 「已收齊／已還清的 N 筆」展開了沒
+    var foldTick by remember { mutableIntStateOf(0) }
+    fun folded(k: Int): Boolean { foldTick; return "$who:$k" !in vm.reimbOpenFolds }
+    fun toggleFold(k: Int) { if (!vm.reimbOpenFolds.remove("$who:$k")) vm.reimbOpenFolds.add("$who:$k"); foldTick++ }
+    val labels = tabs.map {
+        when (it) {
+            0 -> "${ownerLabel(who)}欠我 ${claims.count { c -> !c.item.closed }}"
+            1 -> "我欠${ownerLabel(who)} ${debtRefs.count { r -> !r.item.done }}"
+            else -> "紀錄 ${recs.size}"
+        }
+    }
     SubPage(ownerLabel(who), onBack) {
         Column(Modifier.fillMaxSize()) {
-            Column(
-                Modifier.weight(1f).verticalScroll(scroll).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+            LazyColumn(
+                Modifier.weight(1f),
+                state = listState,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 // 進度：報銷一條（收回多少了）、欠款每種幣別一條（還了多少了），只算還沒結清的帳；最後是淨額（外幣用預估匯率換成台幣）
-                CuteCard(Modifier.fillMaxWidth()) {
-                    val openClaims = claims.filter { !it.item.closed }
-                    if (openClaims.isNotEmpty()) {
-                        val due = openClaims.sumOf { it.item.amount }
-                        val got = openClaims.sumOf { it.item.received }
-                        ProgressBlock(
-                            "報銷：收回多少了", "已收 ${pctOf(got, due)}%", got.toFloat() / due.coerceAtLeast(1L), cute.income,
-                            "應收 ${formatMoney(due)}・已收 ${formatMoney(got)}", "${ownerLabel(who)}還欠你", formatMoney(owed),
-                        )
-                    } else if (claims.isNotEmpty()) {
-                        AmountLine("${ownerLabel(who)}還欠你", formatMoney(0L), cute.expense)
-                        AmountLine("已收", formatMoney(claims.sumOf { it.item.received }), cute.income)
-                    }
-                    if (debtRefs.isNotEmpty() && groups.isEmpty()) AmountLine("你欠他", formatMoney(0L), cute.expense)
-                    groups.sortedBy { if (it.currency.isEmpty()) 0 else 1 }.forEachIndexed { i, g ->
-                        val total = g.refs.sumOf { it.item.totalUnits }
-                        val left = g.remainingUnits
-                        fun u(v: Long) = if (g.currency.isEmpty()) formatMoney(v) else formatFx(v, g.currency)
-                        if (openClaims.isNotEmpty() || i > 0) Spacer(Modifier.height(12.dp))
-                        ProgressBlock(
-                            "欠款（${if (g.currency.isEmpty()) "台幣" else Currencies.of(g.currency).name}）", "已還 ${pctOf(total - left, total)}%",
-                            (total - left).toFloat() / total.coerceAtLeast(1L), cute.accent2,
-                            "欠 ${u(total)}・已還 ${u(total - left)}", "還欠", u(left), cute.expense,
-                        )
-                    }
-                    if (debtRefs.isNotEmpty()) {
-                        // 兩個方向都有時，寫淨額
-                        AmountDivider()
-                        AmountLine(
-                            "淨額",
-                            when {
-                                net > 0L -> "${ownerLabel(who)}還欠你 ${formatMoney(net)}"
-                                net < 0L -> "你還欠${ownerLabel(who)} ${formatMoney(-net)}"
-                                else -> "兩清"
-                            },
-                            if (net >= 0L) cute.income else cute.expense, strong = true,
-                        )
+                item(key = "summary") {
+                    CuteCard(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                        val openClaims = claims.filter { !it.item.closed }
+                        if (openClaims.isNotEmpty()) {
+                            val due = openClaims.sumOf { it.item.amount }
+                            val got = openClaims.sumOf { it.item.received }
+                            ProgressBlock(
+                                "報銷：收回多少了", "已收 ${pctOf(got, due)}%", got.toFloat() / due.coerceAtLeast(1L), cute.income,
+                                "應收 ${formatMoney(due)}・已收 ${formatMoney(got)}", "${ownerLabel(who)}還欠你", formatMoney(owed),
+                            )
+                        } else if (claims.isNotEmpty()) {
+                            AmountLine("${ownerLabel(who)}還欠你", formatMoney(0L), cute.expense)
+                            AmountLine("已收", formatMoney(claims.sumOf { it.item.received }), cute.income)
+                        }
+                        if (debtRefs.isNotEmpty() && groups.isEmpty()) AmountLine("你欠他", formatMoney(0L), cute.expense)
+                        groups.sortedBy { if (it.currency.isEmpty()) 0 else 1 }.forEachIndexed { i, g ->
+                            val total = g.refs.sumOf { it.item.totalUnits }
+                            val left = g.remainingUnits
+                            fun u(v: Long) = if (g.currency.isEmpty()) formatMoney(v) else formatFx(v, g.currency)
+                            if (openClaims.isNotEmpty() || i > 0) Spacer(Modifier.height(12.dp))
+                            ProgressBlock(
+                                "欠款（${if (g.currency.isEmpty()) "台幣" else Currencies.of(g.currency).name}）", "已還 ${pctOf(total - left, total)}%",
+                                (total - left).toFloat() / total.coerceAtLeast(1L), cute.accent2,
+                                "欠 ${u(total)}・已還 ${u(total - left)}", "還欠", u(left), cute.expense,
+                            )
+                        }
+                        if (debtRefs.isNotEmpty()) {
+                            // 兩個方向都有時，寫淨額
+                            AmountDivider()
+                            AmountLine(
+                                "淨額",
+                                when {
+                                    net > 0L -> "${ownerLabel(who)}還欠你 ${formatMoney(net)}"
+                                    net < 0L -> "你還欠${ownerLabel(who)} ${formatMoney(-net)}"
+                                    else -> "兩清"
+                                },
+                                if (net >= 0L) cute.income else cute.expense, strong = true,
+                            )
+                        }
                     }
                 }
-                if (claims.isNotEmpty()) {
-                    Text("${ownerLabel(who)}欠我（報銷）", style = MaterialTheme.typography.titleMedium)
-                    claims.forEach { c ->
-                        val item = c.item
-                        val status = when {
-                            !item.closed -> "待收 ${formatMoney(item.remaining)}"
-                            item.received < item.amount -> "不追了，少收 ${formatMoney(item.amount - item.received)}"
-                            else -> "已收齊"
-                        }
-                        CuteCard(Modifier.fillMaxWidth().clickable { onEdit(c.txn.id) }) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyLarge)
-                                    Text("應收 ${formatMoney(item.amount)}" + if (item.received > 0L) "・已收 ${formatMoney(item.received)}" else "", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                                }
-                                Text(status, style = MaterialTheme.typography.labelLarge, color = if (!item.closed) cute.income else cute.sub)
+                // 分頁列捲到最上面就停住，捲到很下面也能直接切分頁
+                stickyHeader(key = "tabs") {
+                    Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(vertical = 6.dp)) {
+                        PillSegment(labels, tabs.indexOf(tab), { tab = tabs[it]; vm.reimbPersonTab[who] = tab }, Modifier.fillMaxWidth(), equal = true)
+                    }
+                }
+                when (tab) {
+                    0 -> {
+                        // 待收的照日期新的在前；已收齊的收在最下面，點了才展開
+                        val (open, done) = claims.partition { !it.item.closed }
+                        if (open.isEmpty()) item(key = "none0") { Text("都收齊了", style = MaterialTheme.typography.bodySmall, color = cute.sub) }
+                        items(open, key = { "c${it.txn.id}:${it.index}" }) { c -> ClaimBill(d, c) { onEdit(c.txn.id) } }
+                        if (done.isNotEmpty()) item(key = "fold0") { FoldRow("已收齊的 ${done.size} 筆", folded(0)) { toggleFold(0) } }
+                        if (!folded(0)) items(done, key = { "c${it.txn.id}:${it.index}" }) { c -> ClaimBill(d, c) { onEdit(c.txn.id) } }
+                    }
+                    1 -> {
+                        val (open, done) = debtRefs.partition { !it.item.done }
+                        if (open.isEmpty()) item(key = "none1") { Text("都還清了", style = MaterialTheme.typography.bodySmall, color = cute.sub) }
+                        items(open, key = { "d${it.t.id}:${it.index}" }) { r -> DebtBill(d, r) { onEdit(r.t.id) } }
+                        if (done.isNotEmpty()) item(key = "fold1") { FoldRow("已還清的 ${done.size} 筆", folded(1)) { toggleFold(1) } }
+                        if (!folded(1)) items(done, key = { "d${it.t.id}:${it.index}" }) { r -> DebtBill(d, r) { onEdit(r.t.id) } }
+                    }
+                    else -> {
+                        item(key = "hint") {
+                            Text("點右邊的 ⋯ 可以修改或刪除", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                            if (recs.isEmpty()) {
+                                Text(if (debtRefs.isEmpty()) "還沒有收款紀錄" else "還沒有收款、還款紀錄", style = MaterialTheme.typography.bodySmall, color = cute.sub)
                             }
                         }
-                    }
-                }
-                if (debtRefs.isNotEmpty()) {
-                    Text("我欠${ownerLabel(who)}（欠款）", style = MaterialTheme.typography.titleMedium)
-                    debtRefs.forEach { r ->
-                        val item = r.item
-                        val back = item.pays.sumOf { it.amount }
-                        val status = when {
-                            !item.done -> "待還 " + if (r.currency.isEmpty()) formatMoney(item.remainingTwd) else formatFx(item.remainingUnits, r.currency)
-                            item.effective < item.amount -> "已還清，免 ${formatMoney(item.amount - item.effective)}"
-                            item.effective > item.amount -> "已還清，多付 ${formatMoney(item.effective - item.amount)}"
-                            else -> "已還清"
-                        }
-                        CuteCard(Modifier.fillMaxWidth().clickable { onEdit(r.t.id) }) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        "欠 " + (if (r.currency.isEmpty()) formatMoney(item.amount) else "${formatFx(item.totalUnits, r.currency)}（約 ${formatMoney(item.amount)}）") +
-                                            if (back > 0L) "・已還 ${formatMoney(back)}" else "",
-                                        style = MaterialTheme.typography.labelMedium, color = cute.sub,
-                                    )
-                                }
-                                Text(status, style = MaterialTheme.typography.labelLarge, color = if (!item.done) cute.expense else cute.sub)
-                            }
-                        }
-                    }
-                }
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text("紀錄", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    Text("點右邊的 ⋯ 可以修改或刪除", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-                }
-                if (recs.isEmpty()) {
-                    Text(if (debtRefs.isEmpty()) "還沒有收款紀錄" else "還沒有收款、還款紀錄", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                }
-                recs.forEachIndexed { n, r ->
-                    CuteCard(Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text("${dayTimeLabel(r.day, r.time)}　${r.line}", style = MaterialTheme.typography.bodyLarge)
-                                Text(r.personSub, style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                            }
-                            Box {
-                                TextButton(onClick = { menuFor = n }) { Text("⋯", style = MaterialTheme.typography.titleLarge) }
-                                DropdownMenu(expanded = menuFor == n, onDismissRequest = { menuFor = null }) {
-                                    if (r.claim != null && r.pay != null) {
-                                        DropdownMenuItem(text = { Text("修改") }, onClick = { menuFor = null; editing = Triple(r.claim, r.payIndex, r.pay) })
+                        items(recs.size, key = { "r$it" }) { n ->
+                            val r = recs[n]
+                            CuteCard(Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("${dayTimeLabel(r.day, r.time)}　${r.line}", style = MaterialTheme.typography.bodyLarge)
+                                        Text(r.personSub, style = MaterialTheme.typography.labelMedium, color = cute.sub)
                                     }
-                                    DropdownMenuItem(
-                                        text = { Text(if (r.kind == 2) "刪除這次抵銷（兩邊一起）" else "刪除") },
-                                        onClick = { menuFor = null; r.onDelete(vm) },
-                                    )
+                                    Box {
+                                        TextButton(onClick = { menuFor = n }) { Text("⋯", style = MaterialTheme.typography.titleLarge) }
+                                        DropdownMenu(expanded = menuFor == n, onDismissRequest = { menuFor = null }) {
+                                            if (r.claim != null && r.pay != null) {
+                                                DropdownMenuItem(text = { Text("修改") }, onClick = { menuFor = null; editing = Triple(r.claim, r.payIndex, r.pay) })
+                                            }
+                                            DropdownMenuItem(
+                                                text = { Text(if (r.kind == 2) "刪除這次抵銷（兩邊一起）" else "刪除") },
+                                                onClick = { menuFor = null; r.onDelete(vm) },
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

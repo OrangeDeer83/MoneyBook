@@ -404,7 +404,8 @@ def go_person(who):
     d.time.sleep(1)
     row = d.wait(lambda n: who in n.text, 8, who)
     d.tap(row)
-    d.wait_text("紀錄", timeout=10)
+    f.person_page()
+    f.person_tab("紀錄")
 
 
 @case(B, "修改收款紀錄")

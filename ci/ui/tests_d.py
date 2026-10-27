@@ -1259,7 +1259,8 @@ def t_reimb_receive_time():
     d.check("已收款的列顯示收到的時間 09:30", any("09:30" in n.text and "Hua" in n.text for n in ns), [n.text for n in ns if "Hua" in n.text])
     row = d.wait(lambda n: "Hua" in n.text, 8, "Hua")
     d.tap(row)
-    d.wait_text("紀錄", timeout=10)
+    f.person_page()
+    f.person_tab("紀錄")
     ns = d.shot("Hua 的收款紀錄")
     d.check("收款紀錄顯示 09:30 收到 $800", any("09:30" in n.text and "收到 $800" in n.text for n in ns), [n.text for n in ns if "收到" in n.text])
 
@@ -1272,7 +1273,8 @@ def t_reimb_edit_pay_time():
     d.tap_text("紀錄", exact=True)
     d.time.sleep(1)
     d.tap(d.wait(lambda n: "Lin" in n.text, 8, "Lin"))
-    d.wait_text("紀錄", timeout=10)
+    f.person_page()
+    f.person_tab("紀錄")
     ns = d.shot("Lin 的明細")
     d.check("舊的收款只有日期，沒有時間", not any("收到 $200" in n.text and ":" in n.text for n in ns), [n.text for n in ns if "收到" in n.text])
     d.tap_text("⋯", exact=True)
@@ -2749,8 +2751,7 @@ def open_reimb_debt_home():
 def open_repay(who, label="還款"):
     """總覽 → 點人名進他的頁面 → 按下面的「還款」"""
     f.tap_person(who)
-    d.wait_text("紀錄", timeout=10)
-    d.time.sleep(0.6)
+    f.person_page()
     d.tap_text(label, exact=True, lowest=True)
     d.wait_text("這次還了多少", timeout=10, exact=False)
     d.time.sleep(0.8)
@@ -2860,10 +2861,12 @@ def t_debt_repay_continue_and_delete():
     ns = d.shot("還了 2500 沒還完（回到總覽）")
     d.check("總覽：Amy 淨欠 $300", d.has(ns, "$300", True), [n.text for n in ns if n.text][:30])
     d.tap(d.wait(lambda n: n.text == "Amy", 10, "Amy"))
-    d.wait_text("紀錄", timeout=10)
-    d.time.sleep(0.8)
-    ns = d.shot("Amy 的頁面")
+    f.person_page()
+    f.person_unfold()
+    ns = d.shot("Amy 的頁面（我欠 Amy，展開已還清的）")
     d.check("欠款（台幣）已還 63%、還欠 $300；晚餐「待還 $300」、機票「已還清」", d.has(ns, "欠款（台幣）", True) and d.has(ns, "已還 63%", True) and d.has(ns, "$300", True) and d.has(ns, "待還 $300", True) and d.has(ns, "已還清", True), [n.text for n in ns if n.text][:30])
+    f.person_tab("紀錄")
+    ns = d.shot("Amy 的紀錄")
     d.check("紀錄有兩筆「還款」", sum(1 for n in ns if "還款 $" in n.text) == 2, [n.text for n in ns if "還款" in n.text])
     d.tap_text("⋯", exact=True)
     d.time.sleep(0.6)
@@ -3089,9 +3092,9 @@ def t_debt_offset_foreign():
     ns = d.shot("抵銷後的總覽")
     d.check("Ken 還欠 ¥7,500（約 1,650）：淨欠 1,650", any(n.text.endswith("1,650") for n in ns), [n.text for n in ns if n.text][:30])
     d.tap(d.wait(lambda n: n.text == "Ken", 10, "Ken"))
-    d.wait_text("紀錄", timeout=10)
-    d.time.sleep(0.8)
-    ns = d.shot("Ken 的頁面")
+    f.person_page()
+    f.person_tab("紀錄")
+    ns = d.shot("Ken 的頁面（紀錄）")
     d.check("紀錄「互相抵銷 1,000」、小字寫「抵掉 ¥4,500」", any("互相抵銷" in n.text and "1,000" in n.text for n in ns) and any("抵掉 ¥4,500" in n.text for n in ns), [n.text for n in ns if n.text][:40])
     d.check("欠款（日圓）已還 38%、還欠 ¥7,500", d.has(ns, "欠款（日圓）", True) and d.has(ns, "已還 38%", True) and d.has(ns, "¥7,500", True), [n.text for n in ns if n.text][:30])
 
@@ -3155,8 +3158,7 @@ def t_person_bill_opens_edit():
     d.fresh(s.json())
     open_reimb_debt_home()
     f.tap_person("Amy")
-    d.wait_text("紀錄", timeout=10)
-    d.time.sleep(0.8)
+    f.person_page()
     d.tap(d.wait(lambda n: n.text.startswith("team lunch"), 10, "team lunch 那張卡片"))
     d.time.sleep(1.5)
     ns = d.shot("點報銷的帳單：進記一筆")
@@ -4043,3 +4045,75 @@ def t_tpl_widget_open():
     d.time.sleep(2)
     ns = d.shot("open=templates")
     d.check("open=templates 打開常用記帳頁", d.has(ns, "＋ 新增常用記帳", True), [n.text for n in ns if n.text][:20])
+
+
+def person_tabs_seed():
+    """Amy 欠我 15 筆待收（b00 最新～b14 最舊，各 100）＋2 筆已收齊（c0、c1）；我欠 Amy 2 筆（d0、d1，各 50）"""
+    s = empty_seed()
+    t0 = f.today()
+    for k in range(15):
+        s.expense(-1 - k, 100, S.C_FOOD, note=f"b{k:02d}", reimb=1, reimb_amount=100, items=[S.reimb_item("Amy", 100)])
+    for k in range(2):
+        s.expense(-20 - k, 100, S.C_FOOD, note=f"c{k}", reimb=2, reimb_amount=100,
+                  items=[S.reimb_item("Amy", 100, True, [S.pay(t0 - S.datetime.timedelta(days=18 + k), S.CASH, 100)])])
+    for k in range(2):
+        t = s.expense(-1 - k, 50, S.C_DINNER, acc=None, note=f"d{k}")
+        t.update(debtItems=[dict(who="Amy", amount=50, units=0, done=False, pays=[])], debtSelf=0)
+    return s
+
+
+def scroll_to(prefix, tries=10):
+    """往下捲到開頭是 prefix 的那一列出現在畫面上"""
+    for _ in range(tries):
+        n = next((x for x in d.nodes() if x.text.startswith(prefix)), None)
+        if n is not None and 400 < n.cy < 1900:
+            return n
+        d.swipe(540, 1700, 540, 1100, 500)
+        d.time.sleep(0.4)
+    return next((x for x in d.nodes() if x.text.startswith(prefix)), None)
+
+
+@case(D, "某個人的頁面分成欠我／我欠／紀錄三個分頁（分頁列捲動時停在上面）；已收齊的收起來；切分頁、點帳單再返回都停在原本的位置", visual=True)
+def t_person_tabs():
+    d.fresh(person_tabs_seed().json())
+    open_reimb_debt_home()
+    f.tap_person("Amy")
+    f.person_page()
+    ns = d.shot("Amy 的頁面")
+    d.check("三個分頁：Amy欠我 15、我欠Amy 2、紀錄 2；一進來是欠比較多的「Amy欠我」",
+            all(d.has(ns, t, True) for t in ("Amy欠我 15", "我欠Amy 2", "紀錄 2")) and d.has(ns, "b00", False) and not any(n.text.startswith("d0") for n in ns),
+            [n.text for n in ns if n.text][:30])
+    row = scroll_to("b13")
+    d.check("往下捲找到 b13", row is not None)
+    ns = d.shot("捲到下面")
+    d.check("捲到下面時分頁列還在畫面上", any(n.text.startswith("我欠Amy") for n in ns), [n.text for n in ns if n.text][:12])
+    y0 = row.cy if row else 0
+    # 切到我欠 Amy，再切回來：停在 b13 那裡
+    d.tap(d.wait(lambda n: n.text.startswith("我欠Amy"), 8, "我欠Amy"))
+    d.time.sleep(1)
+    ns = d.shot("我欠 Amy")
+    d.check("我欠 Amy 分頁：d0、d1", any(n.text.startswith("d0") for n in ns) and any(n.text.startswith("d1") for n in ns), [n.text for n in ns if n.text][:30])
+    d.tap(d.wait(lambda n: n.text.startswith("Amy欠我"), 8, "Amy欠我"))
+    d.time.sleep(1)
+    ns = d.shot("切回 Amy 欠我")
+    r1 = next((n for n in ns if n.text.startswith("b13")), None)
+    d.check("切回來還停在 b13 那裡", r1 is not None and abs(r1.cy - y0) < 40, (r1, y0))
+    # 點 b13 修改再返回
+    if r1:
+        d.tap(r1)
+        f.edit_open()
+        d.tap_back()
+        d.time.sleep(1.5)
+    ns = d.shot("改帳返回")
+    r2 = next((n for n in ns if n.text.startswith("b13")), None)
+    d.check("返回後還在 Amy欠我 分頁、停在 b13 那裡", r2 is not None and abs(r2.cy - y0) < 40, (r2, y0))
+    # 最下面「已收齊的 2 筆」：點了展開
+    fold = scroll_to("已收齊的 2 筆")
+    d.check("已收齊的收在最下面「已收齊的 2 筆」，還沒展開時沒有 c0", fold is not None and not any(n.text.startswith("c0") for n in d.nodes()))
+    f.person_unfold()
+    scroll_to("c1")
+    ns = d.shot("展開已收齊的")
+    d.check("展開後列出 c0、c1（已收齊）", any(n.text.startswith("c0") for n in ns) or any(n.text.startswith("c1") for n in ns), [n.text for n in ns if n.text][-12:])
+    f.person_tab("紀錄")
+    ns = d.shot("紀錄分頁")
+    d.check("紀錄分頁：兩筆收款", sum(1 for n in ns if "收到 $100" in n.text) == 2, [n.text for n in ns if n.text][:30])
