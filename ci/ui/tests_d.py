@@ -3162,11 +3162,12 @@ def t_person_bill_opens_edit():
     d.tap(d.wait(lambda n: n.text.startswith("team lunch"), 10, "team lunch 那張卡片"))
     d.time.sleep(1.5)
     ns = d.shot("點報銷的帳單：進記一筆")
-    d.check("進到記一筆修改那筆（看得到備註 team lunch 和「完成」）", d.has(ns, "team lunch", True) and d.has(ns, "完成", True) and not d.has(ns, "Amy欠我（報銷）", True), [n.text for n in ns if n.text][:30])
+    d.check("進到記一筆修改那筆（看得到備註 team lunch 和「完成」）", d.has(ns, "team lunch", True) and d.has(ns, "完成", True) and not d.has(ns, "Amy欠我 1", True), [n.text for n in ns if n.text][:30])
     d.tap_back()
     d.time.sleep(1.2)
     ns = d.shot("返回")
-    d.check("返回後停在 Amy 的頁面（不是總覽）", d.has(ns, "Amy欠我（報銷）", True) and not d.has(ns, "依對象", True), [n.text for n in ns if n.text][:30])
+    d.check("返回後停在 Amy 的頁面（不是總覽）", d.has(ns, "Amy欠我 1", True) and not d.has(ns, "依對象", True), [n.text for n in ns if n.text][:30])
+    f.person_tab("我欠")
     d.tap(d.wait(lambda n: n.text.startswith("dinner"), 10, "dinner 那張卡片"))
     d.time.sleep(1.5)
     ns = d.shot("點欠款的帳單：進記一筆")
@@ -3175,7 +3176,7 @@ def t_person_bill_opens_edit():
     d.tap(max(c, key=lambda n: n.cy))
     d.time.sleep(1.5)
     ns = d.shot("按完成")
-    d.check("存好後也回到 Amy 的頁面", d.has(ns, "我欠Amy（欠款）", True), [n.text for n in ns if n.text][:30])
+    d.check("存好後也回到 Amy 的頁面（還在我欠 Amy 分頁）", d.has(ns, "我欠Amy 1", True) and any(n.text.startswith("dinner") for n in ns), [n.text for n in ns if n.text][:30])
 
 
 @case(D, "抓價結果：價格變動很大的用警示色列出，成功的只列市值最大的 3 檔、其他可以展開", visual=True)

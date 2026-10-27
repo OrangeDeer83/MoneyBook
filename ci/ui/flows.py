@@ -188,8 +188,7 @@ def person_unfold():
 def to_receive(who):
     """報銷／欠款總覽：點人名進他的頁面，再按下面的「收款」"""
     tap_person(who)
-    d.wait_text("紀錄", timeout=10)
-    d.time.sleep(0.6)
+    person_page()
     d.tap_text("收款", exact=True, lowest=True)
     d.wait_text("這次收到多少", timeout=15)
 
