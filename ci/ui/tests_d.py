@@ -4063,7 +4063,7 @@ def person_tabs_seed():
     return s
 
 
-def scroll_to(prefix, tries=10):
+def scroll_to_row(prefix, tries=10):
     """往下捲到開頭是 prefix 的那一列出現在畫面上"""
     for _ in range(tries):
         n = next((x for x in d.nodes() if x.text.startswith(prefix)), None)
@@ -4084,7 +4084,7 @@ def t_person_tabs():
     d.check("三個分頁：Amy欠我 15、我欠Amy 2、紀錄 2；一進來是欠比較多的「Amy欠我」",
             all(d.has(ns, t, True) for t in ("Amy欠我 15", "我欠Amy 2", "紀錄 2")) and d.has(ns, "b00", False) and not any(n.text.startswith("d0") for n in ns),
             [n.text for n in ns if n.text][:30])
-    row = scroll_to("b13")
+    row = scroll_to_row("b13")
     d.check("往下捲找到 b13", row is not None)
     ns = d.shot("捲到下面")
     d.check("捲到下面時分頁列還在畫面上", any(n.text.startswith("我欠Amy") for n in ns), [n.text for n in ns if n.text][:12])
@@ -4109,10 +4109,10 @@ def t_person_tabs():
     r2 = next((n for n in ns if n.text.startswith("b13")), None)
     d.check("返回後還在 Amy欠我 分頁、停在 b13 那裡", r2 is not None and abs(r2.cy - y0) < 40, (r2, y0))
     # 最下面「已收齊的 2 筆」：點了展開
-    fold = scroll_to("已收齊的 2 筆")
+    fold = scroll_to_row("已收齊的 2 筆")
     d.check("已收齊的收在最下面「已收齊的 2 筆」，還沒展開時沒有 c0", fold is not None and not any(n.text.startswith("c0") for n in d.nodes()))
     f.person_unfold()
-    scroll_to("c1")
+    scroll_to_row("c1")
     ns = d.shot("展開已收齊的")
     d.check("展開後列出 c0、c1（已收齊）", any(n.text.startswith("c0") for n in ns) or any(n.text.startswith("c1") for n in ns), [n.text for n in ns if n.text][-12:])
     f.person_tab("紀錄")

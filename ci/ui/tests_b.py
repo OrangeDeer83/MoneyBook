@@ -336,7 +336,9 @@ def t_short_giveup():
     d.check("已收款分頁有 Hua 的收款", row is not None)
     if row:
         d.tap(row)
-        d.time.sleep(1.5)
+        f.person_page()
+        f.person_tab("欠我")
+        f.person_unfold()        # 不追了的帳算結清，收在「已收齊的 N 筆」裡
         ns = d.shot("Hua 的明細")
         d.check("帳單顯示「不追了，少收 $300」", d.has(ns, "不追了，少收 $300"))
 
