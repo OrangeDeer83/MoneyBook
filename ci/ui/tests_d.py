@@ -3693,8 +3693,8 @@ def t_settle_group():
     d.check("明細有「分帳結清・收 Bob」+$700", d.has(ns, "分帳結清・收 Bob", True) and d.has(ns, "+$700", True), [n.text for n in ns if n.text][:30])
 
 
-@case(D, "依分帳結論結清：實際少收 50 選「繼續欠」，差的留在勾的那筆（Amy 還欠 50）", visual=True)
-def t_settle_keep():
+def settle_keep_open(actual):
+    """篩 #tokyo（照理說收到 700），實際收到改成 actual，選「繼續欠」，捲到人名都看得到"""
     d.fresh(settle_seed())
     f.open_reimb_home()
     d.tap_text("依分帳結論結清", exact=True)
@@ -3703,32 +3703,70 @@ def t_settle_keep():
     d.time.sleep(1)
     d.tap_text("下一步", exact=True)
     d.wait_text("分帳軟體的結論", timeout=10)
-    ed = d.edits()
-    d.fill(ed[0], "650")
+    d.fill(d.edits()[0], actual)
     d.hide_ime()
-    ns = d.nodes()
-    d.check("提示少了 $50", any("少了 $50" in n.text for n in ns), [n.text for n in ns if n.text][-20:])
     for _ in range(3):
         if d.has(d.nodes(), "繼續欠", True):
             break
         d.swipe(540, 1600, 540, 1000, 500)
     d.tap_text("繼續欠", exact=True)
     d.time.sleep(1)
+    for _ in range(4):
+        ns = d.nodes()
+        if d.has(ns, "Amy", True) and d.has(ns, "Bob", True):
+            break
+        d.swipe(540, 1600, 540, 1000, 500)
+        d.time.sleep(0.5)
+
+
+def keep_person_box(name):
+    ns = d.nodes()
+    row = d.first(ns, name, True)
+    boxes = [n for n in ns if n.checkable and row and abs(n.cy - row.cy) < 60 and n.x1 < row.x1]
+    return boxes[0] if boxes else None
+
+
+@case(D, "依分帳結論結清：實際少收 50 選「繼續欠」，勾 Amy＝差的全部留給她（Amy 還欠 50）", visual=True)
+def t_settle_keep():
+    settle_keep_open("650")
     ns = d.shot("選繼續欠")
-    d.check("出現「差的留在哪幾筆」，預設勾最新的（Bob・train）", d.has(ns, "差的留在哪幾筆（還沒收的）", True), [n.text for n in ns if n.text][-20:])
-    # 改成留在 Amy 那筆：取消 Bob、勾 Amy
-    for who in ("Bob", "Amy"):
-        row = next((n for n in ns if n.text.startswith(who + "・")), None)
-        if row:
-            boxes = [n for n in ns if n.checkable and abs(n.cy - row.cy) < 40]
-            if boxes:
-                d.tap(boxes[0])
-                d.time.sleep(0.5)
-    d.shot("改留在 Amy")
+    d.check("依人列出 Amy、Bob（可留多的 Amy 在前），還沒勾人", d.has(ns, "差的留給誰（可以勾好幾個人）", True) and d.has(ns, "要留 $50・已留 $0", True)
+            and d.first(ns, "Amy", True).cy < d.first(ns, "Bob", True).cy, [n.text for n in ns if n.text][-20:])
+    d.tap(keep_person_box("Amy"))
+    d.time.sleep(0.8)
+    ns = d.shot("勾 Amy")
+    d.check("勾 Amy：已留 $50", d.has(ns, "要留 $50・已留 $50", True) and d.has(ns, "留 $50", True), [n.text for n in ns if n.text][-20:])
     d.tap_text("確認結清", exact=True)
     d.wait_text("別人欠我", timeout=10)
     ns = d.shot("結清之後")
     d.check("別人欠我 $200（Dan 150＋Amy 還欠 50）", amount_right_of(ns, "別人欠我") == "$200", [n.text for n in ns if n.text][:20])
+
+
+@case(D, "依分帳結論結清「繼續欠」：勾兩個人自己填各留多少（Amy 180、Bob 120），展開可以排序", visual=True)
+def t_settle_keep_two():
+    settle_keep_open("400")
+    d.tap(keep_person_box("Amy"))
+    d.time.sleep(0.8)
+    d.tap(keep_person_box("Bob"))
+    d.time.sleep(0.8)
+    ns = d.shot("勾 Amy、Bob")
+    ed = d.edits()
+    d.check("勾兩個人：多兩格留多少，先填滿 Amy（300）、Bob 0", len(ed) >= 3 and ed[-2].text == "300" and d.has(ns, "要留 $300・已留 $300", True), [e.text for e in ed])
+    d.fill(ed[-1], "120")
+    d.hide_ime()
+    d.time.sleep(0.8)
+    ns = d.shot("Bob 改 120")
+    ed = d.edits()
+    d.check("Bob 改 120：Amy 自動補成 180", ed[-2].text == "180" and d.has(ns, "要留 $300・已留 $300", True), [e.text for e in ed])
+    d.tap_text("展開", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("展開 Amy")
+    d.check("展開：看得到排序和 Amy 那筆留 $180", d.has(ns, "金額大到小", True) and d.has(ns, "留 $180", True), [n.text for n in ns if n.text][-20:])
+    d.tap_text("確認結清", exact=True)
+    d.wait_text("別人欠我", timeout=10)
+    ns = d.shot("結清之後")
+    d.check("別人欠我 $450（Dan 150＋Amy 180＋Bob 120）", amount_right_of(ns, "別人欠我") == "$450" and d.has(ns, "$180", True) and d.has(ns, "$120", True),
+            [n.text for n in ns if n.text][:30])
 
 
 @case(D, "報銷／欠款：從某人的頁面、從記一筆改帳回來，停在原本捲到的位置", visual=True)
