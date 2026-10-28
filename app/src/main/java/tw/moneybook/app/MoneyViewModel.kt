@@ -465,9 +465,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 依分帳結論結清（見 withSettle）；成功回傳 true，跳提示可以復原 */
     fun settleUp(
         reimbKeys: List<ItemKey>, debtKeys: List<ItemKey>, moves: List<SettleMove>, day: Long, time: Int,
-        mode: SettleDiff, keepKeys: List<ItemKey>,
+        mode: SettleDiff, keep: Map<ItemKey, Long>,
     ): Boolean {
-        val after = data.withSettle(reimbKeys, debtKeys, moves, day, time, mode, keepKeys) ?: return false
+        val after = data.withSettle(reimbKeys, debtKeys, moves, day, time, mode, keep) ?: return false
         commit(after)
         val id = after.settles.last().id
         _messages.tryEmit(UiMsg("已結清 ${reimbKeys.size + debtKeys.size} 筆", "復原") {

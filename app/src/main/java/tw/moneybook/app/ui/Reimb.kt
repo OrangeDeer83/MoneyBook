@@ -2102,12 +2102,48 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
     // 正在挑第幾筆錢的「從誰／給誰」（-1 是沒有）
     var pickWho by remember { mutableStateOf(-1) }
     var keepMode by remember { mutableStateOf(false) }
-    val keep = remember { mutableStateListOf<String>() }
+    // 繼續欠：差的留給誰（照勾的順序）、每人留多少（勾兩個人以上才填）、自己改過勾哪幾筆帳的人、展開的人、展開後怎麼排（0 日期新到舊、1 舊到新、2 金額大到小）
+    val keepWho = remember { mutableStateListOf<String>() }
+    val keepAmt = remember { mutableStateMapOf<String, Long>() }
+    val keepPicked = remember { mutableStateMapOf<String, Set<String>>() }
+    val keepOpen = remember { mutableStateListOf<String>() }
+    var keepSort by remember { mutableStateOf(0) }
     val actual = moves.sumOf { m -> (m.amt.toLongOrNull() ?: 0L).let { if (m.receive) it else -it } }
     val diff = actual - expected
-    // 繼續欠：少收留在報銷（別人欠我）、多收留在欠款（我欠別人），從最新的排
-    val keepChoices = sel.filter { it.debt == (diff > 0L) }.sortedWith(compareByDescending<SettleItem> { it.txn.day }.thenByDescending { it.txn.id })
-    val keepSum = keepChoices.filter { it.id in keep }.sumOf { it.twd }
+    val gap = kotlin.math.abs(diff)
+    // 少收留在報銷（別人欠我）、多收留在欠款（我欠別人）；人照可以留的多的在前
+    val keepChoices = sel.filter { it.debt == (diff > 0L) }
+    val keepPeople = keepChoices.groupBy { it.who }.toList().sortedByDescending { (_, l) -> l.sumOf { it.twd } }
+    fun billsOf(who: String) = keepChoices.filter { it.who == who }
+    // 這個人可以用的帳：自己勾過就是勾的那幾筆，不然是他全部的帳
+    fun usable(who: String) = keepPicked[who]?.let { ids -> billsOf(who).filter { it.id in ids } } ?: billsOf(who)
+    fun capOf(who: String) = usable(who).sumOf { it.twd }
+    // 只勾一個人：全部留給他；兩個人以上照填的
+    fun keepOf(who: String) = if (keepWho.size == 1) gap else keepAmt[who] ?: 0L
+    // 每一筆帳留多少（SettleItem.id → 金額）：每個人金額大的帳先放滿
+    val keepSplit = keepWho.flatMap { w -> tw.moneybook.app.keepSpread(usable(w).map { it.id to it.twd }, keepOf(w)) }.toMap()
+    val keepSum = keepWho.sumOf { keepOf(it) }
+    // 把 target 補成剛好：差額扣掉其他人留的，不超過他可以留的
+    fun refill(target: String?) {
+        if (target == null || keepWho.size < 2) return
+        keepAmt[target] = (gap - keepWho.filter { it != target }.sumOf { keepAmt[it] ?: 0L }).coerceIn(0L, capOf(target))
+    }
+    fun keepToggle(who: String, on: Boolean) {
+        if (on) {
+            keepWho.add(who)
+            keepPicked.remove(who)
+            // 先填滿先勾的人，剩下的給後勾的
+            keepAmt[who] = (gap - keepWho.filter { it != who }.sumOf { keepAmt[it] ?: 0L }).coerceIn(0L, capOf(who))
+        } else {
+            keepWho.remove(who)
+            keepAmt.remove(who)
+            keepPicked.remove(who)
+            refill(keepWho.lastOrNull())
+        }
+    }
+    // 差額變了（改了實際收付的錢）：最後勾的人補成剛好；換邊了（少收變多收）就重勾
+    LaunchedEffect(diff > 0L) { keepWho.clear(); keepAmt.clear(); keepPicked.clear(); keepOpen.clear() }
+    LaunchedEffect(gap) { refill(keepWho.lastOrNull()) }
     val tries = rememberNeedTries()
     val need = if (step == 0) firstNeed(if (sel.isEmpty()) Need("pick", "請至少勾一筆要結清的帳") else null)
     else firstNeed(
@@ -2120,7 +2156,11 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
         }.toTypedArray(),
         if (moves.isEmpty()) Need("moves", "請至少填一筆實際收到或付出的錢") else null,
         if (diff != 0L && keepMode && keepChoices.isEmpty()) Need("keep", if (diff < 0L) "沒有別人欠我的帳可以留，請選「差的算我的」" else "沒有我欠別人的帳可以留，請選「差的算我的」") else null,
-        if (diff != 0L && keepMode && keepSum < kotlin.math.abs(diff)) Need("keep", "勾的帳加起來不夠留下 ${formatMoney(kotlin.math.abs(diff))}") else null,
+        if (diff != 0L && keepMode && keepChoices.isNotEmpty() && keepWho.isEmpty()) Need("keep", "請勾差的要留給誰") else null,
+        *keepWho.map { w ->
+            if (diff != 0L && keepMode && keepOf(w) > capOf(w)) Need("keep", "${ownerLabel(w)}勾的帳只能留 ${formatMoney(capOf(w))}，請再勾別人或改金額") else null
+        }.toTypedArray(),
+        if (diff != 0L && keepMode && keepWho.isNotEmpty() && keepSum != gap) Need("keep", "留的加起來要剛好 ${formatMoney(gap)}，現在是 ${formatMoney(keepSum)}") else null,
     )
     val nv = NeedView(need, tries.count)
 
@@ -2250,16 +2290,13 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                                 Spacer(Modifier.height(6.dp))
                                 listOf(
                                     false to ("差的算我的" to (if (diff < 0L) "全部結清，少收的 ${formatMoney(-diff)} 算進我的支出" else "全部結清，多的 ${formatMoney(diff)} 從我的支出扣掉（或算收入）")),
-                                    true to ("繼續欠" to (if (diff < 0L) "差的 ${formatMoney(-diff)} 留在勾的帳上，之後再收" else "差的 ${formatMoney(diff)} 留在勾的帳上，我之後再還")),
+                                    true to ("繼續欠" to (if (diff < 0L) "差的 ${formatMoney(-diff)} 留給勾的人，之後再收" else "差的 ${formatMoney(diff)} 留在我欠誰的帳上，之後再還")),
                                 ).forEach { (k, txt) ->
                                     Row(
                                         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
                                             keepMode = k
-                                            if (k && keep.isEmpty()) {
-                                                // 預設勾最新的幾筆，剛好夠留下差額
-                                                var left = kotlin.math.abs(diff)
-                                                for (c in keepChoices) { if (left <= 0L) break; keep.add(c.id); left -= c.twd }
-                                            }
+                                            // 只有一個人可以留：直接勾他
+                                            if (k && keepWho.isEmpty() && keepPeople.size == 1) keepToggle(keepPeople[0].first, true)
                                         }.padding(vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
@@ -2270,17 +2307,93 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                                         }
                                     }
                                 }
-                                if (keepMode) {
-                                    Text(if (diff < 0L) "差的留在哪幾筆（還沒收的）" else "差的留在哪幾筆（我還欠的）", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(top = 6.dp))
-                                    keepChoices.forEach { s ->
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            androidx.compose.material3.Checkbox(s.id in keep, { on -> if (on) keep.add(s.id) else keep.remove(s.id) })
-                                            Text("${ownerLabel(s.who)}・${billLabel(d, s.txn)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(formatMoney(s.twd), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                                if (keepMode && keepPeople.isNotEmpty()) {
+                                    Text(
+                                        if (diff < 0L) "差的留給誰（可以勾好幾個人）" else "差的留在我欠誰的帳上（可以勾好幾個人）",
+                                        style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                                    )
+                                    Text(
+                                        "要留 ${formatMoney(gap)}・已留 ${formatMoney(keepSum)}",
+                                        style = MaterialTheme.typography.bodyMedium, color = if (keepSum == gap) cute.income else cute.expense,
+                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(cute.soft).padding(horizontal = 12.dp, vertical = 8.dp),
+                                    )
+                                    if (keepOpen.isNotEmpty()) {
+                                        ChipRow(Modifier.padding(top = 8.dp)) {
+                                            listOf("日期新到舊", "日期舊到新", "金額大到小").forEachIndexed { i, s -> CuteChip(s, keepSort == i, { keepSort = i }) }
+                                        }
+                                    }
+                                    keepPeople.forEach { (w, bills) ->
+                                        val on = w in keepWho
+                                        val open = w in keepOpen
+                                        // 他全部的帳加起來都不夠：框淡一點，提醒要搭配別人
+                                        val short = bills.sumOf { it.twd } < gap
+                                        Column(Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.background)) {
+                                            Row(
+                                                Modifier.fillMaxWidth().clickable { if (open) keepOpen.remove(w) else keepOpen.add(w) }.padding(end = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                androidx.compose.material3.Checkbox(
+                                                    on, { keepToggle(w, it) },
+                                                    colors = if (short) androidx.compose.material3.CheckboxDefaults.colors(uncheckedColor = cute.sub.copy(alpha = 0.4f)) else androidx.compose.material3.CheckboxDefaults.colors(),
+                                                )
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(ownerLabel(w), style = MaterialTheme.typography.titleSmall, color = if (short && !on) cute.sub else cute.ink)
+                                                    Text("${bills.size} 筆・可留 ${formatMoney(bills.sumOf { it.twd })}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                                                }
+                                                if (on && keepWho.size >= 2) {
+                                                    Text("留", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                                    Spacer(Modifier.width(6.dp))
+                                                    CompactField(
+                                                        (keepAmt[w] ?: 0L).let { if (it == 0L) "" else it.toString() },
+                                                        { v ->
+                                                            keepAmt[w] = v.filter { it.isDigit() }.take(9).toLongOrNull() ?: 0L
+                                                            // 改了一個人，最後勾的另一個人補成剛好
+                                                            refill(keepWho.lastOrNull { it != w })
+                                                        },
+                                                        "0", Modifier.width(96.dp), number = true, error = nv.on("keep") && keepOf(w) > capOf(w),
+                                                    )
+                                                } else if (on) {
+                                                    Text("留 ${formatMoney(gap)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                                                }
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(if (open) "收起" else "展開", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                            }
+                                            if (open) {
+                                                val shownBills = when (keepSort) {
+                                                    1 -> bills.sortedWith(compareBy<SettleItem> { it.txn.day }.thenBy { it.txn.id })
+                                                    2 -> bills.sortedByDescending { it.twd }
+                                                    else -> bills.sortedWith(compareByDescending<SettleItem> { it.txn.day }.thenByDescending { it.txn.id })
+                                                }
+                                                // 勾著的帳：自己改過就是改的那幾筆，不然是自動挑到的
+                                                val checked = keepPicked[w] ?: if (on) bills.filter { (keepSplit[it.id] ?: 0L) > 0L }.map { it.id }.toSet() else emptySet()
+                                                shownBills.forEach { s ->
+                                                    Row(Modifier.padding(start = 16.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        androidx.compose.material3.Checkbox(s.id in checked, { c ->
+                                                            val next = if (c) checked + s.id else checked - s.id
+                                                            when {
+                                                                next.isEmpty() -> keepToggle(w, false)
+                                                                !on -> {
+                                                                    keepWho.add(w)
+                                                                    keepPicked[w] = next
+                                                                    keepAmt[w] = (gap - keepWho.filter { it != w }.sumOf { keepAmt[it] ?: 0L }).coerceIn(0L, capOf(w))
+                                                                }
+                                                                else -> keepPicked[w] = next
+                                                            }
+                                                        })
+                                                        Text(billLabel(d, s.txn), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                        Text(formatMoney(s.twd), style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                                                        keepSplit[s.id]?.let {
+                                                            Spacer(Modifier.width(8.dp))
+                                                            Text("留 ${formatMoney(it)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                    }
+                                                }
+                                                Spacer(Modifier.height(4.dp))
+                                            }
                                         }
                                     }
                                     nv.Message("keep")
-                                }
+                                } else if (keepMode) nv.Message("keep")
                             }
                         }
                         nv.Message("moves")
@@ -2293,7 +2406,7 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                         if (need != null) { tries.count++; return@Button }
                         if (step == 0) {
                             if (moves.isEmpty()) moves.add(SettleMoveRow(expected >= 0L, if (expected != 0L) kotlin.math.abs(expected).toString() else "", defAcc))
-                            keep.clear()
+                            keepWho.clear(); keepAmt.clear(); keepPicked.clear(); keepOpen.clear()
                             keepMode = false
                             step = 1
                             return@Button
@@ -2303,7 +2416,7 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                             moves.map { tw.moneybook.app.SettleMove(it.receive, it.who.trim(), it.amt.toLongOrNull() ?: 0L, it.acc) },
                             day, timeMin,
                             if (keepMode) tw.moneybook.app.SettleDiff.KEEP else tw.moneybook.app.SettleDiff.SELF,
-                            keepChoices.filter { it.id in keep }.map { it.key },
+                            keepChoices.mapNotNull { s -> keepSplit[s.id]?.let { s.key to it } }.toMap(),
                         )
                         if (ok) onDone()
                     },

@@ -43,6 +43,17 @@ data class ItemKey(val txnId: Long, val index: Int) {
 /** 這次結清在帳戶 a 動了多少（收到是正、付出是負） */
 fun Settle.flowFor(accountId: Long): Long = moves.filter { it.accountId == accountId }.sumOf { if (it.receive) it.amount else -it.amount }
 
+/**
+ * 「繼續欠」時差的留在某個人的哪幾筆帳、各留多少：金額大的先放滿，放到夠為止（一筆就夠時就是最大那一筆，用最少筆）。
+ * items 是（帳, 還沒結清的金額），只回傳有留到的；全部放滿還不夠時就是全部。
+ */
+fun <K> keepSpread(items: List<Pair<K, Long>>, amount: Long): List<Pair<K, Long>> {
+    var left = amount
+    return items.sortedByDescending { it.second }.mapNotNull { (k, v) ->
+        if (left <= 0L || v <= 0L) null else minOf(v, left).also { left -= it }.let { k to it }
+    }
+}
+
 /** 某個 offsetId 是不是分帳結清（不是互相抵銷） */
 fun AppData.settleOf(offsetId: Long): Settle? = if (offsetId == 0L) null else settles.firstOrNull { it.id == offsetId }
 
@@ -59,12 +70,12 @@ fun AppData.settleExpected(reimbKeys: List<ItemKey>, debtKeys: List<ItemKey>): L
  * 實際淨額和照理說的一樣：全部結清。不一樣時照 mode：
  * - SELF：全部結清。少收：從最新的報銷開始少收、那幾項結案（少收的算我的支出），還不夠就算我多還了最新的欠款；
  *         多收：從最新的欠款開始少還、那幾項算還清（免掉的從支出扣掉），還多就算最新那項報銷多收（算收入）。
- * - KEEP：差的留在 keepKeys 那幾項（少收留在報銷、多收留在欠款），照給的順序，其他全部結清。
+ * - KEEP：差的留在 keep 指定的項目、各留指定的金額（少收留在報銷、多收留在欠款），加起來要剛好是差額，其他全部結清。
  * 項目不對、帳戶不對、KEEP 留不下時回傳 null。
  */
 fun AppData.withSettle(
     reimbKeys: List<ItemKey>, debtKeys: List<ItemKey>, moves: List<SettleMove>, day: Long, time: Int,
-    mode: SettleDiff = SettleDiff.SELF, keepKeys: List<ItemKey> = emptyList(), bookId: Long = currentBook.id,
+    mode: SettleDiff = SettleDiff.SELF, keep: Map<ItemKey, Long> = emptyMap(), bookId: Long = currentBook.id,
 ): AppData? {
     if (reimbKeys.isEmpty() && debtKeys.isEmpty()) return null
     if (moves.any { m -> m.amount <= 0L || m.accountId?.let { id -> accMap[id]?.takeIf { !it.isForeign } } == null }) return null
@@ -128,13 +139,18 @@ fun AppData.withSettle(
                 last.close = true
             }
         }
-        diff < 0L -> {
-            val keep = keepKeys.mapNotNull { k -> rs.firstOrNull { it.k == k } }
-            if (reduceR(keep, -diff, false) > 0L) return null
-        }
-        diff > 0L -> {
-            val keep = keepKeys.mapNotNull { k -> ds.firstOrNull { it.k == k } }
-            if (reduceD(keep, diff, false) > 0L) return null
+        diff != 0L -> {
+            // 每一項留多少就少收／少還多少；項目要在對的那一邊，金額不能超過它還沒結清的，加起來要剛好
+            if (keep.values.sum() != kotlin.math.abs(diff) || keep.values.any { it <= 0L }) return null
+            for ((k, amt) in keep) {
+                if (diff < 0L) {
+                    val r = rs.firstOrNull { it.k == k }?.takeIf { it.pay >= amt } ?: return null
+                    r.pay -= amt
+                } else {
+                    val x = ds.firstOrNull { it.k == k }?.takeIf { it.pay >= amt } ?: return null
+                    x.pay -= amt
+                }
+            }
         }
     }
 

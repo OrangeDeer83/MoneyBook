@@ -78,12 +78,36 @@ class SettleTest {
 
     @Test
     fun lessReceivedKeptOnChosenItem() {
-        val after = data().withSettle(rKeys, dKeys, bob(650), day + 5, 600, SettleDiff.KEEP, listOf(ItemKey(11, 0)))!!
+        val after = data().withSettle(rKeys, dKeys, bob(650), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(11, 0) to 50L))!!
         assertEquals(50L, after.t(11).items[0].remaining)     // Amy 還欠 50
         assertEquals(0L, after.t(12).items[0].remaining)
         assertEquals(data().txns.expenseSum(), after.txns.expenseSum())
-        // 留不下（選的項目不夠）就不行
-        assertNull(data().withSettle(rKeys, dKeys, bob(100), day + 5, 600, SettleDiff.KEEP, listOf(ItemKey(12, 0))))
+        // 留不下（選的項目不夠）、加起來不是剛好差額、留在欠款那一邊都不行
+        assertNull(data().withSettle(rKeys, dKeys, bob(100), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(12, 0) to 600L)))
+        assertNull(data().withSettle(rKeys, dKeys, bob(650), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(11, 0) to 40L)))
+        assertNull(data().withSettle(rKeys, dKeys, bob(650), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(13, 0) to 50L)))
+    }
+
+    @Test
+    fun lessReceivedSplitBetweenTwoPeople() {
+        // 少收 300：Amy 留 120、Bob 留 180
+        val after = data().withSettle(rKeys, dKeys, bob(400), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(11, 0) to 120L, ItemKey(12, 0) to 180L))!!
+        assertEquals(120L, after.t(11).items[0].remaining)
+        assertEquals(180L, after.t(12).items[0].remaining)
+        assertFalse(after.t(11).items[0].closed)
+        assertEquals(0L, after.debtOutstanding())
+    }
+
+    @Test
+    fun keepSpreadUsesFewestBiggestFirst() {
+        val bills = listOf("a" to 180L, "b" to 1500L, "c" to 400L)
+        // 一筆就夠：挑最大的那一筆
+        assertEquals(listOf("b" to 650L), keepSpread(bills, 650L))
+        // 一筆不夠：大的先放滿
+        assertEquals(listOf("b" to 1500L, "c" to 100L), keepSpread(bills, 1600L))
+        // 全部都不夠：全部放滿
+        assertEquals(listOf("b" to 1500L, "c" to 400L, "a" to 180L), keepSpread(bills, 5000L))
+        assertTrue(keepSpread(bills, 0L).isEmpty())
     }
 
     @Test
@@ -94,7 +118,7 @@ class SettleTest {
         assertTrue(self.t(13).debtItems[0].done)
         assertEquals(0L, self.debtOutstanding())
         assertEquals(before.txns.expenseSum() - 50, self.txns.expenseSum())
-        val keep = before.withSettle(rKeys, dKeys, bob(750), day + 5, 600, SettleDiff.KEEP, listOf(ItemKey(13, 0)))!!
+        val keep = before.withSettle(rKeys, dKeys, bob(750), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(13, 0) to 50L))!!
         assertEquals(50L, keep.debtOutstanding())               // 我還欠 Carol 50
         assertEquals(before.txns.expenseSum(), keep.txns.expenseSum())
     }
