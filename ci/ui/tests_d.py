@@ -3705,6 +3705,9 @@ def settle_keep_open(actual):
     d.wait_text("分帳軟體的結論", timeout=10)
     d.fill(d.edits()[0], actual)
     d.hide_ime()
+    short = 700 - int(actual)
+    ns = d.nodes()
+    d.check(f"提示少了 ${short}", any(f"少了 ${short}" in n.text for n in ns), [n.text for n in ns if n.text][-20:])
     for _ in range(3):
         if d.has(d.nodes(), "繼續欠", True):
             break
