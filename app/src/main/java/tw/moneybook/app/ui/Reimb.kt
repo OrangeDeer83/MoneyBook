@@ -2359,7 +2359,8 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                                                         "0", Modifier.width(96.dp), number = true, error = nv.on("keep") && keepOf(w) > capOf(w),
                                                     )
                                                 } else if (on) {
-                                                    Text("留 ${formatMoney(gap)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                                                    // 只勾一個人：顯示實際留在他帳上的錢（＝上面的已留），勾的帳不夠留時紅色
+                                                    Text("留 ${formatMoney(keepSum)}", style = MaterialTheme.typography.bodyMedium, color = if (keepSum == gap) MaterialTheme.colorScheme.primary else cute.expense)
                                                 }
                                                 Spacer(Modifier.width(8.dp))
                                                 Text(if (open) "收起" else "展開", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
