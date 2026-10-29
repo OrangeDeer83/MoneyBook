@@ -3772,6 +3772,43 @@ def t_settle_keep_two():
             [n.text for n in ns if n.text][:30])
 
 
+@case(D, "依分帳結論結清「繼續欠」：只勾一個人但他的帳不夠留，那一列顯示實際留的（紅色），再勾別人補齊", visual=True)
+def t_settle_keep_short():
+    settle_keep_open("50")
+    d.tap(keep_person_box("Amy"))
+    d.time.sleep(0.8)
+    ns = d.shot("只勾 Amy（不夠留）")
+    d.check("只勾 Amy：那一列留 $600、上面已留 $600", d.has(ns, "留 $600", True) and d.has(ns, "要留 $650・已留 $600", True), [n.text for n in ns if n.text][-20:])
+    d.tap_text("確認結清", exact=True)
+    d.time.sleep(0.8)
+    # 提示在人名列下面、不會自動捲過去，可能在畫面外：往上捲一點找，記下捲了幾次
+    moved = 0
+    for _ in range(3):
+        if any("只能留 $600" in n.text for n in d.nodes()):
+            break
+        d.swipe(540, 1600, 540, 1300, 400)
+        moved += 1
+        d.time.sleep(0.5)
+    ns = d.shot("按確認")
+    d.check("按確認：提示 Amy 勾的帳只能留 $600", any("只能留 $600" in n.text for n in ns), [n.text for n in ns if n.text][-20:])
+    # 原路捲回去，上面那條和 Amy 的格子才會在畫面上
+    for _ in range(moved):
+        d.swipe(540, 1300, 540, 1600, 400)
+        d.time.sleep(0.5)
+    bob = keep_person_box("Bob")
+    if not d.check("看得到 Bob 的框", bob is not None, [n.text for n in d.nodes() if n.text][-20:]):
+        return
+    d.tap(bob)
+    d.time.sleep(0.8)
+    ns = d.shot("再勾 Bob")
+    ed = d.edits()
+    d.check("再勾 Bob：Amy 600、Bob 補 50，已留 $650", len(ed) >= 3 and ed[-2].text == "600" and ed[-1].text == "50" and d.has(ns, "要留 $650・已留 $650", True), [e.text for e in ed])
+    d.tap_text("確認結清", exact=True)
+    d.wait_text("別人欠我", timeout=10)
+    ns = d.shot("結清之後")
+    d.check("別人欠我 $800（Dan 150＋Amy 600＋Bob 50）", amount_right_of(ns, "別人欠我") == "$800", [n.text for n in ns if n.text][:30])
+
+
 @case(D, "報銷／欠款：從某人的頁面、從記一筆改帳回來，停在原本捲到的位置", visual=True)
 def t_reimb_keep_scroll():
     s = S.Seed(f.today())
