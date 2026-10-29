@@ -2045,7 +2045,7 @@ private class SettleItem(val key: tw.moneybook.app.ItemKey, val debt: Boolean, v
 
 /**
  * 依分帳結論結清（見 Settle.kt）：第一步勾要一起結清的帳（可以用標籤、期間篩選，整個人或某幾筆取消），
- * 第二步照分帳軟體的結論填實際收到／付出的錢；和照理說的不一樣時選「差的算我的」或「繼續欠」（勾差的留在哪幾筆）。
+ * 第二步照分帳軟體的結論填實際收到／付出的錢；和照理說的不一樣時選「差的算我的」或「繼續欠」（依人挑差的留給誰、各留多少，留在他的哪幾筆自動挑，展開可以改）。
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -2122,18 +2122,24 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
     fun keepOf(who: String) = if (keepWho.size == 1) gap else keepAmt[who] ?: 0L
     // 每一筆帳留多少（SettleItem.id → 金額）：每個人金額大的帳先放滿
     val keepSplit = keepWho.flatMap { w -> tw.moneybook.app.keepSpread(usable(w).map { it.id to it.twd }, keepOf(w)) }.toMap()
-    val keepSum = keepWho.sumOf { keepOf(it) }
+    // 實際分到帳上的錢（勾的帳不夠留時會比填的少）
+    val keepSum = keepSplit.values.sum()
     // 把 target 補成剛好：差額扣掉其他人留的，不超過他可以留的
     fun refill(target: String?) {
-        if (target == null || keepWho.size < 2) return
+        // 只勾一個人時也要記，之後再勾別人才會從他的金額接著算
+        if (target == null) return
         keepAmt[target] = (gap - keepWho.filter { it != target }.sumOf { keepAmt[it] ?: 0L }).coerceIn(0L, capOf(target))
+    }
+    // 勾一個人；picked 是展開後自己勾的那幾筆（null＝自動挑）
+    fun keepOn(who: String, picked: Set<String>? = null) {
+        keepWho.add(who)
+        if (picked == null) keepPicked.remove(who) else keepPicked[who] = picked
+        // 先填滿先勾的人，剩下的給後勾的
+        refill(who)
     }
     fun keepToggle(who: String, on: Boolean) {
         if (on) {
-            keepWho.add(who)
-            keepPicked.remove(who)
-            // 先填滿先勾的人，剩下的給後勾的
-            keepAmt[who] = (gap - keepWho.filter { it != who }.sumOf { keepAmt[it] ?: 0L }).coerceIn(0L, capOf(who))
+            keepOn(who)
         } else {
             keepWho.remove(who)
             keepAmt.remove(who)
@@ -2372,12 +2378,13 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                                                             val next = if (c) checked + s.id else checked - s.id
                                                             when {
                                                                 next.isEmpty() -> keepToggle(w, false)
-                                                                !on -> {
-                                                                    keepWho.add(w)
+                                                                !on -> keepOn(w, next)
+                                                                else -> {
+                                                                    // 勾的帳變少，留的跟著縮；最後勾的另一個人補成剛好
                                                                     keepPicked[w] = next
-                                                                    keepAmt[w] = (gap - keepWho.filter { it != w }.sumOf { keepAmt[it] ?: 0L }).coerceIn(0L, capOf(w))
+                                                                    keepAmt[w] = (keepAmt[w] ?: 0L).coerceAtMost(capOf(w))
+                                                                    refill(keepWho.lastOrNull { it != w })
                                                                 }
-                                                                else -> keepPicked[w] = next
                                                             }
                                                         })
                                                         Text(billLabel(d, s.txn), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
