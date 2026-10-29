@@ -70,3 +70,11 @@
 ## 相依版本
 
 AGP 8.7.3、Kotlin 2.1.0、Compose BOM 2024.12.01、Gradle 8.11.1（wrapper）、minSdk 26、targetSdk 35、JDK 17
+
+## 程式碼審查
+- 每次完成一批程式碼修改後，先用 `git diff` 產生差異，再交給 diff-reviewer agent 審查，並把 diff 內容放在 agent 的 prompt 裡。
+- 不要自己審查，一律委派給 diff-reviewer。
+- 回報時原封不動貼出 reviewer 的輸出。
+- 審查是循環的，步驟照 `.claude/commands/review.md`：審查 → 修正 → 再審，直到通過，最多 5 輪。
+  - 每一輪開頭都告訴使用者現在是第幾輪。
+  - 結束後用 Artifact 總結。
