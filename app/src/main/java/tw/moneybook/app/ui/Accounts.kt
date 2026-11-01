@@ -541,7 +541,8 @@ private fun AdjustBalanceDialog(vm: MoneyViewModel, acc: Account, isCard: Boolea
     val target = tw.moneybook.app.Calc.evalSigned(expr, dec)
     val current = remember(d, day, time) { d.balanceAt(acc.id, day, time) }
     val tries = rememberNeedTries()
-    val need = firstNeed(if (target == null) Need("target", "請輸入帳戶那時候實際的餘額") else null)
+    val divZero = tw.moneybook.app.Calc.divZero(expr)
+    val need = firstNeed(if (target == null && !divZero) Need("target", "請輸入帳戶那時候實際的餘額") else null)
     val nv = NeedView(need, tries.count)
     fun money(v: Long) = acc.fmt(v)
     val sym = if (acc.isForeign) acc.cur.symbol.trim() else tw.moneybook.app.Money.twd
@@ -568,7 +569,9 @@ private fun AdjustBalanceDialog(vm: MoneyViewModel, acc: Account, isCard: Boolea
                     shown, style = MaterialTheme.typography.headlineMedium, maxLines = 1,
                     color = if ((target ?: 0L) < 0L || expr == "-") cute.expense else cute.ink,
                 )
-                if (target != null && tw.moneybook.app.Calc.hasOp(expr)) {
+                if (divZero) {
+                    Text("不能除以 0", style = MaterialTheme.typography.bodyMedium, color = cute.expense)
+                } else if (target != null && tw.moneybook.app.Calc.pending(expr, dec)) {
                     Text("＝ ${money(target)}", style = MaterialTheme.typography.bodyMedium, color = cute.sub)
                 }
             }
@@ -593,12 +596,12 @@ private fun AdjustBalanceDialog(vm: MoneyViewModel, acc: Account, isCard: Boolea
                 doneLabel = "更新", doneEnabled = true,
                 onDone = {
                     when {
+                        divZero -> {}                         // 上面已經顯示「不能除以 0」
                         target == null -> tries.count++
                         target == current -> onDismiss()      // 和記錄的一樣，不用調整
                         else -> { vm.adjustBalance(acc.id, target, day, time); onDismiss() }
                     }
                 },
-                dotKey = dec > 0,
             )
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("取消") }
         }

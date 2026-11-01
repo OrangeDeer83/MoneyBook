@@ -287,7 +287,8 @@ fun EditScreen(
     val fromFx = !debtAll && accId?.let { d.accMap[it] }?.isForeign == true
     // 選的帳戶是外幣帳戶（不管有沒有欠款）
     val fromFxAcc = accId?.let { d.accMap[it] }?.isForeign == true
-    val pending = Calc.hasOp(expr)
+    val pending = Calc.pending(expr, if (keyIsFx) dec else 0)
+    val divZero = Calc.divZero(expr)
     val tags = tagsText.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
     val effDiscount = if (type == TxType.EXPENSE) discount else 0L
     val actual = when (type) {
@@ -326,7 +327,7 @@ fun EditScreen(
         TxType.TRANSFER -> accId != null && toAccId != null && accId != toAccId
         else -> catId != null
     }
-    val canSave = if (tplMode) targetOk else hasValue && targetOk
+    val canSave = !divZero && if (tplMode) targetOk else hasValue && targetOk
     // 必填：按「完成」才檢查，照畫面由上到下只標第一個沒填好的（見 Need.kt）
     val tries = rememberNeedTries()
     val need = firstNeed(
@@ -336,6 +337,7 @@ fun EditScreen(
             else -> Need("target", "請選擇分類")
         },
         if (type == TxType.TRANSFER && plan.mode == FxMode.UNSUPPORTED) Need("target", "不同幣別的外幣帳戶之間不能直接轉帳，請先換回台幣，再買另一種外幣") else null,
+        if (divZero) Need("amount", "不能除以 0") else null,
         if (tplMode) null else when {
             (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) && keyVal > 0 && !hasValue ->
                 Need("other", if (plan.mode == FxMode.BUY) "請輸入收到的外幣金額" else "請輸入收到的台幣金額")
@@ -420,13 +422,6 @@ fun EditScreen(
         if (!otherTouched && (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL)) {
             if (keyVal <= 0L) otherText = ""
             else if (rate != null) otherText = if (plan.mode == FxMode.BUY) fxPlain(twdToFx(keyVal, dec, rate), dec) else fxToTwd(keyVal, dec, rate).toString()
-        }
-    }
-    // 從外幣模式換回台幣時，計算機裡的小數點拿掉（台幣只有整數）
-    LaunchedEffect(keyIsFx) {
-        if (!keyIsFx && '.' in expr) {
-            val v = Calc.evalMinor(expr, 2) / 100
-            expr = if (v > 0) v.toString() else ""
         }
     }
     // 外幣帳戶轉出／消費：沒有手續費、優惠、分期（報銷可以：金額用換算的台幣）
@@ -697,7 +692,8 @@ fun EditScreen(
                         else "",
                         style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f),
                     )
-                    if (pending) Text("= " + (if (keyIsFx && fxAcc != null) formatFx(keyVal, fxAcc.currency) else formatMoney(keyVal)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    if (divZero) Text("不能除以 0", style = MaterialTheme.typography.labelLarge, color = cute.expense)
+                    else if (pending) Text("= " + (if (keyIsFx && fxAcc != null) formatFx(keyVal, fxAcc.currency) else formatMoney(keyVal)), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
             }
             Text(
@@ -755,18 +751,19 @@ fun EditScreen(
         Spacer(Modifier.height(8.dp))
 
         Keypad(
-            onKey = { k -> expr = if (keyIsFx) Calc.pressFx(expr, k, dec) else Calc.press(expr, k) },
+            onKey = { k -> expr = Calc.press(expr, k, if (keyIsFx) dec else 0) },
             doneLabel = if (pending) "=" else "完成",
             doneEnabled = true,
             onDone = {
-                if (pending) {
+                if (divZero) {
+                    // 除以 0：留著算式讓使用者改，不存
+                } else if (pending) {
                     expr = if (keyVal > 0) (if (keyIsFx) fxExpr(keyVal, dec) else keyVal.toString()) else ""
                 } else {
                     doSave()
                 }
             },
             modifier = Modifier.padding(bottom = 10.dp),
-            dotKey = keyIsFx && dec > 0,
         )
     }
 
@@ -803,7 +800,7 @@ fun EditScreen(
         "unsaved" -> AlertDialog(
             onDismissRequest = { dialog = "" },
             title = { Text("要儲存修改嗎？") },
-            text = { Text(if (canSave) "你有還沒儲存的修改。" else "你有還沒儲存的修改，但目前的內容還不能儲存（${if (!tplMode && !hasValue) "沒有金額" else "資料不完整"}）。") },
+            text = { Text(if (canSave) "你有還沒儲存的修改。" else "你有還沒儲存的修改，但目前的內容還不能儲存（${if (divZero) "不能除以 0" else if (!tplMode && !hasValue) "沒有金額" else "資料不完整"}）。") },
             confirmButton = {
                 Row {
                     TextButton(onClick = { dialog = "" }) { Text("繼續編輯") }

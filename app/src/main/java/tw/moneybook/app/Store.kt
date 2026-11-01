@@ -3,6 +3,8 @@ package tw.moneybook.app
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -369,119 +371,126 @@ class Store(private val dir: File) {
     }
 }
 
-/** 計算機鍵盤：只支援加減，金額為整數 */
+/**
+ * 計算機鍵盤：加減乘除，先乘除後加減。算式裡乘是 *、除是 /，顯示時換成 × ÷。
+ * 每個數字都可以打小數點（小數位數最多是幣別的位數，至少 2 位，例如台幣 × 1.1），
+ * 結果四捨五入到幣別的最小單位（台幣到元）。
+ */
 object Calc {
     private const val MAX = 9_999_999_999L
-
-    fun eval(expr: String): Long {
-        var total = 0L
-        var cur = 0L
-        var sign = 1L
-        for (ch in expr) {
-            when {
-                ch.isDigit() -> cur = minOf(MAX, cur * 10 + (ch - '0'))
-                ch == '+' -> { total += sign * cur; cur = 0; sign = 1 }
-                ch == '-' -> { total += sign * cur; cur = 0; sign = -1 }
-            }
-        }
-        total += sign * cur
-        return total.coerceIn(0L, MAX)
-    }
-
-    fun hasOp(expr: String): Boolean = expr.drop(1).any { it == '+' || it == '-' }
-
-    fun press(expr: String, key: String): String {
-        return when (key) {
-            "⌫" -> expr.dropLast(1)
-            "C" -> ""
-            "+", "-" -> when {
-                expr.isEmpty() -> expr
-                expr.last() == '+' || expr.last() == '-' -> expr.dropLast(1) + key
-                else -> expr + key
-            }
-            else -> {
-                if (expr.length >= 30) return expr
-                val lastNum = expr.takeLastWhile { it.isDigit() }
-                if (lastNum.length >= 10) return expr
-                if (lastNum == "0") expr.dropLast(1) + key.trimStart('0').ifEmpty { "0" }
-                else if (lastNum.isEmpty() && key == "00") expr + "0"
-                else expr + key
-            }
-        }
-    }
-
-    /** 顯示用：數字加千分位，運算符號前後留空格（1200+350 → 1,200 + 350） */
-    fun pretty(expr: String): String = groupDigits(expr).first.replace("-", " − ").replace("+", " + ")
+    private const val MAX_FX = 99_999_999_999L
+    private const val OPS = "+-*/"
 
     /**
-     * 可以是負數的按鍵（更新餘額用）：一開始按 − 就是負數，之後和一般計算機一樣；dec＞0 時可以打小數點（外幣）。
+     * 算式的值，用分數表示（分子, 分母），最後才除一次，避免除不盡的誤差影響四捨五入；有除以 0 回傳 null。
+     * 結尾多按的運算符號不算；開頭的負號是負數（更新餘額用）。
+     */
+    private fun exact(expr: String): Pair<BigDecimal, BigDecimal>? {
+        val e = expr.trimEnd { it in OPS }
+        var tn = BigDecimal.ZERO        // 加總（分子／分母）
+        var td = BigDecimal.ONE
+        var num = BigDecimal.ONE        // 目前這一項（乘除算完才加進加總）
+        var den = BigDecimal.ONE
+        var sign = 1
+        var mul = '*'
+        fun addTerm() {
+            tn = tn.multiply(den).add((if (sign < 0) num.negate() else num).multiply(td))
+            td = td.multiply(den)
+        }
+        var i = 0
+        if (e.startsWith("-")) { sign = -1; i = 1 }
+        while (true) {
+            var j = i
+            while (j < e.length && (e[j].isDigit() || e[j] == '.')) j++
+            val s = e.substring(i, j)
+            val n = if (s.isEmpty() || s == ".") BigDecimal.ZERO else BigDecimal(s)
+            if (mul == '*') num = num.multiply(n)
+            else {
+                if (n.signum() == 0) return null
+                den = den.multiply(n)
+            }
+            val c = e.getOrNull(j) ?: break
+            if (c == '+' || c == '-') {
+                addTerm()
+                num = BigDecimal.ONE
+                den = BigDecimal.ONE
+                mul = '*'
+                sign = if (c == '+') 1 else -1
+            } else {
+                mul = c
+            }
+            i = j + 1
+        }
+        addTerm()
+        return tn to td
+    }
+
+    /** 結果換成最小單位（dec 位小數）並限制範圍；有除以 0 回傳 null */
+    private fun units(expr: String, dec: Int, lo: Long, hi: Long): Long? =
+        exact(expr)?.let { (n, d) -> n.movePointRight(dec).divide(d, 0, RoundingMode.HALF_UP) }
+            ?.max(BigDecimal.valueOf(lo))?.min(BigDecimal.valueOf(hi))?.toLong()
+
+    /** 台幣的結果（整數元，不會是負的）；除以 0 是 0 */
+    fun eval(expr: String): Long = units(expr, 0, 0L, MAX) ?: 0L
+
+    /** 算式裡有沒有除以 0（畫面顯示「不能除以 0」，不能存） */
+    fun divZero(expr: String): Boolean = expr.any { it.isDigit() } && exact(expr) == null
+
+    fun hasOp(expr: String): Boolean = expr.drop(1).any { it in OPS }
+
+    /** 要先按「=」算出結果：有運算符號，或小數位數比幣別多（台幣打 1200.5 會存成 1,201，要先讓使用者看到） */
+    fun pending(expr: String, dec: Int = 0): Boolean =
+        hasOp(expr) || expr.split('+', '-', '*', '/').any { n -> '.' in n && n.length - n.indexOf('.') - 1 > dec }
+
+    /** 按鍵：dec 是幣別的小數位數（台幣 0） */
+    fun press(expr: String, key: String, dec: Int = 0): String {
+        val last = expr.takeLastWhile { it.isDigit() || it == '.' }
+        return when {
+            key == "⌫" -> expr.dropLast(1)
+            key == "C" -> ""
+            key.length == 1 && key[0] in OPS -> when {
+                expr.isEmpty() || expr == "-" -> expr
+                expr.last() in OPS -> expr.dropLast(1) + key
+                else -> expr + key
+            }
+            expr.length >= 40 -> expr
+            key == "." -> when {
+                '.' in last -> expr
+                last.isEmpty() -> expr + "0."
+                else -> expr + "."
+            }
+            '.' in last -> {
+                // 小數位數不超過幣別的位數（至少 2 位，乘除用）
+                val room = maxOf(dec, 2) - (last.length - last.indexOf('.') - 1)
+                if (room <= 0) expr else expr + key.take(room)
+            }
+            last.length >= 10 -> expr
+            last == "0" -> expr.dropLast(1) + key.trimStart('0').ifEmpty { "0" }
+            last.isEmpty() && key == "00" -> expr + "0"
+            else -> expr + key
+        }
+    }
+
+    /** 顯示用：數字加千分位，運算符號前後留空格（1200*3+50 → 1,200 × 3 + 50） */
+    fun pretty(expr: String): String = groupDigits(expr).first
+        .replace("-", " − ").replace("+", " + ").replace("*", " × ").replace("/", " ÷ ")
+
+    /**
+     * 可以是負數的按鍵（更新餘額用）：一開始按 − 就是負數，之後和一般計算機一樣。
      * 只有一個負號時再按 + 就清掉。
      */
     fun pressSigned(expr: String, key: String, dec: Int = 0): String = when {
         expr.isEmpty() && key == "-" -> "-"
         expr == "-" && (key == "+" || key == "-") -> if (key == "-") "-" else ""
-        else -> if (dec > 0) pressFx(expr, key, dec) else press(expr, key)
+        else -> press(expr, key, dec)
     }
 
-    /** 可以是負數的算式結果（最小單位，台幣 dec＝0）；還沒輸入數字（空的或只有負號）回傳 null */
-    fun evalSigned(expr: String, dec: Int = 0): Long? {
-        if (expr.none { it.isDigit() }) return null
-        var total = 0L
-        var sign = 1L
-        val cur = StringBuilder()
-        fun flush() {
-            total += sign * (parseFx(cur.toString(), dec) ?: 0L)
-            cur.clear()
-        }
-        for (ch in expr) {
-            when {
-                ch.isDigit() || ch == '.' -> cur.append(ch)
-                ch == '+' -> { flush(); sign = 1L }
-                ch == '-' -> { flush(); sign = -1L }
-            }
-        }
-        flush()
-        return total.coerceIn(-MAX_FX, MAX_FX)
-    }
+    /** 可以是負數的算式結果（最小單位，台幣 dec＝0）；還沒輸入數字（空的或只有負號）或除以 0 回傳 null */
+    fun evalSigned(expr: String, dec: Int = 0): Long? =
+        if (expr.none { it.isDigit() }) null else units(expr, dec, -MAX_FX, MAX_FX)
 
-    private const val MAX_FX = 99_999_999_999L
-
-    /** 外幣模式：金額可以有小數（dec 位），結果是最小單位（美元的分） */
-    fun evalMinor(expr: String, dec: Int): Long {
-        var total = 0L
-        var sign = 1L
-        val cur = StringBuilder()
-        fun flush() {
-            total += sign * (parseFx(cur.toString(), dec) ?: 0L)
-            cur.clear()
-        }
-        for (ch in expr) {
-            when {
-                ch.isDigit() || ch == '.' -> cur.append(ch)
-                ch == '+' -> { flush(); sign = 1L }
-                ch == '-' -> { flush(); sign = -1L }
-            }
-        }
-        flush()
-        return total.coerceIn(0L, MAX_FX)
-    }
-
-    /** 外幣模式的按鍵：多了小數點，小數位數不超過幣別的位數（日圓這類 0 位的不能打小數點） */
-    fun pressFx(expr: String, key: String, dec: Int): String {
-        val last = expr.takeLastWhile { it.isDigit() || it == '.' }
-        return when {
-            key == "." -> when {
-                dec == 0 || '.' in last -> expr
-                last.isEmpty() -> expr + "0."
-                else -> expr + "."
-            }
-            key.all { it.isDigit() } && '.' in last -> {
-                val room = dec - (last.length - last.indexOf('.') - 1)
-                if (room <= 0) expr else expr + key.take(room)
-            }
-            else -> press(expr, key)
-        }
-    }
+    /** 外幣模式：結果是最小單位（美元的分），不會是負的；除以 0 是 0 */
+    fun evalMinor(expr: String, dec: Int): Long = units(expr, dec, 0L, MAX_FX) ?: 0L
 }
 
 /** CSV 匯出與匯入 */

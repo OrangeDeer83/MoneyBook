@@ -724,23 +724,30 @@ fun RatioBar(fraction: Float, color: Color, modifier: Modifier = Modifier, thick
 
 // ───────────────────────── 計算機鍵盤 ─────────────────────────
 
+private val OP_KEYS = setOf("+", "-", "*", "/", "⌫", "C")
+
+/**
+ * 5 欄 4 列：數字、運算符號（÷ × − +）、最右邊退格／C／完成（完成是兩格高）。
+ * 傳給 onKey 的乘除是 * 和 /。
+ */
 @Composable
-fun Keypad(onKey: (String) -> Unit, doneLabel: String, doneEnabled: Boolean, onDone: () -> Unit, modifier: Modifier = Modifier, dotKey: Boolean = false) {
+fun Keypad(onKey: (String) -> Unit, doneLabel: String, doneEnabled: Boolean, onDone: () -> Unit, modifier: Modifier = Modifier) {
     val cute = LocalCute.current
     val primary = MaterialTheme.colorScheme.primary
     val haptic = LocalHapticFeedback.current
-    val rows = listOf(
-        listOf("7", "8", "9", "⌫"),
-        listOf("4", "5", "6", "+"),
-        listOf("1", "2", "3", "-"),
-        listOf("C", "0", if (dotKey) "." else "00", "OK"),
+    val cols = listOf(
+        listOf("7", "4", "1", "00"),
+        listOf("8", "5", "2", "0"),
+        listOf("9", "6", "3", "."),
+        listOf("/", "*", "-", "+"),
+        listOf("⌫", "C", "OK"),
     )
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        rows.forEach { r ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                r.forEach { k ->
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        cols.forEach { c ->
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                c.forEach { k ->
                     val isOk = k == "OK"
-                    val isOp = k == "+" || k == "-" || k == "⌫" || k == "C"
+                    val isOp = k in OP_KEYS
                     val bg = when {
                         isOk -> if (doneEnabled) primary else primary.copy(alpha = 0.4f)
                         isOp -> cute.soft
@@ -754,12 +761,14 @@ fun Keypad(onKey: (String) -> Unit, doneLabel: String, doneEnabled: Boolean, onD
                     val label = when (k) {
                         "OK" -> doneLabel
                         "-" -> "−"
+                        "*" -> "×"
+                        "/" -> "÷"
                         else -> k
                     }
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
+                            .fillMaxWidth()
+                            .height(if (isOk) 108.dp else 50.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(bg)
                             .clickable {

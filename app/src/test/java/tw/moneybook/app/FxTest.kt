@@ -140,7 +140,7 @@ class FxTest {
 
     private fun typed(dec: Int, vararg keys: String): String {
         var e = ""
-        for (k in keys) e = Calc.pressFx(e, k, dec)
+        for (k in keys) e = Calc.press(e, k, dec)
         return e
     }
 
@@ -157,11 +157,12 @@ class FxTest {
         assertEquals("1.2", typed(2, "1", ".", ".", "2"))            // 第二個小數點不收
         assertEquals("0.5", typed(2, ".", "5"))                      // 一開頭按小數點補 0
         assertEquals("5+0.5", typed(2, "5", "+", ".", "5"))
-        assertEquals("120", typed(0, "1", ".", "2", "0"))            // 日圓沒有小數
+        assertEquals("1.20", typed(0, "1", ".", "2", "0"))           // 日圓也可以打小數（乘除用），至少 2 位
+        assertEquals(1L, Calc.evalMinor("1.20", 0))                  // 結果四捨五入到 1 日圓
         assertEquals("1.0", typed(2, "1", ".", "0"))
         assertEquals("1.05", typed(2, "1", ".", "0", "5"))           // 小數的 0 不會被吃掉
-        assertEquals("1.2", Calc.pressFx("1.25", "⌫", 2))
-        assertEquals("", Calc.pressFx("1.25", "C", 2))
+        assertEquals("1.2", Calc.press("1.25", "⌫", 2))
+        assertEquals("", Calc.press("1.25", "C", 2))
     }
 
     @Test
