@@ -433,6 +433,16 @@ object Calc {
     /** 台幣的結果（整數元，不會是負的）；除以 0 是 0 */
     fun eval(expr: String): Long = units(expr, 0, 0L, MAX) ?: 0L
 
+    /**
+     * 結果四捨五入到 dec 位小數後，整數部分超過 digits 位（用還沒限制範圍的值判斷，外幣算太大也抓得到）。
+     * 負的結果會變成 0，不算太大
+     */
+    fun tooBig(expr: String, digits: Int, dec: Int = 0): Boolean =
+        exact(expr)?.let { (n, d) ->
+            val v = n.divide(d, dec, RoundingMode.HALF_UP)
+            v.signum() > 0 && v.setScale(0, RoundingMode.DOWN).toPlainString().length > digits
+        } ?: false
+
     /** 算式裡有沒有除以 0（畫面顯示「不能除以 0」，不能存） */
     fun divZero(expr: String): Boolean = expr.any { it.isDigit() } && exact(expr) == null
 
@@ -469,6 +479,23 @@ object Calc {
             last.isEmpty() && key == "00" -> expr + "0"
             else -> expr + key
         }
+    }
+
+    /**
+     * 從剪貼簿的文字找出要貼的數字：第一段數字（可以有千分位、小數點），小數位超過幣別的四捨五入；
+     * 例如「NT$1,500」「1500 元」都是 1500。沒有數字、是 0、或整數超過 10 位回傳 null
+     */
+    fun clipNumber(text: String, dec: Int = 0): String? {
+        val m = Regex("""\d[\d,]*(\.\d+)?""").find(text) ?: return null
+        val n = BigDecimal(m.value.replace(",", "")).setScale(dec, RoundingMode.HALF_UP).stripTrailingZeros()
+        val plain = (if (n.scale() < 0) n.setScale(0) else n).toPlainString()
+        return if (plain.substringBefore('.').length > 10 || n.signum() == 0) null else plain
+    }
+
+    /** 貼上：算式空的或最後是運算符號就接在後面，最後是數字就換掉那個數字 */
+    fun paste(expr: String, num: String): String {
+        val base = expr.dropLastWhile { it.isDigit() || it == '.' }
+        return if ((base + num).length > 40) expr else base + num
     }
 
     /** 顯示用：數字加千分位，運算符號前後留空格（1200*3+50 → 1,200 × 3 + 50） */

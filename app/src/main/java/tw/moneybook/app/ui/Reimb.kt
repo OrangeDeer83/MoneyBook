@@ -419,9 +419,9 @@ fun ReimbEditPage(
                                     if (tab == 0) "對象（選填）" else "欠誰", Modifier.weight(1f),
                                     onFocus = { on -> if (on) nameFocus = i else if (nameFocus == i) nameFocus = -1 },
                                 )
-                                CompactField(
+                                AmountField(
                                     r.amt, { v -> r.auto = false; r.amtTouched = true; err = ""; r.amt = if (fxOn) fxInput(v, fdec) else v.filter { c -> c.isDigit() }.take(9) },
-                                    "金額", Modifier.width(if (fxOn) 132.dp else 112.dp), number = true, decimal = fxOn && fdec > 0,
+                                    "金額", if (r.who.isBlank()) "金額" else "${r.who.trim()} 的金額", Modifier.width(if (fxOn) 132.dp else 112.dp), dec = if (fxOn) fdec else 0,
                                     prefix = if (fxOn) Currencies.of(fxCur).symbol.trim() else tw.moneybook.app.Money.twd,
                                 )
                                 Text(
@@ -1159,9 +1159,9 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                             }
                         }
                         Spacer(Modifier.height(6.dp))
-                        CompactField(
+                        AmountField(
                             l.text, { v -> amountTouched = true; l.text = if (cur.isNotEmpty()) fxInput(v, dec) else v.filter { c -> c.isDigit() }.take(9); overrides.clear() },
-                            "金額", Modifier.fillMaxWidth().needInView(nv, "line$li"), number = true, decimal = cur.isNotEmpty() && dec > 0,
+                            "金額", "收到多少", Modifier.fillMaxWidth().needInView(nv, "line$li"), dec = if (cur.isNotEmpty()) dec else 0,
                             prefix = accOf(l)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
                             error = nv.on("line$li"),
                         )
@@ -1237,10 +1237,10 @@ private fun ReimbReceivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit
                                     }
                                 }
                                 if (single && isOn(c)) {
-                                    CompactField(
+                                    AmountField(
                                         overrides[c.key] ?: (if (cur0.isNotEmpty()) fxExpr(part0?.units ?: 0L, decOf(l0)) else (part0?.units ?: 0L).toString()),
                                         { v -> overrides[c.key] = if (cur0.isNotEmpty()) fxInput(v, decOf(l0)) else v.filter { ch -> ch.isDigit() }.take(9) },
-                                        "收", Modifier.width(120.dp), number = true, decimal = cur0.isNotEmpty() && decOf(l0) > 0,
+                                        "收", "這筆收多少", Modifier.width(120.dp), dec = if (cur0.isNotEmpty()) decOf(l0) else 0,
                                         prefix = accOf(l0)?.takeIf { it.isForeign }?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
                                     )
                                 }
@@ -1588,9 +1588,9 @@ private fun ReimbPayEditDialog(vm: MoneyViewModel, entry: Triple<Claim, Int, Rei
         title = { Text("修改收款") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                CompactField(
+                AmountField(
                     amt, { v -> amt = if (editFx != null) fxInput(v, editDec) else v.filter { ch -> ch.isDigit() }.take(9) },
-                    "金額", Modifier.fillMaxWidth(), number = true, decimal = editFx != null && editDec > 0, prefix = editFx?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
+                    "金額", "收款金額", Modifier.fillMaxWidth(), dec = if (editFx != null) editDec else 0, prefix = editFx?.cur?.symbol?.trim() ?: tw.moneybook.app.Money.twd,
                     error = payView.on("amt"),
                 )
                 payView.Message("amt")
@@ -1779,9 +1779,9 @@ private fun DebtRepayPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, o
                         Spacer(Modifier.height(8.dp))
                         Text(if (c.fx) "這次還了多少（$k）" else "這次還了多少", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         Spacer(Modifier.height(4.dp))
-                        CompactField(
+                        AmountField(
                             c.shown, { v -> c.s.amountText = if (c.fx) fxInput(v, c.dec) else v.filter { ch -> ch.isDigit() }.take(9) },
-                            "金額", Modifier.fillMaxWidth().needInView(nv, "amount$k"), number = true, decimal = c.fx && c.dec > 0,
+                            "金額", if (c.fx) "這次還了多少（$k）" else "這次還了多少", Modifier.fillMaxWidth().needInView(nv, "amount$k"), dec = if (c.fx) c.dec else 0,
                             prefix = if (c.fx) Currencies.of(k).symbol.trim() else tw.moneybook.app.Money.twd,
                             error = nv.on("amount$k"),
                         )
@@ -1809,9 +1809,9 @@ private fun DebtRepayPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, o
                         nv.Message("acc$k")
                         if (c.twdAsk) {
                             Spacer(Modifier.height(8.dp))
-                            CompactField(
+                            AmountField(
                                 c.s.twdInput ?: c.estTwd.toString(), { v -> c.s.twdInput = v.filter { ch -> ch.isDigit() }.take(10) },
-                                "實際扣掉的台幣", Modifier.fillMaxWidth().needInView(nv, "twd$k"), number = true, prefix = tw.moneybook.app.Money.twd, error = nv.on("twd$k"),
+                                "實際扣掉的台幣", "實際扣掉的台幣", Modifier.fillMaxWidth().needInView(nv, "twd$k"), error = nv.on("twd$k"), maxDigits = 10,
                             )
                             nv.Message("twd$k")
                             val diff = c.twd - c.estTwd
@@ -1993,14 +1993,14 @@ private fun OffsetPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDo
                             Column(Modifier.weight(1f)) {
                                 Text("抵掉的$name", style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1)
                                 Spacer(Modifier.height(4.dp))
-                                CompactField(
+                                AmountField(
                                     f.unitsShown,
                                     { v ->
                                         val t = fxInput(v, f.dec)
                                         f.st.units = t
                                         f.st.rate = parseFx(t, f.dec)?.let { u -> tw.moneybook.app.impliedRate(f.twd, u, f.dec) }?.let { tw.moneybook.app.rateText(it) } ?: ""
                                     },
-                                    "金額", Modifier.fillMaxWidth().needInView(nv, "fx${f.c}"), number = true, decimal = f.dec > 0,
+                                    "金額", "抵掉的$name", Modifier.fillMaxWidth().needInView(nv, "fx${f.c}"), dec = f.dec,
                                     prefix = Currencies.of(f.c).symbol.trim(), error = nv.on("fx${f.c}"),
                                 )
                             }
@@ -2257,9 +2257,9 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                                 Spacer(Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     PickerButton(m.who.ifBlank { if (m.receive) "從誰（選填）" else "給誰（選填）" }, { pickWho = i }, Modifier.weight(1f))
-                                    CompactField(
-                                        m.amt, { v -> m.amt = v.filter { it.isDigit() }.take(9) }, "金額", Modifier.width(120.dp),
-                                        number = true, prefix = tw.moneybook.app.Money.twd, error = nv.on("amt$i"),
+                                    AmountField(
+                                        m.amt, { v -> m.amt = v.filter { it.isDigit() }.take(9) }, "金額", if (m.receive) "收多少" else "付多少", Modifier.width(120.dp),
+                                        error = nv.on("amt$i"),
                                     )
                                 }
                                 nv.Message("amt$i")
@@ -2349,14 +2349,14 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                                                 if (on && keepWho.size >= 2) {
                                                     Text("留", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                                                     Spacer(Modifier.width(6.dp))
-                                                    CompactField(
+                                                    AmountField(
                                                         (keepAmt[w] ?: 0L).let { if (it == 0L) "" else it.toString() },
                                                         { v ->
                                                             keepAmt[w] = v.filter { it.isDigit() }.take(9).toLongOrNull() ?: 0L
                                                             // 改了一個人，最後勾的另一個人補成剛好
                                                             refill(keepWho.lastOrNull { it != w })
                                                         },
-                                                        "0", Modifier.width(96.dp), number = true, error = nv.on("keep") && keepOf(w) > capOf(w),
+                                                        "0", "留給${ownerLabel(w)}多少", Modifier.width(96.dp), prefix = "", error = nv.on("keep") && keepOf(w) > capOf(w),
                                                     )
                                                 } else if (on) {
                                                     // 只勾一個人：顯示實際留在他帳上的錢（＝上面的已留），勾的帳不夠留時紅色

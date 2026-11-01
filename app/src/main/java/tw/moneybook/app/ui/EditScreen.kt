@@ -988,21 +988,11 @@ fun EditScreen(
                             },
                             style = MaterialTheme.typography.bodySmall, color = cute.sub,
                         )
-                        OutlinedTextField(
-                            feeText, { feeText = it.filter { c -> c.isDigit() }.take(8) },
-                            label = { Text("手續費") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            visualTransformation = ThousandsVisual,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Text("手續費", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                        AmountField(feeText, { feeText = it.filter { c -> c.isDigit() }.take(8) }, "0", "手續費", Modifier.fillMaxWidth(), maxDigits = 8)
                         if (type == TxType.EXPENSE) {
-                            OutlinedTextField(
-                                discText, { discText = it.filter { c -> c.isDigit() }.take(8) },
-                                label = { Text("優惠／折扣") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                visualTransformation = ThousandsVisual,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                            Text("優惠／折扣", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            AmountField(discText, { discText = it.filter { c -> c.isDigit() }.take(8) }, "0", "優惠／折扣", Modifier.fillMaxWidth(), maxDigits = 8)
                         }
                     }
                 },

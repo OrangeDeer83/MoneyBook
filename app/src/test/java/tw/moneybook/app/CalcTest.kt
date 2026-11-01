@@ -50,6 +50,17 @@ class CalcTest {
     }
 
     @Test
+    fun tooBigUsesTheUnclampedValue() {
+        assertTrue(Calc.tooBig("9999999999*5", 9))           // 外幣會被夾成上限，還是要抓得到
+        assertTrue(Calc.tooBig("1000000000", 9))
+        assertFalse(Calc.tooBig("999999999.99", 9, 2))
+        assertTrue(Calc.tooBig("999999999.6", 9))            // 台幣四捨五入進位成 10 位
+        assertTrue(Calc.tooBig("999999999.995", 9, 2))       // 外幣進位成 1,000,000,000.00
+        assertFalse(Calc.tooBig("0-99999999999", 9))         // 負的會變成 0
+        assertFalse(Calc.tooBig("100/0", 9))
+    }
+
+    @Test
     fun keysForMultiplyDivideAndDecimals() {
         assertEquals("1200*1.1", typed("1", "2", "00", "*", "1", ".", "1"))
         assertEquals("12/", typed("1", "2", "*", "/"))       // 連按符號換成後按的
@@ -64,5 +75,22 @@ class CalcTest {
         assertFalse(Calc.pending("1200."))
         assertTrue(Calc.pending("12.345", 2))
         assertEquals("1,200 × 3 ÷ 2 − 50", Calc.pretty("1200*3/2-50"))
+    }
+
+    @Test
+    fun pasteFromClipboard() {
+        assertEquals("1500", Calc.clipNumber("NT$1,500"))
+        assertEquals("1500", Calc.clipNumber("1500 元"))
+        assertEquals("12.35", Calc.clipNumber("US$12.345", 2))
+        assertEquals("13", Calc.clipNumber("12.5"))          // 台幣四捨五入到元
+        assertEquals("12.5", Calc.clipNumber("12.50", 2))
+        assertNull(Calc.clipNumber("午餐"))
+        assertNull(Calc.clipNumber(""))
+        assertNull(Calc.clipNumber("12345678901"))           // 太大
+        assertNull(Calc.clipNumber("0.001"))                 // 四捨五入是 0：不顯示貼上
+        assertEquals("1500", Calc.paste("", "1500"))
+        assertEquals("200+1500", Calc.paste("200+", "1500"))
+        assertEquals("200+1500", Calc.paste("200+3", "1500"))
+        assertEquals("1500", Calc.paste("12.5", "1500"))
     }
 }
