@@ -4231,3 +4231,47 @@ def t_calc_muldiv():
     d.check("按 = 之後金額是 $330", d.has(ns, "$330", True), [n.text for n in ns if "$" in n.text])
     f.save_edit()
     d.wait(lambda n: n.text == "-$330", 10, "剛記的這一筆 -$330")
+
+
+@case(D, "金額欄位點了跳出小算盤：可以算 45 ÷ 3、除以 0 不能完成、取消不改", visual=True)
+def t_amount_field_keypad():
+    d.fresh(empty_seed().json())
+    f.open_add()
+    f.keypad("1000")
+    f.chip_scroll("手續費／優惠", "標籤")
+    d.time.sleep(1)
+    ed = [n for n in d.edits() if d.is_amount(n)]
+    d.check("手續費、優惠是金額欄位（不是手機鍵盤的輸入框）", len(ed) == 2, [repr(n) for n in d.edits()])
+    if len(ed) < 2:
+        return
+    d.tap(ed[0])
+    d.wait_text("÷", timeout=10)
+    ns = d.shot("點手續費：跳出小算盤")
+    d.check("跳出小算盤視窗，沒有手機鍵盤", d.has(ns, "÷", True) and d.has(ns, "完成", True) and not d.ime_shown(), [n.text for n in ns if n.text][:20])
+    f.keypad("45")
+    d.tap_text("÷", exact=True, lowest=True)
+    f.keypad("3")
+    ns = d.shot("45 ÷ 3")
+    d.check("算式 $45 ÷ 3，下面 = $15", d.has(ns, "$45 ÷ 3", True) and d.has(ns, "= $15", True), [n.text for n in ns if "$" in n.text])
+    d.tap_text("=", exact=True, lowest=True)
+    d.tap_text("完成", exact=True, lowest=True)
+    d.time.sleep(0.8)
+    ed = [n for n in d.edits() if d.is_amount(n)]
+    d.check("手續費欄位填回 15", ed and ed[0].text == "15", [n.text for n in ed])
+    d.tap(ed[1])
+    d.wait_text("÷", timeout=10)
+    f.keypad("10")
+    d.tap_text("÷", exact=True, lowest=True)
+    f.keypad("0")
+    d.tap_text("=", exact=True, lowest=True)
+    d.time.sleep(0.6)
+    ns = d.shot("優惠 10 ÷ 0 按 =")
+    d.check("除以 0：顯示「不能除以 0」，視窗還在", d.has(ns, "不能除以 0", True) and d.has(ns, "取消", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("取消", exact=True)
+    d.time.sleep(0.8)
+    ed = [n for n in d.edits() if d.is_amount(n)]
+    d.check("按取消：優惠還是空的", len(ed) == 2 and ed[1].text == "", [n.text for n in ed])
+    f.confirm_dialog()
+    d.time.sleep(1)
+    ns = d.shot("設定手續費之後")
+    d.check("記一筆顯示 + 手續費 $15、實付 $1,015", any("手續費 $15" in n.text and "$1,015" in n.text for n in ns), [n.text for n in ns if "手續費" in n.text])

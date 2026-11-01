@@ -260,9 +260,35 @@ def type_text(s):
     time.sleep(0.5)
 
 
+def is_amount(n):
+    """金額欄位（AmountField）：點了跳出小算盤視窗，不是 EditText，用描述認"""
+    return n.desc.startswith("金額欄位")
+
+
 def edits():
     # 同一列的輸入框上緣一樣高；有提示文字的框會比較高（中心點跟著變），所以用上緣分列
-    return sorted([n for n in nodes() if n.cls.endswith("EditText")], key=lambda n: (n.y1 // 40, n.cx))
+    # 金額欄位也算輸入框（用 fill 填，會自動按小算盤）
+    return sorted([n for n in nodes() if n.cls.endswith("EditText") or is_amount(n)], key=lambda n: (n.y1 // 40, n.cx))
+
+
+def amount_dialog(n, s):
+    """點金額欄位、在小算盤視窗按 C 清空、一個字一個字按 s，再按完成（有算式先按 =）"""
+    tap(n)
+    end = time.time() + 10
+    # 等小算盤獨有的 ÷（底下的對話框可能也有「取消」）
+    while time.time() < end and not any(x.text == "÷" for x in nodes()):
+        time.sleep(0.3)
+    for ch in "C" + s:
+        c = [x for x in nodes() if x.text == ch]
+        if not c:
+            raise TimeoutError(f"小算盤上找不到 {ch}")
+        tap(max(c, key=lambda x: x.cy), settle=0.3)
+    eq = [x for x in nodes() if x.text == "="]
+    if eq:
+        tap(max(eq, key=lambda x: x.cy), settle=0.3)
+    ok = [x for x in nodes() if x.text == "完成"]
+    if ok:
+        tap(max(ok, key=lambda x: x.cy))
 
 
 def select_all_delete():
@@ -273,6 +299,9 @@ def select_all_delete():
 
 def fill(n, s):
     """點進輸入框，清空後輸入；輸入完會檢查結果，不對就重來（最多 3 次）"""
+    if is_amount(n):
+        amount_dialog(n, s)
+        return
     for _ in range(3):
         tap(n)
         select_all_delete()
@@ -284,6 +313,9 @@ def fill(n, s):
 
 
 def clear(n):
+    if is_amount(n):
+        amount_dialog(n, "")
+        return
     tap(n)
     select_all_delete()
 
