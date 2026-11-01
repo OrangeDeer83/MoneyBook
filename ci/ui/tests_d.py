@@ -4200,7 +4200,7 @@ def t_person_tabs():
 
 @case(D, "記一筆計算機的乘除：先乘除後加減、台幣也能乘小數、除以 0 不能存", visual=True)
 def t_calc_muldiv():
-    d.fresh(empty_seed())
+    d.fresh(empty_seed().json())
     f.open_add()
     f.keypad("1200")
     d.tap_text("×", exact=True, lowest=True)
