@@ -5,6 +5,7 @@ name: UI Test
 # 只能手動執行（Actions 頁面，或 gh workflow run ui-test.yml --ref dev）：
 #   不填 only：跑全部用例（a、b、c、d1～d3 六個分流，約 35 分鐘；d 組用例最多，分成三台）
 #   填 only：只跑指定的用例（用例編號或名稱的一部分，逗號分隔，例如 TC121,更新餘額），一台模擬器，幾分鐘
+#   填 date（月-日，例如 11-01）：把模擬器日期改成今年的那一天再跑，用來測月初、月底等跨月的情況
 on:
   workflow_dispatch:
     inputs:
@@ -13,6 +14,9 @@ on:
         default: '35'
       only:
         description: '只跑這些用例（編號或名稱片段，逗號分隔）；留空跑全部'
+        default: ''
+      date:
+        description: '把模擬器日期改成今年的這一天再跑（月-日，例如 11-01）；留空用今天'
         default: ''
 
 permissions:
@@ -111,6 +115,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           ONLY: ${{ inputs.only }}
+          AT_DATE: ${{ inputs.date }}
         with:
           api-level: ${{ inputs.api || '35' }}
           target: google_apis
@@ -119,7 +124,7 @@ jobs:
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot-save -noaudio -no-boot-anim
-          script: ONLY="$ONLY" OUT=$PWD/out APK=$PWD/app/build/outputs/apk/debug/app-debug.apk bash ci/ui/run_shard.sh ${{ matrix.shard }}
+          script: ONLY="$ONLY" AT_DATE="$AT_DATE" OUT=$PWD/out APK=$PWD/app/build/outputs/apk/debug/app-debug.apk bash ci/ui/run_shard.sh ${{ matrix.shard }}
 
       - name: Upload screenshots
         if: always()

@@ -55,6 +55,13 @@ def _selected(r, keys):
 
 def run(shard):
     real_now = d.dev_now()
+    # 環境變數 AT_DATE（月-日，例如 11-01）：每個用例都在今年的那一天跑（時分不變），用來測月初、月底
+    at_date = os.environ.get("AT_DATE", "").strip()
+    fake_now = None
+    if at_date:
+        mo, dy = (int(x) for x in at_date.split("-"))
+        fake_now = real_now.replace(month=mo, day=dy)
+        print(f"模擬器日期改成 {fake_now:%Y-%m-%d}", flush=True)
     results = []
     if shard == "only":
         keys = [k.strip() for k in os.environ.get("ONLY", "").split(",") if k.strip()]
@@ -82,6 +89,8 @@ def run(shard):
             if r["time_at"]:
                 mo, dy, hh, mm = r["time_at"]
                 d.set_time(real_now.replace(month=mo, day=dy, hour=hh, minute=mm))
+            elif fake_now:
+                d.set_time(fake_now)
             for attempt in (1, 2):
                 rec.checks.clear()
                 rec.shots.clear()
@@ -103,7 +112,7 @@ def run(shard):
                         pass
                     break
         finally:
-            if r["time_at"]:
+            if r["time_at"] or fake_now:
                 d.reset_time(real_now)
             _cleanup(real_now)
         if r["visual"] and not rec.checks and not rec.error and rec.shots:
