@@ -815,8 +815,9 @@ def t_txn_time_unset():
 @case(D, "帳戶明細每一筆都顯示做完之後的餘額")
 def t_running_balance():
     # 測試銀行初始 $50,000。昨天（沒有時間）支出 300；今天 10:00 支出 100、11:40 收入 1,000、15:00 支出 200
+    # 帳戶明細只顯示這個月：1 號時「昨天」那筆改記今天，沒有時間的排在當天最下面，順序一樣
     s = empty_seed()
-    s.expense(-1, 300, S.C_FOOD, acc=S.BANK, note="y")
+    s.expense(s.back(1), 300, S.C_FOOD, acc=S.BANK, note="y")
     s.expense(0, 100, S.C_FOOD, acc=S.BANK, note="a", time=600)
     s.income(0, 1000, S.C_SALARY, acc=S.BANK, note="b", time=700)
     s.expense(0, 200, S.C_FOOD, acc=S.BANK, note="c", time=900)
@@ -913,6 +914,7 @@ def t_add_uses_calendar_day():
     f.tab("日曆")
     d.time.sleep(1.5)
     yday = f.today() - datetime.timedelta(days=1)
+    f.cal_show_month_of(yday)
     ns = d.nodes()
     cells = [n for n in ns if n.text == str(yday.day) and 400 < n.cy < 1300]
     d.check("日曆裡找得到昨天的日期格", bool(cells))
@@ -3857,8 +3859,9 @@ def t_reimb_keep_scroll():
 @case(D, "點進記一筆修改再返回：帳戶明細停在原本捲到的位置、搜尋的關鍵字和結果還在", visual=True)
 def t_back_keeps_page_state():
     s = S.Seed(f.today())
-    for k in range(25):
-        s.expense(-k, 100 + k, S.C_FOOD, acc=S.BANK, note=f"row{k:02d}")
+    # 都記在這個月（帳戶明細只顯示這個月），月初會有好幾筆擠在 1 號；由舊到新加，同一天時 row00 仍在最上面
+    for k in reversed(range(25)):
+        s.expense(s.back(k), 100 + k, S.C_FOOD, acc=S.BANK, note=f"row{k:02d}")
     d.fresh(s.json())
     open_account("測試銀行")
     row = None

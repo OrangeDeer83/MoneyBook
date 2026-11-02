@@ -12,6 +12,14 @@ def base_seed(**kw):
     return S.base(today(), **kw).json()
 
 
+def cal_show_month_of(day):
+    """日曆切到 day 所在的月份：日曆預設只顯示這個月，月初時「昨天」在上個月"""
+    t = today()
+    if (day.year, day.month) != (t.year, t.month):
+        d.tap(d.wait(lambda n: n.desc == "上個月", 10, "上個月按鈕"))
+        d.time.sleep(1.5)
+
+
 def open_add():
     d.tap(d.wait(lambda n: n.desc == "記一筆", 15, "記一筆按鈕"))
     d.wait_text("備註（選填）", timeout=15)

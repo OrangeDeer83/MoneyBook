@@ -375,9 +375,10 @@ def t_tab_state():
     d.fresh(home_seed())
     f.tab("日曆")
     d.time.sleep(2)
-    ns = d.shot("日曆（預設選今天）")
+    d.shot("日曆（預設選今天）")
     yday = f.today() - __import__("datetime").timedelta(days=1)
-    d.check("測試資料的昨天與今天在同一個月", yday.month == f.today().month, f"昨天 {yday}")
+    f.cal_show_month_of(yday)          # 月初時昨天在上個月，先切過去
+    ns = d.shot(f"日曆：{yday.month} 月")
     cells = [n for n in ns if n.text == str(yday.day) and n.cy < 1300 and n.cy > 400]
     d.check("找得到昨天的日期格", bool(cells), [n.text for n in ns if n.text.isdigit()][:40])
     if cells:

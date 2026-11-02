@@ -50,14 +50,19 @@ class Seed:
         self.usd = usd
         if usd:
             # 換匯：測試銀行 31,500 台幣 → 美元帳戶 US$1,000.00（匯率 31.5）；再花 US$12.50（約當 394 台幣）
-            self.transfer(-3, 31500, BANK, USD, fx=100000, time=600)
-            self.expense(-1, 394, C_FOOD, acc=USD, note="fx lunch", fx=1250, time=720)
+            # 兩筆都留在這個月（帳戶明細預設只顯示這個月），月初擠在同一天時靠時間維持先後
+            self.transfer(self.back(3), 31500, BANK, USD, fx=100000, time=600)
+            self.expense(self.back(1), 394, C_FOOD, acc=USD, note="fx lunch", fx=1250, time=720)
         self.trades = []
         self.prices = []
 
     def nid(self):
         self._id += 1
         return self._id
+
+    def back(self, n):
+        """往前 n 天的 offset，但不跨到上個月（月初時停在 1 號），讓只顯示這個月的畫面找得到"""
+        return -min(n, self.today.day - 1)
 
     def day(self, offset):
         return eday(self.today + datetime.timedelta(days=offset))
