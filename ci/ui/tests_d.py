@@ -4278,3 +4278,61 @@ def t_amount_field_keypad():
     d.time.sleep(1)
     ns = d.shot("設定手續費之後")
     d.check("記一筆顯示 + 手續費 $15、實付 $1,015", any("手續費 $15" in n.text and "$1,015" in n.text for n in ns), [n.text for n in ns if "手續費" in n.text])
+
+
+@case(D, "同一筆裡同一個人兩邊都有：按完成問要不要互相抵銷，選「不用」不抵、再按完成會再問，選「抵銷」存檔時才抵", visual=True)
+def t_same_txn_offset():
+    d.fresh(empty_seed().json())
+    f.open_add()
+    f.keypad("1200")
+    f.chip_scroll("報銷", "今天")
+    d.wait_text("這筆的報銷／欠款", timeout=10)
+    d.time.sleep(0.6)
+    d.fill(d.edits()[0], "Amy")
+    d.hide_ime()
+    d.fill(d.edits()[1], "400")
+    d.tap_text("欠款", exact=True)
+    d.time.sleep(0.6)
+    d.fill(d.edits()[0], "Amy")
+    d.hide_ime()
+    d.fill(d.edits()[1], "300")
+    d.tap_text("完成", exact=True)
+    d.wait_text("要和 Amy 互相抵銷嗎？", timeout=10)
+    ns = d.shot("按完成：問要不要抵銷")
+    d.check("寫兩邊各多少和抵完的結果", d.has(ns, "Amy 欠你 $400，你也欠 Amy $300。", True) and d.has(ns, "抵掉 $300 之後：Amy 還欠你 $100，你不欠 Amy", True),
+            [n.text for n in ns if n.text][:20])
+    d.check("按鈕「抵銷」「不用」", d.has(ns, "抵銷", True) and d.has(ns, "不用", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("不用", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("選不用：回到記一筆")
+    d.check("按鈕寫「待報銷 $400＋欠 $300」、沒有抵銷提示", d.has(ns, "待報銷 $400＋欠 $300", True) and not any(n.text.startswith("儲存時互相抵銷") for n in ns),
+            [n.text for n in ns if "報銷" in n.text or "抵銷" in n.text])
+    f.chip_scroll("待報銷", "今天")
+    d.wait_text("這筆的報銷／欠款", timeout=10)
+    d.time.sleep(0.6)
+    d.tap_text("完成", exact=True)
+    try:
+        d.wait_text("要和 Amy 互相抵銷嗎？", timeout=10)
+        asked = True
+    except TimeoutError:
+        asked = False
+    d.check("再進去按完成會再問", asked, "")
+    if not asked:
+        return
+    d.tap_text("抵銷", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("選抵銷：回到記一筆")
+    d.check("顯示「儲存時互相抵銷：Amy $300」", d.has(ns, "儲存時互相抵銷：Amy $300", True), [n.text for n in ns if "抵銷" in n.text])
+    f.save_edit()
+    d.time.sleep(0.5)
+    ns = d.shot("存檔後的提示")
+    d.check("提示「已和 Amy 互相抵銷」", d.has(ns, "已和 Amy 互相抵銷", True), [n.text for n in ns if n.text][:20])
+    d.time.sleep(4)
+    ns = d.shot("首頁")
+    d.check("明細有「互相抵銷・Amy」", d.has(ns, "互相抵銷・Amy", True), [n.text for n in ns if n.text][:30])
+    open_reimb_debt_home()
+    ns = d.shot("報銷／欠款總覽")
+    d.check("Amy 只剩欠你 $100、你不欠 Amy", d.has(ns, "$100", True) and not d.has(ns, "$300", True), [n.text for n in ns if "$" in n.text][:20])
+    acc_tab()
+    ns = d.shot("帳戶分頁")
+    d.check("現金只扣自己付的 $900：$100（抵銷不動帳戶）", d.has(ns, "$100", True), [n.text for n in ns if "$" in n.text][:12])
