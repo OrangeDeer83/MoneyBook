@@ -357,7 +357,8 @@ fun EditScreen(
     // 選了抵銷、而且現在還是兩邊都有的人（之後改了金額或名單就重新算）
     val offsets = if (type == TxType.EXPENSE && !tplMode && offsetWho.isNotEmpty()) {
         val picked = offsetWho.split('\n').toSet()
-        tw.moneybook.app.sameTxnOffsets(reimbItems, debtEff).filter { it.who in picked }
+        // 報銷照存檔時一樣封頂，預覽的金額才會和實際抵的一樣
+        tw.moneybook.app.sameTxnOffsets(tw.moneybook.app.capReimbItems(amount + fee, reimbItems), debtEff).filter { it.who in picked }
     } else emptyList()
 
     fun draft() = TxnDraft(
@@ -441,6 +442,7 @@ fun EditScreen(
     fun setType(t: TxType) {
         if (t == type) return
         type = t
+        offsetWho = ""
         catId = defaultCat(d, t)
         if (t != TxType.EXPENSE) inst = 1
     }

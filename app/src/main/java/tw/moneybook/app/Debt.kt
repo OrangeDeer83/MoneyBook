@@ -302,9 +302,9 @@ class SameTxnOffset(val who: String, val owe: Long, val mine: Long) {
  */
 fun sameTxnOffsets(reimb: List<ReimbItem>, debt: List<DebtItem>): List<SameTxnOffset> {
     val owe = LinkedHashMap<String, Long>()
-    for (i in reimb) if (i.who.isNotBlank()) owe[i.who.trim()] = (owe[i.who.trim()] ?: 0L) + i.remaining
+    for (i in reimb) i.who.trim().takeIf { it.isNotEmpty() }?.let { w -> owe[w] = (owe[w] ?: 0L) + i.remaining }
     val mine = HashMap<String, Long>()
-    for (i in debt) if (i.who.isNotBlank()) mine[i.who.trim()] = (mine[i.who.trim()] ?: 0L) + i.remainingTwd
+    for (i in debt) i.who.trim().takeIf { it.isNotEmpty() }?.let { w -> mine[w] = (mine[w] ?: 0L) + i.remainingTwd }
     return owe.map { (w, a) -> SameTxnOffset(w, a, mine[w] ?: 0L) }.filter { it.amount > 0L }
 }
 

@@ -237,7 +237,7 @@ private fun SameTxnOffsetDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (one != null) "要和 ${ownerLabel(one.who)} 互相抵銷嗎？" else "要互相抵銷嗎？") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (one != null) {
                     val name = ownerLabel(one.who)
                     Text("$name 欠你 ${formatMoney(one.owe)}，你也欠 $name ${formatMoney(one.mine)}。")
@@ -358,7 +358,7 @@ fun ReimbEditPage(
                 else -> onDone(true, false, ReimbCodec.encode(rLocked + rFree.map { (w, v) -> ReimbItem(w, v) }), "", dj, ow)
             }
         }
-        // 只看這一筆裡的帳；還沒輸入帳目金額（金額還不知道）時不問
+        // 只看這一筆裡的帳；只填名字、還沒有金額的人不算（存檔時會重算，抵的金額以存檔時為準）
         val offs = sameTxnOffsets(rLocked + rFree.map { (w, v) -> ReimbItem(w, v) }, debtList)
         if (offs.isEmpty()) done(emptyList())
         else {

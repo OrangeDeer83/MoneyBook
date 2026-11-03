@@ -424,6 +424,17 @@ class DebtTest {
     }
 
     @Test
+    fun sameTxnOffsetWhenIOweMore() {
+        // Amy 欠我 200、我欠 Amy 500：抵 200，報銷收齊，欠款還剩 300
+        val bbq = split(1, 1200, 20, 700, "Amy" to 500L).withItems(listOf(ReimbItem("Amy", 200)))
+        val d = base(bbq).withSameTxnOffset(1, " Amy ")!!
+        assertEquals(0L, d.t(1).items[0].remaining)
+        assertTrue(d.t(1).items[0].closed)
+        assertFalse(d.item(1).done)
+        assertEquals(300L, d.item(1).remainingTwd)
+    }
+
+    @Test
     fun sameTxnOffsetForeignSpendUsesItsOwnRate() {
         // 刷日圓 10,000 = 台幣 2,200：Ken 欠我 1,100（報銷），我欠 Ken ¥5,000（約 1,100）
         val t = Txn(1, 1L, TxType.EXPENSE, 2200, null, 10L, null, 5, "", emptyList(), fxSpendAmount = 10_000, fxSpendCur = "JPY",

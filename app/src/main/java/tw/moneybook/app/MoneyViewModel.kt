@@ -74,9 +74,11 @@ private fun withDebt(t: Txn, items: List<DebtItem>): Txn {
     return t.copy(debtItems = withUnits, debtSelf = self, accountId = if (self > 0L) t.accountId else null, fxPending = t.fxPending && self > 0L)
 }
 
-/** 報銷總額不能超過原價 + 手續費；沒有收款紀錄又是 0 元的對象直接拿掉 */
-private fun capItems(t: Txn, items: List<ReimbItem>): List<ReimbItem> {
-    var left = t.reimbCap
+private fun capItems(t: Txn, items: List<ReimbItem>): List<ReimbItem> = capReimbItems(t.reimbCap, items)
+
+/** 報銷總額不能超過 cap（原價 + 手續費）；沒有收款紀錄又是 0 元的對象直接拿掉。記一筆畫面預覽抵銷金額也用這個 */
+internal fun capReimbItems(cap: Long, items: List<ReimbItem>): List<ReimbItem> {
+    var left = cap
     val out = ArrayList<ReimbItem>()
     for (i in items) {
         if (i.closed || i.pays.isNotEmpty()) {
@@ -318,16 +320,35 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         if (n > 1) toast("已建立 $n 期分期，每期約 ${formatMoney(dr.amount / n)}")
     }
 
-    /** 存檔：再把這一筆裡 who 的報銷和欠款互相抵銷（見 withSameTxnOffset）；有抵到就提示，「復原」只拿掉抵銷、這筆還在 */
+    /** 存檔：再把這一筆裡 who 的報銷和欠款互相抵銷（見 withSameTxnOffset）；提示寫實際抵了多少，「復原」只拿掉這幾次抵銷、這筆還在 */
     private fun commitWithOffsets(saved: AppData, txnId: Long, who: List<String>) {
         var after = saved
-        val done = who.filter { w -> after.withSameTxnOffset(txnId, w)?.also { after = it } != null }
+        val ids = ArrayList<Long>()
+        val parts = ArrayList<String>()
+        val missed = ArrayList<String>()
+        for (w in who) {
+            val oid = after.nextId
+            val next = after.withSameTxnOffset(txnId, w)
+            if (next == null) {
+                missed.add(w.trim())
+                continue
+            }
+            after = next
+            ids.add(oid)
+            val amt = next.txns.first { it.id == txnId }.debtItems.sumOf { i -> i.pays.filter { it.offsetId == oid }.sumOf { it.amount } }
+            parts.add("${w.trim()} ${formatMoney(amt)}")
+        }
         commit(after)
-        if (done.isEmpty()) return
-        val before = saved.txns.firstOrNull { it.id == txnId } ?: return
-        _messages.tryEmit(UiMsg("已和 ${done.joinToString("、")} 互相抵銷", "復原") {
-            val now = data
-            if (now.txns.any { it.id == txnId }) commit(now.copy(txns = now.txns.map { if (it.id == txnId) before else it }))
+        if (who.isNotEmpty() && ids.isEmpty()) {
+            toast("這筆已經沒有可以互相抵銷的金額，照原本的存")
+            return
+        }
+        if (ids.isEmpty()) return
+        val miss = if (missed.isEmpty()) "" else "（${missed.joinToString("、")} 沒有可抵的金額）"
+        _messages.tryEmit(UiMsg("已互相抵銷：${parts.joinToString("、")}$miss", "復原") {
+            var now = data
+            for (id in ids) now = now.withOffsetRemoved(id) ?: now
+            commit(now)
         })
     }
 
