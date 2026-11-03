@@ -55,6 +55,8 @@ data class TxnDraft(
     val debtItems: List<DebtItem> = emptyList(),
     /** 預算外：0＝跟著分類、1＝預算外、2＝算預算（只有支出有意義，見 Budget.kt） */
     val budgetOut: Int = 0,
+    /** 存好後這一筆裡要互相抵銷的人（同一個人兩邊都有，在「報銷／欠款」頁按完成時選的，見 withSameTxnOffset） */
+    val offsetWho: List<String> = emptyList(),
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -252,7 +254,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 )
             } else withDebt(t, dr.debtItems)
             t = t.withItems(if (dr.type == TxType.EXPENSE) capItems(t, dr.reimbItems) else emptyList())
-            commit(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })))
+            commitWithOffsets(d.copy(txns = sortTxns(d.txns.map { if (it.id == editId) t else it })), editId, dr.offsetWho)
             savedTxnId = editId
             return
         }
@@ -310,10 +312,23 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
-        commit(d.copy(txns = sortTxns(d.txns + list), nextId = next))
+        commitWithOffsets(d.copy(txns = sortTxns(d.txns + list), nextId = next), list.first().id, if (n == 1) dr.offsetWho else emptyList())
         savedTxnId = list.first().id
         if (d.prefs.celebrate) celebrateTick++
         if (n > 1) toast("已建立 $n 期分期，每期約 ${formatMoney(dr.amount / n)}")
+    }
+
+    /** 存檔：再把這一筆裡 who 的報銷和欠款互相抵銷（見 withSameTxnOffset）；有抵到就提示，「復原」只拿掉抵銷、這筆還在 */
+    private fun commitWithOffsets(saved: AppData, txnId: Long, who: List<String>) {
+        var after = saved
+        val done = who.filter { w -> after.withSameTxnOffset(txnId, w)?.also { after = it } != null }
+        commit(after)
+        if (done.isEmpty()) return
+        val before = saved.txns.firstOrNull { it.id == txnId } ?: return
+        _messages.tryEmit(UiMsg("已和 ${done.joinToString("、")} 互相抵銷", "復原") {
+            val now = data
+            if (now.txns.any { it.id == txnId }) commit(now.copy(txns = now.txns.map { if (it.id == txnId) before else it }))
+        })
     }
 
     /** 刪除一筆，並提供「復原」 */

@@ -97,6 +97,8 @@ import tw.moneybook.app.DebtRepayPart
 import tw.moneybook.app.offsetDebtTwd
 import tw.moneybook.app.offsetFxTwd
 import tw.moneybook.app.offsetFxDefaultUnits
+import tw.moneybook.app.SameTxnOffset
+import tw.moneybook.app.sameTxnOffsets
 import tw.moneybook.app.fmt
 import tw.moneybook.app.fxPlain
 import tw.moneybook.app.isDebt
@@ -211,6 +213,59 @@ internal class ReimbRow(val locked: ReimbItem?, who: String, amt: String, val lo
     val lockedEffective: Long get() = locked?.effective ?: lockedDebt?.effective ?: 0L
 }
 
+/** 抵完之後兩邊各剩多少，例如「Amy 還欠你 $100，你不欠 Amy」 */
+private fun SameTxnOffset.afterText(): String {
+    val name = ownerLabel(who)
+    val a = if (owe > amount) "$name 還欠你 ${formatMoney(owe - amount)}" else "$name 不欠你"
+    val b = if (mine > amount) "你還欠 $name ${formatMoney(mine - amount)}" else "你不欠 $name"
+    return "$a，$b"
+}
+
+/**
+ * 同一筆裡同一個人兩邊都有時，按完成先問要不要互相抵銷（預設抵銷）。
+ * 一個人：直接寫兩邊各多少；好幾個人：一人一列可以取消勾選（sel 沒有記錄的算有勾）。
+ */
+@Composable
+private fun SameTxnOffsetDialog(
+    offs: List<SameTxnOffset>, sel: MutableMap<String, Boolean>,
+    onOffset: (List<String>) -> Unit, onSkip: () -> Unit, onDismiss: () -> Unit,
+) {
+    val cute = LocalCute.current
+    val one = offs.singleOrNull()
+    val picked = offs.filter { sel[it.who] != false }.map { it.who }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (one != null) "要和 ${ownerLabel(one.who)} 互相抵銷嗎？" else "要互相抵銷嗎？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (one != null) {
+                    val name = ownerLabel(one.who)
+                    Text("$name 欠你 ${formatMoney(one.owe)}，你也欠 $name ${formatMoney(one.mine)}。")
+                    Text("抵掉 ${formatMoney(one.amount)} 之後：${one.afterText()}", style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                } else {
+                    Text("這筆裡這幾個人兩邊都有：", style = MaterialTheme.typography.bodyMedium, color = cute.sub)
+                    offs.forEach { o ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft)
+                                .clickable { sel[o.who] = sel[o.who] == false }.padding(end = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.Checkbox(checked = sel[o.who] != false, onCheckedChange = { sel[o.who] = it })
+                            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                                Text("${ownerLabel(o.who)}　抵 ${formatMoney(o.amount)}", style = MaterialTheme.typography.bodyLarge)
+                                Text("他欠你 ${formatMoney(o.owe)}・你欠他 ${formatMoney(o.mine)}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                            }
+                        }
+                    }
+                    Text("不動帳戶、不算收支，存檔時才抵。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onOffset(picked) }, enabled = picked.isNotEmpty()) { Text("抵銷") } },
+        dismissButton = { TextButton(onClick = onSkip) { Text("不用") } },
+    )
+}
+
 /**
  * 這筆的報銷／欠款：上面是這筆的分配摘要（我付、別人先付、可報銷、自己負擔），下面切換兩份名單，各自保留。
  * 報銷＝別人要還我（我先付了）；欠款＝別人先幫我付、我要還他（那部分先不從帳戶扣）。有人、有金額就算，不用另外開開關。
@@ -235,7 +290,8 @@ fun ReimbEditPage(
     debtAllowed: Boolean = true,
     debtNotAllowedWhy: String = "",
     startOnDebt: Boolean = false,
-    onDone: (on: Boolean, full: Boolean, json: String, who: String, debtJson: String) -> Unit,
+    /** offsetWho：同一個人兩邊都有、選了「抵銷」的人（存檔時才抵，見 withSameTxnOffset） */
+    onDone: (on: Boolean, full: Boolean, json: String, who: String, debtJson: String, offsetWho: List<String>) -> Unit,
     onClose: () -> Unit,
 ) {
     val cute = LocalCute.current
@@ -271,6 +327,10 @@ fun ReimbEditPage(
     val reimbCount = rows.count { it.isLocked || rowTwd(it) > 0L }
     val debtCount = drows.count { it.isLocked || rowTwd(it) > 0L }
     var err by remember { mutableStateOf("") }
+    // 按完成時同一個人兩邊都有：先問要不要互相抵銷，選完才交出名單
+    var askOffsets by remember { mutableStateOf(emptyList<SameTxnOffset>()) }
+    var askDone by remember { mutableStateOf<((List<String>) -> Unit)?>(null) }
+    val askOff = remember { mutableStateMapOf<String, Boolean>() }
 
     fun finish() {
         // 欠款：有金額就要有名字；合計不能超過實付
@@ -289,12 +349,22 @@ fun ReimbEditPage(
         val rl = rows.filter { it.isLocked || rowTwd(it) > 0L }
         val rLocked = rl.mapNotNull { it.locked }
         val rFree = merged(rl)
-        when {
-            rl.isEmpty() && pending1(rows) -> onDone(true, true, initJson, rows.first { !it.isLocked && it.who.isNotBlank() }.who.trim(), dj)
-            rl.isEmpty() -> onDone(false, true, "", "", dj)
-            // 只有一個人、而且是全額：存成「一人・全額」，之後帳目金額改了，報銷金額跟著走
-            rLocked.isEmpty() && rFree.size == 1 && rFree[0].second == actual -> onDone(true, true, initJson, rFree[0].first, dj)
-            else -> onDone(true, false, ReimbCodec.encode(rLocked + rFree.map { (w, v) -> ReimbItem(w, v) }), "", dj)
+        val done: (List<String>) -> Unit = { ow ->
+            when {
+                rl.isEmpty() && pending1(rows) -> onDone(true, true, initJson, rows.first { !it.isLocked && it.who.isNotBlank() }.who.trim(), dj, ow)
+                rl.isEmpty() -> onDone(false, true, "", "", dj, ow)
+                // 只有一個人、而且是全額：存成「一人・全額」，之後帳目金額改了，報銷金額跟著走
+                rLocked.isEmpty() && rFree.size == 1 && rFree[0].second == actual -> onDone(true, true, initJson, rFree[0].first, dj, ow)
+                else -> onDone(true, false, ReimbCodec.encode(rLocked + rFree.map { (w, v) -> ReimbItem(w, v) }), "", dj, ow)
+            }
+        }
+        // 只看這一筆裡的帳；還沒輸入帳目金額（金額還不知道）時不問
+        val offs = sameTxnOffsets(rLocked + rFree.map { (w, v) -> ReimbItem(w, v) }, debtList)
+        if (offs.isEmpty()) done(emptyList())
+        else {
+            askOff.clear()
+            askOffsets = offs
+            askDone = done
         }
     }
 
@@ -350,6 +420,16 @@ fun ReimbEditPage(
         if (restMode) {
             if (restAuto.isEmpty()) restMode = false else fillRows(restAuto, true, restPool)
         }
+    }
+
+    askDone?.let { go ->
+        SameTxnOffsetDialog(
+            askOffsets, askOff,
+            onOffset = { picked -> askDone = null; go(picked) },
+            onSkip = { askDone = null; go(emptyList()) },
+            // 按視窗外面：回到這一頁繼續改
+            onDismiss = { askDone = null },
+        )
     }
 
     FullScreenDialog(onDismissRequest = onClose) {

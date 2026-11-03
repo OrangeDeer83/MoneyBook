@@ -229,6 +229,8 @@ fun EditScreen(
     val debtList = if (type == TxType.EXPENSE && !tplMode) tw.moneybook.app.DebtCodec.decode(debtJson) else emptyList()
     val debtOn = debtList.isNotEmpty()
     val debtLocked = orig?.debtItems?.any { it.pays.isNotEmpty() || it.done } == true
+    // 在「報銷／欠款」頁按完成時選了互相抵銷的人（一行一個），存檔時才抵
+    var offsetWho by rememberSaveable { mutableStateOf("") }
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
@@ -350,6 +352,14 @@ fun EditScreen(
     )
     val nv = NeedView(need, tries.count)
 
+    // 先填欠款、後填金額：只有一個人、金額是 0 時就是整筆
+    val debtEff = if (debtList.size == 1 && debtList[0].amount <= 0L && debtList[0].pays.isEmpty()) listOf(debtList[0].copy(amount = actual)) else debtList
+    // 選了抵銷、而且現在還是兩邊都有的人（之後改了金額或名單就重新算）
+    val offsets = if (type == TxType.EXPENSE && !tplMode && offsetWho.isNotEmpty()) {
+        val picked = offsetWho.split('\n').toSet()
+        tw.moneybook.app.sameTxnOffsets(reimbItems, debtEff).filter { it.who in picked }
+    } else emptyList()
+
     fun draft() = TxnDraft(
         type = type, amount = amount,
         categoryId = if (type == TxType.TRANSFER) null else catId,
@@ -365,9 +375,9 @@ fun EditScreen(
         fxSpendAmount = if (fxsOn) fxsMinor else 0L,
         fxSpendCur = if (fxsOn) fxsCur else "",
         fxPending = fxsOn && fxsPending,
-        // 先填欠款、後填金額：只有一個人、金額是 0 時就是整筆
-        debtItems = if (debtList.size == 1 && debtList[0].amount <= 0L && debtList[0].pays.isEmpty()) listOf(debtList[0].copy(amount = actual)) else debtList,
+        debtItems = debtEff,
         budgetOut = if (type == TxType.EXPENSE) budgetOut else 0,
+        offsetWho = offsets.map { it.who },
     )
 
     val initialDraft = remember { draft() }
@@ -675,6 +685,13 @@ fun EditScreen(
             if (orig == null && !tplMode && plan.mode == FxMode.NONE && !debtOn) CuteChip("存為常用", false, { dialog = "tpl" }, icon = "vec:star")
             if (orig != null && orig.instTotal > 1) CuteChip("分期 ${orig.instIndex}/${orig.instTotal}", false, {})
         }
+        if (offsets.isNotEmpty()) {
+            Text(
+                "儲存時互相抵銷：" + offsets.joinToString("、") { "${it.who} ${formatMoney(it.amount)}" },
+                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            )
+        }
 
         // 金額（貼在數字鍵盤正上方）
         Spacer(Modifier.height(8.dp))
@@ -787,7 +804,8 @@ fun EditScreen(
             debtAllowed = !fromFxAcc && inst <= 1 && (orig == null || orig.instTotal <= 1),
             debtNotAllowedWhy = if (fromFxAcc) "外幣帳戶的消費不能記欠款。別人先幫你付外幣的話，帳戶選台幣帳戶（或不選），再用「外幣」按鈕記外幣金額。" else "分期的消費不能記欠款。",
             startOnDebt = debtOn && reimbItems.isEmpty(),
-            onDone = { on2, full2, json2, who2, dj2 ->
+            onDone = { on2, full2, json2, who2, dj2, ow2 ->
+                offsetWho = ow2.joinToString("\n")
                 reimbOn = on2
                 reimbFull = full2
                 reimbJson = json2

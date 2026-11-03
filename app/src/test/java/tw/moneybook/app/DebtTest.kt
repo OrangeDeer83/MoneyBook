@@ -384,4 +384,53 @@ class DebtTest {
         assertEquals(100L, part.debtSelf)
         assertEquals(listOf("A" to 100L, "B" to 100L), part.debtItems.map { it.who to it.amount })
     }
+
+    @Test
+    fun sameTxnOffsetListsPeopleOnBothSides() {
+        // 燒肉 1200：Amy 欠我 400、Ben 欠我 400；我欠 Amy 300、欠 Ken 200
+        val offs = sameTxnOffsets(
+            listOf(ReimbItem("Amy", 400), ReimbItem("Ben", 400)),
+            listOf(DebtItem(" Amy ", 300), DebtItem("Ken", 200)),
+        )
+        assertEquals(listOf("Amy"), offs.map { it.who })
+        assertEquals(400L, offs[0].owe)
+        assertEquals(300L, offs[0].mine)
+        assertEquals(300L, offs[0].amount)
+        // 已經收齊的報銷不算
+        assertTrue(sameTxnOffsets(listOf(ReimbItem("Amy", 400, closed = true)), listOf(DebtItem("Amy", 300))).isEmpty())
+        // 沒填對象的不算
+        assertTrue(sameTxnOffsets(listOf(ReimbItem("", 400)), listOf(DebtItem("", 300))).isEmpty())
+    }
+
+    @Test
+    fun sameTxnOffsetOnlyTouchesThatTxn() {
+        // 別筆：Amy 還欠我午餐 1000；這筆燒肉：Amy 欠我 400、我欠 Amy 300（自己付 900）
+        val lunch = Txn(1, 1L, TxType.EXPENSE, 1000, null, 10L, null, 3, "午餐", emptyList()).withItems(listOf(ReimbItem("Amy", 1000)))
+        val bbq = split(2, 1200, 20, 900, "Amy" to 300L).withItems(listOf(ReimbItem("Amy", 400)))
+        val d0 = base(lunch, bbq)
+        val bal = d0.balances()[10]
+        val d = d0.withSameTxnOffset(2, "Amy")!!
+        assertEquals(100L, d.t(2).items[0].remaining)
+        assertTrue(d.item(2).done)
+        assertEquals(1000L, d.t(1).items[0].remaining)               // 別筆不動
+        assertEquals(bal, d.balances()[10])
+        assertEquals(d0.txns.expenseSum(), d.txns.expenseSum())
+        assertEquals(20L, d.item(2).pays.single().day)                // 日期用這筆的
+        // 刪掉抵銷：兩邊恢復
+        val back = d.withOffsetRemoved(d.item(2).pays.single().offsetId)!!
+        assertEquals(400L, back.t(2).items[0].remaining)
+        assertFalse(back.item(2).done)
+        assertNull(d0.withSameTxnOffset(2, "Ben"))
+    }
+
+    @Test
+    fun sameTxnOffsetForeignSpendUsesItsOwnRate() {
+        // 刷日圓 10,000 = 台幣 2,200：Ken 欠我 1,100（報銷），我欠 Ken ¥5,000（約 1,100）
+        val t = Txn(1, 1L, TxType.EXPENSE, 2200, null, 10L, null, 5, "", emptyList(), fxSpendAmount = 10_000, fxSpendCur = "JPY",
+            debtItems = listOf(DebtItem("Ken", 1100, 5_000)), debtSelf = 1100).withItems(listOf(ReimbItem("Ken", 1100)))
+        val d = base(t).withSameTxnOffset(1, "Ken")!!
+        assertTrue(d.item(1).done)
+        assertEquals(5_000L, d.item(1).pays.single().units)
+        assertEquals(0L, d.t(1).items[0].remaining)
+    }
 }

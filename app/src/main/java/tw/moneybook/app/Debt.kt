@@ -291,6 +291,32 @@ fun AppData.withOffset(
     )
 }
 
+/** 同一筆裡可以互相抵銷的一個人：他欠我（報銷還沒收的）、我欠他（欠款還沒還的，台幣），抵兩邊比較小的 */
+class SameTxnOffset(val who: String, val owe: Long, val mine: Long) {
+    val amount: Long get() = minOf(owe, mine)
+}
+
+/**
+ * 同一筆裡同一個人兩邊都有（他欠我的報銷、我欠他的欠款）的人，照報銷名單的順序。
+ * 外幣欠款還沒存（units 是 0）時就是記的台幣。
+ */
+fun sameTxnOffsets(reimb: List<ReimbItem>, debt: List<DebtItem>): List<SameTxnOffset> {
+    val owe = LinkedHashMap<String, Long>()
+    for (i in reimb) if (i.who.isNotBlank()) owe[i.who.trim()] = (owe[i.who.trim()] ?: 0L) + i.remaining
+    val mine = HashMap<String, Long>()
+    for (i in debt) if (i.who.isNotBlank()) mine[i.who.trim()] = (mine[i.who.trim()] ?: 0L) + i.remainingTwd
+    return owe.map { (w, a) -> SameTxnOffset(w, a, mine[w] ?: 0L) }.filter { it.amount > 0L }
+}
+
+/** 記一筆存檔時：這一筆裡 who 的報銷和欠款互相抵銷（見 withOffset，日期、時間用這筆的），別筆不管；抵不了回傳 null */
+fun AppData.withSameTxnOffset(txnId: Long, who: String): AppData? {
+    val t = txns.firstOrNull { it.id == txnId } ?: return null
+    val name = who.trim()
+    val r = t.items.indices.filter { t.items[it].who.trim() == name }.map { t.id to it }.toSet()
+    val dk = t.debtItems.indices.filter { t.debtItems[it].who.trim() == name }.map { t.id to it }.toSet()
+    return withOffset(name, r, dk, t.day, t.time)
+}
+
 /** 刪掉一次互相抵銷：兩邊的紀錄一起刪，抵完而結清的報銷、欠款重新變成還沒結清 */
 fun AppData.withOffsetRemoved(offsetId: Long): AppData? {
     if (offsetId == 0L) return null
