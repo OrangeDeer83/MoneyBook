@@ -4323,10 +4323,16 @@ def t_same_txn_offset():
     d.time.sleep(1)
     ns = d.shot("選抵銷：回到記一筆")
     d.check("顯示「儲存時互相抵銷：Amy $300」", d.has(ns, "儲存時互相抵銷：Amy $300", True), [n.text for n in ns if "抵銷" in n.text])
-    f.save_edit()
-    d.time.sleep(0.5)
+    # 提示只停 4 秒：按儲存後直接等提示，不先等回到主畫面
+    ns = d.nodes()
+    d.tap(max([n for n in ns if n.text == "完成"], key=lambda n: n.cy))
+    try:
+        d.wait_text("已互相抵銷：Amy $300", timeout=8)
+        toast = True
+    except TimeoutError:
+        toast = False
     ns = d.shot("存檔後的提示")
-    d.check("提示「已互相抵銷：Amy $300」", d.has(ns, "已互相抵銷：Amy $300", True), [n.text for n in ns if n.text][:20])
+    d.check("提示「已互相抵銷：Amy $300」", toast, [n.text for n in ns if n.text][:20])
     d.time.sleep(4)
     ns = d.shot("首頁")
     d.check("明細有「互相抵銷・Amy」", d.has(ns, "互相抵銷・Amy", True), [n.text for n in ns if n.text][:30])
