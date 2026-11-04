@@ -4342,3 +4342,112 @@ def t_same_txn_offset():
     acc_tab()
     ns = d.shot("帳戶分頁")
     d.check("現金 $1,000 只扣自己付的 900，剩 $100（抵銷不動帳戶）", d.has(ns, "$100", True), [n.text for n in ns if "$" in n.text][:12])
+
+
+def same_txn_offset_seed():
+    """燒肉 1,200（現金付 900）：Amy 欠我 400、我欠 Amy 300，已經在這一筆裡互相抵銷 300"""
+    s = empty_seed()
+    t = s.expense(0, 1200, S.C_FOOD, note="bbq")
+    oid = 9001
+    t.update(
+        reimb=1, reimbAmount=400,
+        reimbItems=[S.reimb_item("Amy", 400, pays=[dict(day=s.day(0), accountId=None, amount=300, time=-1, fxAmount=0, offsetId=oid)])],
+        debtItems=[dict(who="Amy", amount=300, units=0, done=True, pays=[dict(day=s.day(0), accountId=None, amount=300, time=-1, fxAmount=0, units=300, offsetId=oid)])],
+        debtSelf=900,
+    )
+    return s
+
+
+def open_bbq():
+    """首頁點燒肉那一筆（-$800；上面結餘卡片也是 -$800，點下面那個）"""
+    d.wait(lambda n: n.text == "-$800", 15, "燒肉那一筆")
+    row = max([n for n in d.nodes() if n.text == "-$800"], key=lambda n: n.cy)
+    d.tap(row)
+    f.edit_open()
+    d.time.sleep(0.6)
+
+
+@case(D, "抵銷後金額不能改：改金額被擋時按「前往刪除」直接到那個人的紀錄，刪掉抵銷後返回、就能改金額", visual=True)
+def t_offset_goto_from_amount():
+    d.fresh(same_txn_offset_seed().json())
+    open_bbq()
+    d.tap_text("C", exact=True, lowest=True)
+    f.keypad("1500")
+    ns = d.nodes()
+    d.tap(max([n for n in ns if n.text == "完成"], key=lambda n: n.cy))
+    d.time.sleep(0.8)
+    ns = d.shot("改金額被擋")
+    d.check("顯示「已有還款或抵銷紀錄，金額不能改…」和「前往刪除 ›」",
+            d.has(ns, "已有還款或抵銷紀錄", False) and d.has(ns, "前往刪除 ›", True), [n.text for n in ns if n.text][:30])
+    d.tap_text("前往刪除 ›", exact=True)
+    try:
+        f.person_page()
+        ok = True
+    except TimeoutError:
+        ok = False
+    ns = d.shot("前往之後")
+    d.check("只改了金額：不問要不要存，直接到 Amy 的紀錄分頁", ok and not d.has(ns, "修改還沒儲存", True) and d.has(ns, "互相抵銷 $300", False),
+            [n.text for n in ns if n.text][:30])
+    if not ok:
+        return
+    d.check("在紀錄分頁：有「點右邊的 ⋯ 可以修改或刪除」", d.has(ns, "點右邊的 ⋯ 可以修改或刪除", True), [n.text for n in ns if n.text][:30])
+    d.tap_text("⋯", exact=True)
+    d.tap_text("刪除這次抵銷（兩邊一起）", exact=True, timeout=6)
+    d.time.sleep(1)
+    d.tap_back()
+    try:
+        d.wait(lambda n: n.text == "明細" and n.cy > 2000, 10, "回到主畫面")
+        home = True
+    except TimeoutError:
+        home = False
+    ns = d.shot("返回")
+    d.check("返回直接回到首頁（不是報銷／欠款總覽）", home, [n.text for n in ns if n.text][:20])
+    if not home:
+        return
+    d.time.sleep(4)   # 等「已刪除這次抵銷」的提示消失
+    open_bbq()
+    d.tap_text("C", exact=True, lowest=True)
+    f.keypad("1500")
+    f.save_edit()
+    d.time.sleep(1)
+    ns = d.shot("刪掉抵銷後改金額")
+    d.check("可以改成 1,500：總額 1,500", d.has(ns, "總額 1,500", False) or d.has(ns, "1,500", False), [n.text for n in ns if "$" in n.text or "1,500" in n.text][:20])
+
+
+@case(D, "報銷／欠款頁鎖住的那一列有「前往」：有沒存的修改先問，「儲存並前往」存好再到那個人的紀錄", visual=True)
+def t_offset_goto_from_sheet():
+    d.fresh(same_txn_offset_seed().json())
+    open_bbq()
+    note = next(n for n in d.edits() if not d.is_amount(n))
+    d.fill(note, "bbq2")
+    d.hide_ime()
+    f.chip_scroll("待報銷", "標籤")
+    d.wait_text("這筆的報銷／欠款", timeout=10)
+    d.time.sleep(0.6)
+    d.tap(d.wait(lambda n: n.text.startswith("欠款 "), 8, "欠款分頁"))
+    d.time.sleep(0.6)
+    ns = d.shot("欠款分頁：鎖住的 Amy")
+    d.check("鎖住的那一列有「前往 ›」", d.has(ns, "前往 ›", True), [n.text for n in ns if n.text][:30])
+    d.tap_text("前往 ›", exact=True)
+    try:
+        d.wait_text("修改還沒儲存", timeout=8)
+        asked = True
+    except TimeoutError:
+        asked = False
+    ns = d.shot("先問要不要存")
+    d.check("改了備註：先問「修改還沒儲存」，有儲存並前往、不儲存、取消",
+            asked and all(d.has(ns, t, True) for t in ("儲存並前往", "不儲存", "取消")), [n.text for n in ns if n.text][:20])
+    if not asked:
+        return
+    d.tap_text("儲存並前往", exact=True)
+    try:
+        f.person_page()
+        ok = True
+    except TimeoutError:
+        ok = False
+    ns = d.shot("到 Amy 的紀錄")
+    d.check("到 Amy 的紀錄，有「互相抵銷 $300」", ok and d.has(ns, "互相抵銷 $300", False), [n.text for n in ns if n.text][:30])
+    d.tap_back()
+    d.time.sleep(1.5)
+    ns = d.shot("返回首頁")
+    d.check("備註存成 bbq2", d.has(ns, "bbq2", False), [n.text for n in ns if n.text][:30])
