@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +48,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -492,8 +495,8 @@ fun ReimbEditPage(
                                 if (onGo != null && r.who.isNotBlank()) {
                                     Spacer(Modifier.width(8.dp))
                                     Box(
-                                        Modifier.clip(RoundedCornerShape(50)).background(cute.card)
-                                            .clickable { finish { onGo(r.who.trim()) } }
+                                        Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(50)).background(cute.card)
+                                            .clickable(role = androidx.compose.ui.semantics.Role.Button) { finish { onGo(r.who.trim()) } }
                                             .padding(horizontal = 12.dp, vertical = 6.dp),
                                     ) { Text("前往 ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
                                 }
@@ -724,9 +727,15 @@ private sealed class ReimbPage {
 fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) {
     // 從人頁點帳單去記一筆修改，回來時這一頁會重新建立：停在原本那個人的頁面（記在 vm 裡）
     var page by remember { mutableStateOf<ReimbPage>(vm.reimbPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home) }
-    androidx.compose.runtime.SideEffect { vm.reimbPerson = (page as? ReimbPage.Person)?.who }
+    androidx.compose.runtime.SideEffect {
+        vm.reimbPerson = (page as? ReimbPage.Person)?.who
+        // 從記一筆前往的：離開那個人的頁面（收款、總覽、別人）就不算了
+        vm.reimbGoto?.let { g -> if (vm.reimbPerson != g.first) vm.reimbGoto = null }
+    }
+    // 小工具清掉畫面、或其他方式關掉報銷頁時也清掉
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { vm.reimbGoto = null } }
     val leave = {
-        vm.reimbPerson = null; vm.reimbHighlightTxn = null; vm.reimbTab = 0; vm.reimbLists.clear(); vm.reimbScrolls.clear()
+        vm.reimbPerson = null; vm.reimbGoto = null; vm.reimbTab = 0; vm.reimbLists.clear(); vm.reimbScrolls.clear()
         vm.reimbPersonTab.clear(); vm.reimbPersonLists.clear(); vm.reimbOpenFolds.clear(); onBack()
     }
     // 從人頁進去的收款／還款／抵銷，做完回到人頁；從總覽進去的回到總覽
@@ -747,7 +756,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
         is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Person -> ReimbPersonPage(
             // 從記一筆「前往」過來的：返回就回到原本的地方
-            vm, p.who, onBack = { if (vm.reimbHighlightTxn != null) leave() else { fromPerson = null; page = ReimbPage.Home } },
+            vm, p.who, onBack = { if (vm.reimbGoto?.first == p.who) leave() else { fromPerson = null; page = ReimbPage.Home } },
             onEdit = onEdit,
             onReceive = { fromPerson = p.who; page = ReimbPage.Receive(p.who) },
             onRepay = { fromPerson = p.who; page = ReimbPage.Repay(p.who) },
@@ -1018,7 +1027,8 @@ private class Rec(
 }
 
 /** 某些報銷帳與欠款的收款／還款／抵銷紀錄，新的在前；抵銷兩邊只列一次 */
-private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<Rec> {
+/** withTxns：要不要算每筆紀錄動到哪幾筆帳（只有從記一筆前往、要亮底色時才需要） */
+private fun records(d: AppData, claims: List<Claim>, who: String? = null, withTxns: Boolean = false): List<Rec> {
     val out = ArrayList<Rec>()
     // 互相抵銷抵到外幣欠款時，紀錄寫抵掉多少外幣
     val fxOff = HashMap<Long, MutableList<String>>()
@@ -1026,13 +1036,16 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
         t.debtItems.forEach { item -> item.pays.forEach { p -> if (p.offsetId != 0L) fxOff.getOrPut(p.offsetId) { ArrayList() }.add(formatFx(p.units, t.debtCurrency)) } }
     }
     fun offFx(id: Long): String = fxOff[id]?.let { "・抵掉 " + it.joinToString("＋") } ?: ""
-    // 抵銷、結清的編號動到哪幾筆帳
-    val byOffset = HashMap<Long, MutableSet<Long>>()
-    d.bookTxns.forEach { t ->
-        (t.items.flatMap { it.pays.map { p -> p.offsetId } } + t.debtItems.flatMap { it.pays.map { p -> p.offsetId } })
-            .filter { it != 0L }.forEach { byOffset.getOrPut(it) { HashSet() }.add(t.id) }
+    // 抵銷、結清的編號動到哪幾筆帳（只有某人的頁面要亮底色時才用到，用到才算）
+    val byOffset by lazy {
+        val m = HashMap<Long, MutableSet<Long>>()
+        d.bookTxns.forEach { t ->
+            (t.items.flatMap { it.pays.map { p -> p.offsetId } } + t.debtItems.flatMap { it.pays.map { p -> p.offsetId } })
+                .filter { it != 0L }.forEach { m.getOrPut(it) { HashSet() }.add(t.id) }
+        }
+        m
     }
-    fun txnsOf(id: Long, oid: Long): Set<Long> = setOf(id) + (byOffset[oid] ?: emptySet())
+    fun txnsOf(id: Long, oid: Long): Set<Long> = if (!withTxns) emptySet() else setOf(id) + (byOffset[oid] ?: emptySet())
     // 分帳結清：總覽的紀錄每次結清一列（寫實際轉的錢）；某人的頁面每一項各一列
     fun movesText(s: tw.moneybook.app.Settle): String = s.moves.joinToString("、") { m ->
         (if (m.receive) "收 " else "付給 ") + m.who.ifBlank { "對方" } + " " + formatMoney(m.amount) + (m.accountId?.let { d.accMap[it] }?.let { "（${it.name}）" } ?: "")
@@ -1509,7 +1522,9 @@ private fun ReimbPersonPage(
     val groups = d.debtGroups().filter { it.who == who }
     val iOwe = groups.sumOf { it.remainingTwd }
     val net = owed - iOwe
-    val recs = records(d, claims, who)
+    // 從記一筆前往過來的：動到那筆帳的紀錄亮底色
+    val hlTxn = vm.reimbGoto?.takeIf { it.first == who }?.second
+    val recs = records(d, claims, who, withTxns = hlTxn != null)
     var menuFor by remember { mutableStateOf<Int?>(null) }
     var editing by remember { mutableStateOf<Triple<Claim, Int, ReimbPay>?>(null) }
 
@@ -1526,6 +1541,21 @@ private fun ReimbPersonPage(
     if (tab !in tabs) tab = tabs.first()
     // 每個分頁各自記住捲到哪裡：切分頁、點帳單去記一筆修改再回來都停在原本的位置
     val listState = vm.reimbPersonLists.getOrPut("$who:$tab") { androidx.compose.foundation.lazy.LazyListState() }
+    // 亮底色的紀錄不在畫面上就捲過去：只在剛進來時捲一次（紀錄是清單的最後幾項）；
+    // 上面吸頂的分頁列會蓋住最上面一段，所以捲到前一項，判斷看不看得到也扣掉那一段
+    val tabsPx = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.roundToPx() }
+    var hlScrolled by remember(who) { mutableStateOf(false) }
+    LaunchedEffect(who, tab) {
+        val hlN = if (tab == 2 && hlTxn != null && !hlScrolled) recs.indexOfFirst { hlTxn in it.txns } else -1
+        if (hlN < 0) return@LaunchedEffect
+        val total = snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
+        hlScrolled = true
+        val i = total - recs.size + hlN
+        val info = listState.layoutInfo
+        if (i >= 0 && info.visibleItemsInfo.none { it.index == i && it.offset >= tabsPx && it.offset + it.size <= info.viewportEndOffset }) {
+            listState.animateScrollToItem((i - 1).coerceAtLeast(0))
+        }
+    }
     // 「已收齊／已還清的 N 筆」展開了沒
     var foldTick by remember { mutableIntStateOf(0) }
     fun folded(k: Int): Boolean { foldTick; return "$who:$k" !in vm.reimbOpenFolds }
@@ -1618,7 +1648,7 @@ private fun ReimbPersonPage(
                         }
                         items(recs.size, key = { "r$it" }) { n ->
                             val r = recs[n]
-                            val hl = vm.reimbHighlightTxn?.let { it in r.txns } == true
+                            val hl = hlTxn != null && hlTxn in r.txns
                             CuteCard(
                                 Modifier.fillMaxWidth().then(if (hl) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)) else Modifier),
                                 color = if (hl) cute.soft else cute.card,

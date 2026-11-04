@@ -234,7 +234,7 @@ fun EditScreen(
     val debtOn = debtList.isNotEmpty()
     val debtLocked = orig?.debtItems?.any { it.pays.isNotEmpty() || it.done } == true
     // 欠款有還款／抵銷紀錄的人：改金額被擋時可以「前往刪除」
-    val lockedWho = orig?.debtItems?.filter { it.pays.isNotEmpty() || it.done }?.map { it.who.trim() }?.distinct() ?: emptyList()
+    val lockedWho = orig?.debtItems?.filter { it.pays.isNotEmpty() || it.done }?.map { it.who.trim() }?.filter { it.isNotEmpty() }?.distinct() ?: emptyList()
     // 在「報銷／欠款」頁按完成時選了互相抵銷的人（一行一個），存檔時才抵
     var offsetWho by rememberSaveable { mutableStateOf("") }
     var noteFocused by remember { mutableStateOf(false) }
@@ -340,6 +340,7 @@ fun EditScreen(
     val tries = rememberNeedTries()
     // 欠款有還款／抵銷紀錄時改了金額：存不進去（saveTxn 會留原本的），「儲存並前往」時不算沒填好
     val lockedAmt = debtLocked && debtOn && amount != orig?.amount
+    // 用 === 比對是不是這一個，所以要 remember 同一個物件，不能每次重建
     val lockedNeed = remember { Need("amount", "已有還款或抵銷紀錄，金額不能改；要改請先刪掉那筆紀錄") }
     val need = firstNeed(
         when {
@@ -394,7 +395,10 @@ fun EditScreen(
     val initialName = remember { tplName }
     val dirty = draft() != initialDraft || (tplMode && tplName != initialName)
     // 前往紀錄時算不算有沒存的修改：欠款鎖住時金額本來就存不進去，改了也不算
-    fun lockedNorm(x: TxnDraft) = if (debtLocked) x.copy(amount = 0L, offsetWho = emptyList()) else x
+    // （一人・全額的報銷金額跟著金額走，也不算；存檔時會照原本的金額封頂）
+    fun lockedNorm(x: TxnDraft) = if (debtLocked && type == TxType.EXPENSE) {
+        x.copy(amount = 0L, offsetWho = emptyList(), reimbItems = if (reimbFull) x.reimbItems.map { it.copy(amount = 0L) } else x.reimbItems)
+    } else x
     val goDirty = lockedNorm(draft()) != lockedNorm(initialDraft)
     var goWho by remember { mutableStateOf<String?>(null) }
     var goPending by remember { mutableStateOf<String?>(null) }

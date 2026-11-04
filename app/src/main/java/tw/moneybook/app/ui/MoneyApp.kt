@@ -208,7 +208,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                     vm.reimbPerson = who
                     vm.reimbPersonTab[who] = 2
                     vm.reimbPersonLists.remove("$who:2")
-                    vm.reimbHighlightTxn = top.id
+                    vm.reimbGoto = who to (top.id ?: 0L)
                     val rest = stack.dropLast(1)
                     stack = if (rest.lastOrNull() == Route.Page("reimb")) rest else rest + Route.Page("reimb")
                 },
