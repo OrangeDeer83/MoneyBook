@@ -57,6 +57,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -129,6 +131,8 @@ fun EditScreen(
     presetFrom: Long? = null,
     /** 預設記在哪個帳戶（從帳戶明細按記一筆） */
     presetAcc: Long? = null,
+    /** 前往某個人的報銷／欠款紀錄（看要不要刪掉還款、抵銷）：這個畫面會關掉 */
+    onGoRecords: (String) -> Unit = {},
     onClose: () -> Unit,
 ) {
     val d = vm.data
@@ -229,6 +233,8 @@ fun EditScreen(
     val debtList = if (type == TxType.EXPENSE && !tplMode) tw.moneybook.app.DebtCodec.decode(debtJson) else emptyList()
     val debtOn = debtList.isNotEmpty()
     val debtLocked = orig?.debtItems?.any { it.pays.isNotEmpty() || it.done } == true
+    // 欠款有還款／抵銷紀錄的人：改金額被擋時可以「前往刪除」
+    val lockedWho = orig?.debtItems?.filter { it.pays.isNotEmpty() || it.done }?.map { it.who.trim() }?.distinct() ?: emptyList()
     // 在「報銷／欠款」頁按完成時選了互相抵銷的人（一行一個），存檔時才抵
     var offsetWho by rememberSaveable { mutableStateOf("") }
     var noteFocused by remember { mutableStateOf(false) }
@@ -332,6 +338,9 @@ fun EditScreen(
     val canSave = !divZero && if (tplMode) targetOk else hasValue && targetOk
     // 必填：按「完成」才檢查，照畫面由上到下只標第一個沒填好的（見 Need.kt）
     val tries = rememberNeedTries()
+    // 欠款有還款／抵銷紀錄時改了金額：存不進去（saveTxn 會留原本的），「儲存並前往」時不算沒填好
+    val lockedAmt = debtLocked && debtOn && amount != orig?.amount
+    val lockedNeed = remember { Need("amount", "已有還款或抵銷紀錄，金額不能改；要改請先刪掉那筆紀錄") }
     val need = firstNeed(
         when {
             targetOk -> null
@@ -345,7 +354,7 @@ fun EditScreen(
                 Need("other", if (plan.mode == FxMode.BUY) "請輸入收到的外幣金額" else "請輸入收到的台幣金額")
             (plan.mode == FxMode.SPEND || plan.mode == FxMode.SAME) && keyVal > 0 && rate == null -> Need("rate", "請先設定匯率（點金額下面的字）")
             !hasValue -> Need("amount", if (plan.mode == FxMode.BUY || plan.mode == FxMode.SELL) "請輸入付出的金額" else "請先輸入金額")
-            debtLocked && debtOn && amount != orig?.amount -> Need("amount", "已有還款記錄，金額不能改；要改請先到「報銷／欠款」頁刪掉還款")
+            lockedAmt -> lockedNeed
             !debtLocked && debtOn && debtList.sumOf { it.amount } > actual -> Need("amount", "欠款合計 ${formatMoney(debtList.sumOf { it.amount })} 超過實付，請到「報銷／欠款」改小一點")
             else -> null
         },
@@ -384,6 +393,19 @@ fun EditScreen(
     val initialDraft = remember { draft() }
     val initialName = remember { tplName }
     val dirty = draft() != initialDraft || (tplMode && tplName != initialName)
+    // 前往紀錄時算不算有沒存的修改：欠款鎖住時金額本來就存不進去，改了也不算
+    fun lockedNorm(x: TxnDraft) = if (debtLocked) x.copy(amount = 0L, offsetWho = emptyList()) else x
+    val goDirty = lockedNorm(draft()) != lockedNorm(initialDraft)
+    var goWho by remember { mutableStateOf<String?>(null) }
+    var goPending by remember { mutableStateOf<String?>(null) }
+    fun goRecords(who: String) {
+        if (saved) return
+        if (goDirty) goWho = who
+        else {
+            saved = true
+            onGoRecords(who)
+        }
+    }
 
     fun applyTemplate(tp: tw.moneybook.app.Template) {
         if (tp.amount > 0) expr = tp.amount.toString()
@@ -765,7 +787,19 @@ fun EditScreen(
                 )
             }
         }
-        nv.Message("amount")
+        if (nv.on("amount") && need === lockedNeed && lockedWho.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                nv.Message("amount", Modifier.weight(1f))
+                Box {
+                    var pick by remember { mutableStateOf(false) }
+                    TextButton(onClick = { if (lockedWho.size == 1) goRecords(lockedWho[0]) else pick = true }) { Text("前往刪除 ›") }
+                    // 好幾個人都有紀錄：先選要看誰的
+                    DropdownMenu(expanded = pick, onDismissRequest = { pick = false }) {
+                        lockedWho.forEach { w -> DropdownMenuItem(text = { Text("$w 的紀錄") }, onClick = { pick = false; goRecords(w) }) }
+                    }
+                }
+            }
+        } else nv.Message("amount")
         nv.Message("rate")
         Spacer(Modifier.height(8.dp))
 
@@ -787,6 +821,29 @@ fun EditScreen(
     }
 
     // ───── 對話框 ─────
+    LaunchedEffect(goPending) { goPending?.let { w -> goPending = null; goRecords(w) } }
+    goWho?.let { w ->
+        AlertDialog(
+            onDismissRequest = { goWho = null },
+            title = { Text("修改還沒儲存") },
+            text = { Text("要先儲存再前往嗎？" + if (lockedAmt) "金額不能改，會維持原本的 ${formatMoney(orig?.amount ?: 0L)}。" else "") },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = { goWho = null }) { Text("取消") }
+                    TextButton(onClick = {
+                        goWho = null
+                        if (need != null && need !== lockedNeed) tries.count++
+                        else {
+                            saved = true
+                            vm.saveTxn(editId, draft())
+                            onGoRecords(w)
+                        }
+                    }) { Text("儲存並前往") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { goWho = null; saved = true; onGoRecords(w) }) { Text("不儲存", color = cute.expense) } },
+        )
+    }
     when (dialog) {
         "reimb" -> ReimbEditPage(
             title = "${cat?.name ?: "未分類"}・${shortDate(day)}",
@@ -807,7 +864,7 @@ fun EditScreen(
             debtNotAllowedWhy = if (fromFxAcc) "外幣帳戶的消費不能記欠款。別人先幫你付外幣的話，帳戶選台幣帳戶（或不選），再用「外幣」按鈕記外幣金額。" else "分期的消費不能記欠款。",
             startOnDebt = debtOn && reimbItems.isEmpty(),
             onDone = { on2, full2, json2, who2, dj2, ow2 ->
-                offsetWho = ow2.joinToString("\n")
+                if (ow2 != null) offsetWho = ow2.joinToString("\n")
                 reimbOn = on2
                 reimbFull = full2
                 reimbJson = json2
@@ -815,6 +872,8 @@ fun EditScreen(
                 debtJson = dj2
                 dialog = ""
             },
+            // 報銷／欠款頁剛把名單交回來：等這次重組算好新的內容，才判斷有沒有沒存的修改
+            onGo = { w -> goPending = w },
             onClose = { dialog = "" },
         )
         "unsaved" -> AlertDialog(

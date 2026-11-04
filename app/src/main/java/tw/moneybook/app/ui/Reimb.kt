@@ -290,8 +290,10 @@ fun ReimbEditPage(
     debtAllowed: Boolean = true,
     debtNotAllowedWhy: String = "",
     startOnDebt: Boolean = false,
-    /** offsetWho：同一個人兩邊都有、選了「抵銷」的人（存檔時才抵，見 withSameTxnOffset） */
-    onDone: (on: Boolean, full: Boolean, json: String, who: String, debtJson: String, offsetWho: List<String>) -> Unit,
+    /** offsetWho：同一個人兩邊都有、選了「抵銷」的人（存檔時才抵，見 withSameTxnOffset）；null＝沿用原本的選擇 */
+    onDone: (on: Boolean, full: Boolean, json: String, who: String, debtJson: String, offsetWho: List<String>?) -> Unit,
+    /** 鎖住的那一列按「前往」：先照「完成」交出這一頁的名單，再前往那個人的紀錄 */
+    onGo: ((String) -> Unit)? = null,
     onClose: () -> Unit,
 ) {
     val cute = LocalCute.current
@@ -332,7 +334,8 @@ fun ReimbEditPage(
     var askDone by remember { mutableStateOf<((List<String>) -> Unit)?>(null) }
     val askOff = remember { mutableStateMapOf<String, Boolean>() }
 
-    fun finish() {
+    /** then：前往紀錄時用，名單交出去後接著做（不問要不要抵銷，沿用原本的選擇） */
+    fun finish(then: (() -> Unit)? = null) {
         // 欠款：有金額就要有名字；合計不能超過實付
         // 還沒輸入帳目金額時，只有一個有名字的人＝整筆（金額之後跟著帳目走）
         fun pending1(list: List<ReimbRow>) = actual <= 0L && list.count { !it.isLocked } == 1 && list.any { !it.isLocked && it.who.isNotBlank() && rowTwd(it) <= 0L }
@@ -349,7 +352,7 @@ fun ReimbEditPage(
         val rl = rows.filter { it.isLocked || rowTwd(it) > 0L }
         val rLocked = rl.mapNotNull { it.locked }
         val rFree = merged(rl)
-        val done: (List<String>) -> Unit = { ow ->
+        val done: (List<String>?) -> Unit = { ow ->
             when {
                 rl.isEmpty() && pending1(rows) -> onDone(true, true, initJson, rows.first { !it.isLocked && it.who.isNotBlank() }.who.trim(), dj, ow)
                 rl.isEmpty() -> onDone(false, true, "", "", dj, ow)
@@ -360,7 +363,10 @@ fun ReimbEditPage(
         }
         // 只看這一筆裡的帳；只填名字、還沒有金額的人不算（存檔時會重算，抵的金額以存檔時為準）
         val offs = sameTxnOffsets(rLocked + rFree.map { (w, v) -> ReimbItem(w, v) }, debtList)
-        if (offs.isEmpty()) done(emptyList())
+        if (then != null) {
+            done(null)
+            then()
+        } else if (offs.isEmpty()) done(emptyList())
         else {
             askOff.clear()
             askOffsets = offs
@@ -483,6 +489,14 @@ fun ReimbEditPage(
                                     )
                                 }
                                 Text(formatMoney(r.locked?.amount ?: r.lockedDebt!!.amount), style = MaterialTheme.typography.bodyLarge, color = cute.sub)
+                                if (onGo != null && r.who.isNotBlank()) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Box(
+                                        Modifier.clip(RoundedCornerShape(50)).background(cute.card)
+                                            .clickable { finish { onGo(r.who.trim()) } }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    ) { Text("前往 ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+                                }
                             }
                         } else {
                             val setWho: (String) -> Unit = { v ->
@@ -712,7 +726,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
     var page by remember { mutableStateOf<ReimbPage>(vm.reimbPerson?.let { ReimbPage.Person(it) } ?: ReimbPage.Home) }
     androidx.compose.runtime.SideEffect { vm.reimbPerson = (page as? ReimbPage.Person)?.who }
     val leave = {
-        vm.reimbPerson = null; vm.reimbTab = 0; vm.reimbLists.clear(); vm.reimbScrolls.clear()
+        vm.reimbPerson = null; vm.reimbHighlightTxn = null; vm.reimbTab = 0; vm.reimbLists.clear(); vm.reimbScrolls.clear()
         vm.reimbPersonTab.clear(); vm.reimbPersonLists.clear(); vm.reimbOpenFolds.clear(); onBack()
     }
     // 從人頁進去的收款／還款／抵銷，做完回到人頁；從總覽進去的回到總覽
@@ -732,7 +746,8 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
         is ReimbPage.Repay -> DebtRepayPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Person -> ReimbPersonPage(
-            vm, p.who, onBack = { fromPerson = null; page = ReimbPage.Home },
+            // 從記一筆「前往」過來的：返回就回到原本的地方
+            vm, p.who, onBack = { if (vm.reimbHighlightTxn != null) leave() else { fromPerson = null; page = ReimbPage.Home } },
             onEdit = onEdit,
             onReceive = { fromPerson = p.who; page = ReimbPage.Receive(p.who) },
             onRepay = { fromPerson = p.who; page = ReimbPage.Repay(p.who) },
@@ -996,6 +1011,8 @@ private class Rec(
     val onDelete: (MoneyViewModel) -> Unit,
     /** 收款可以修改：報銷的哪一筆、第幾筆收款 */
     val claim: Claim? = null, val payIndex: Int = -1, val pay: ReimbPay? = null,
+    /** 這筆紀錄動到哪幾筆帳（抵銷、結清是兩邊都算）：從記一筆「前往」過來時亮底色 */
+    val txns: Set<Long> = emptySet(),
 ) {
     fun color(c: Cute) = when (kind) { 0 -> c.income; 1 -> c.expense; else -> c.sub }
 }
@@ -1009,6 +1026,13 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
         t.debtItems.forEach { item -> item.pays.forEach { p -> if (p.offsetId != 0L) fxOff.getOrPut(p.offsetId) { ArrayList() }.add(formatFx(p.units, t.debtCurrency)) } }
     }
     fun offFx(id: Long): String = fxOff[id]?.let { "・抵掉 " + it.joinToString("＋") } ?: ""
+    // 抵銷、結清的編號動到哪幾筆帳
+    val byOffset = HashMap<Long, MutableSet<Long>>()
+    d.bookTxns.forEach { t ->
+        (t.items.flatMap { it.pays.map { p -> p.offsetId } } + t.debtItems.flatMap { it.pays.map { p -> p.offsetId } })
+            .filter { it != 0L }.forEach { byOffset.getOrPut(it) { HashSet() }.add(t.id) }
+    }
+    fun txnsOf(id: Long, oid: Long): Set<Long> = setOf(id) + (byOffset[oid] ?: emptySet())
     // 分帳結清：總覽的紀錄每次結清一列（寫實際轉的錢）；某人的頁面每一項各一列
     fun movesText(s: tw.moneybook.app.Settle): String = s.moves.joinToString("、") { m ->
         (if (m.receive) "收 " else "付給 ") + m.who.ifBlank { "對方" } + " " + formatMoney(m.amount) + (m.accountId?.let { d.accMap[it] }?.let { "（${it.name}）" } ?: "")
@@ -1030,6 +1054,7 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
                 if (who != null) out.add(Rec(
                     c.who, pay.day, pay.time, "分帳結清", "${billLabel(d, c.txn)}・${movesText(st)}", formatMoney(pay.amount), 2,
                     "分帳結清 ${formatMoney(pay.amount)}", "${billLabel(d, c.txn)}・${movesText(st)}", { vm -> vm.deleteSettle(st.id) },
+                    txns = txnsOf(c.txn.id, st.id),
                 ))
                 return@forEachIndexed
             }
@@ -1037,13 +1062,14 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
                 if (pay.offsetId != 0L) Rec(
                     c.who, pay.day, pay.time, "和${ownerLabel(c.who)}互相抵銷", "${billLabel(d, c.txn)}・不動帳戶" + offFx(pay.offsetId), formatMoney(pay.amount), 2,
                     "互相抵銷 ${formatMoney(pay.amount)}", "${billLabel(d, c.txn)}・不動帳戶" + offFx(pay.offsetId), { vm -> vm.deleteOffset(pay.offsetId) },
+                    txns = txnsOf(c.txn.id, pay.offsetId),
                 )
                 else Rec(
                     c.who, pay.day, pay.time, ownerLabel(c.who),
                     "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}" + if (acc != null && acc.isForeign && pay.fxAmount > 0L) "（${formatFx(pay.fxAmount, acc.currency)}）" else "",
                     "+" + formatMoney(pay.amount), 0,
                     "收到 ${payText(d, pay)}", "${billLabel(d, c.txn)}・存入 ${acc?.name ?: "未指定帳戶"}",
-                    { vm -> vm.deleteReimbPay(c.txn.id, c.index, n) }, c, n, pay,
+                    { vm -> vm.deleteReimbPay(c.txn.id, c.index, n) }, c, n, pay, setOf(c.txn.id),
                 )
             )
         }
@@ -1056,6 +1082,7 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
                 if (st != null && who != null) out.add(Rec(
                     item.who.trim(), p.day, p.time, "分帳結清", "${billLabel(d, t)}・${movesText(st)}", formatMoney(p.amount), 2,
                     "分帳結清 ${formatMoney(p.amount)}", "${billLabel(d, t)}・${movesText(st)}", { vm -> vm.deleteSettle(st.id) },
+                    txns = txnsOf(t.id, st.id),
                 ))
                 if (p.offsetId != 0L) return@forEachIndexed
                 val acc = p.accountId?.let { d.accMap[it] }
@@ -1063,6 +1090,7 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null): List<
                 out.add(Rec(
                     item.who.trim(), p.day, p.time, "還款給${ownerLabel(item.who.trim())}", "${billLabel(d, t)}・從 ${acc?.name ?: "未指定帳戶"}", "-$amt", 1,
                     "還款 $amt", "${billLabel(d, t)}・從 ${acc?.name ?: "未指定帳戶"}", { vm -> vm.deleteDebtPay(t.id, i, n) },
+                    txns = setOf(t.id),
                 ))
             }
         }
@@ -1590,7 +1618,11 @@ private fun ReimbPersonPage(
                         }
                         items(recs.size, key = { "r$it" }) { n ->
                             val r = recs[n]
-                            CuteCard(Modifier.fillMaxWidth()) {
+                            val hl = vm.reimbHighlightTxn?.let { it in r.txns } == true
+                            CuteCard(
+                                Modifier.fillMaxWidth().then(if (hl) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)) else Modifier),
+                                color = if (hl) cute.soft else cute.card,
+                            ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text("${dayTimeLabel(r.day, r.time)}　${r.line}", style = MaterialTheme.typography.bodyLarge)

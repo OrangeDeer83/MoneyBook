@@ -126,6 +126,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     var calSelected by mutableLongStateOf(LocalDate.now().toEpochDay())
     // 報銷／欠款頁：正在看誰的頁面、總覽在哪個分頁；從那裡點帳單去記一筆修改，回來要停在原處
     var reimbPerson by mutableStateOf<String?>(null)
+    /** 從記一筆「前往」某人的紀錄：動到這筆帳的紀錄亮底色，離開報銷頁就清掉 */
+    var reimbHighlightTxn by mutableStateOf<Long?>(null)
     var reimbTab by mutableIntStateOf(0)
     // 報銷／欠款頁的捲動位置：總覽每個分頁一個、每個人的頁面一個；回到這一頁時停在原本的位置，離開報銷／欠款才清掉
     val reimbLists = HashMap<Int, androidx.compose.foundation.lazy.LazyListState>()

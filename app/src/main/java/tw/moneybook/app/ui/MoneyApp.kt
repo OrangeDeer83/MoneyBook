@@ -201,7 +201,19 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 // 「我的 → 帳戶管理」直接切到帳戶分頁
                 open = { if (it == "accounts") { tab = 1 } else { push(Route.Page(it)) } },
             )
-            is Route.Edit -> EditScreen(vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, presetFrom = top.presetFrom, presetAcc = top.presetAcc, onClose = { pop() })
+            is Route.Edit -> EditScreen(
+                vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, presetFrom = top.presetFrom, presetAcc = top.presetAcc,
+                onGoRecords = { who ->
+                    // 關掉記一筆，打開這個人的紀錄分頁；本來就是從報銷頁過來的就不再疊一層
+                    vm.reimbPerson = who
+                    vm.reimbPersonTab[who] = 2
+                    vm.reimbPersonLists.remove("$who:2")
+                    vm.reimbHighlightTxn = top.id
+                    val rest = stack.dropLast(1)
+                    stack = if (rest.lastOrNull() == Route.Page("reimb")) rest else rest + Route.Page("reimb")
+                },
+                onClose = { pop() },
+            )
             is Route.Page -> when (top.name) {
                 "books" -> BooksScreen(vm) { pop() }
                 "categories" -> CategoriesScreen(vm) { pop() }
