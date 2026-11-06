@@ -164,7 +164,7 @@ class SettleTest {
         assertEquals(mapOf("r12_0" to 300L), st.kept)
         val snap = after.settleSnapshot(st.id)!!
         assertEquals(rKeys, snap.reimbKeys)
-        assertEquals(mapOf(ItemKey(12, 0) to 300L), snap.keep)
+        assertEquals(mapOf("r12_0" to 300L), snap.keep)
         assertEquals(st, Codec.decode(Codec.encode(after)).settles[0])
     }
 
@@ -175,7 +175,32 @@ class SettleTest {
         val old = after.copy(settles = after.settles.map { it.copy(kept = emptyMap()) })
         val snap = old.settleSnapshot(old.settles[0].id)!!
         assertEquals(rKeys, snap.reimbKeys)
-        assertEquals(mapOf(ItemKey(11, 0) to 50L), snap.keep)
+        assertEquals(mapOf("r11_0" to 50L), snap.keep)
+    }
+
+    @Test
+    fun snapshotKeepsReimbAndDebtOfSameTxnApart() {
+        // 同一筆帳 14：Dan 欠我 300（報銷第 0 項）、我欠 Eve 100（欠款第 0 項）；Dan 只給 100，差的 100 留在 Dan 那一項
+        val t = Txn(14, 1L, TxType.EXPENSE, 500, 1L, 1L, null, day, "", emptyList(), debtItems = listOf(DebtItem("Eve", 100)), debtSelf = 400)
+            .withItems(listOf(ReimbItem("Dan", 300)))
+        val d0 = data().copy(txns = sortTxns(data().txns + t))
+        val k = ItemKey(14, 0)
+        val after = d0.withSettle(listOf(k), listOf(k), listOf(SettleMove(true, "Dan", 100, 2L)), day + 5, 600, SettleDiff.KEEP, mapOf(k to 100L))!!
+        val snap = after.settleSnapshot(after.settles[0].id)!!
+        assertEquals(mapOf("r14_0" to 100L), snap.keep)
+        assertEquals(listOf(k), snap.reimbKeys)
+        assertEquals(listOf(k), snap.debtKeys)
+    }
+
+    @Test
+    fun replaceKeepSettleUpdatesKept() {
+        // 原本 Bob 給 650、差的 50 留在 Amy；改成給 600、差的 100 改留在 Bob
+        val after = data().withSettle(rKeys, dKeys, bob(650), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(11, 0) to 50L))!!
+        val re = after.withSettleReplaced(after.settles[0].id, rKeys, dKeys, bob(600), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(12, 0) to 100L))!!
+        assertEquals(mapOf("r12_0" to 100L), re.settles.single().kept)
+        assertEquals(0L, re.t(11).items[0].remaining)
+        assertEquals(100L, re.t(12).items[0].remaining)
+        assertEquals(mapOf("r12_0" to 100L), re.settleSnapshot(re.settles[0].id)!!.keep)
     }
 
     @Test

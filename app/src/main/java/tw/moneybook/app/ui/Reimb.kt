@@ -1038,7 +1038,7 @@ private fun SettleDetailDialog(vm: MoneyViewModel, id: Long, onEdit: () -> Unit,
         return
     }
     val snap = remember(d, id) { d.settleSnapshot(id) }
-    val tm = d.txns.associateBy { it.id }
+    val tm = remember(d) { d.txns.associateBy { it.id } }
     @Composable
     fun line(left: String, sub: String?, right: String, color: androidx.compose.ui.graphics.Color) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1049,8 +1049,8 @@ private fun SettleDetailDialog(vm: MoneyViewModel, id: Long, onEdit: () -> Unit,
             Text(right, style = MaterialTheme.typography.bodyMedium, color = color)
         }
     }
-    fun keptText(k: tw.moneybook.app.ItemKey, pay: Long, done: String): String {
-        val kept = snap?.keep?.get(k) ?: 0L
+    fun keptText(key: String, pay: Long, done: String): String {
+        val kept = snap?.keep?.get(key) ?: 0L
         return when {
             pay > 0L && kept > 0L -> "${formatMoney(pay)}・繼續欠 ${formatMoney(kept)}"
             pay > 0L -> formatMoney(pay)
@@ -1078,13 +1078,13 @@ private fun SettleDetailDialog(vm: MoneyViewModel, id: Long, onEdit: () -> Unit,
                     val t = tm[k.txnId] ?: return@forEach
                     val item = t.items.getOrNull(k.index) ?: return@forEach
                     val pay = item.pays.filter { it.offsetId == id }.sumOf { it.amount }
-                    line("${ownerLabel(item.who.trim())} 欠我", billLabel(d, t), keptText(k, pay, "結案"), cute.income)
+                    line("${ownerLabel(item.who.trim())} 欠我", billLabel(d, t), keptText(k.reimbKey(), pay, "結案"), cute.income)
                 }
                 snap?.debtKeys?.forEach { k ->
                     val t = tm[k.txnId] ?: return@forEach
                     val item = t.debtItems.getOrNull(k.index) ?: return@forEach
                     val pay = item.pays.filter { it.offsetId == id }.sumOf { it.amount }
-                    line("我欠 ${ownerLabel(item.who.trim())}", billLabel(d, t), keptText(k, pay, "還清"), cute.expense)
+                    line("我欠 ${ownerLabel(item.who.trim())}", billLabel(d, t), keptText(k.debtKey(), pay, "還清"), cute.expense)
                 }
             }
         },
@@ -1092,9 +1092,9 @@ private fun SettleDetailDialog(vm: MoneyViewModel, id: Long, onEdit: () -> Unit,
             Row {
                 TextButton(onClick = { onClose(); vm.deleteSettle(id) }) { Text("刪除", color = cute.expense) }
                 TextButton(onClick = onEdit) { Text("修改") }
-                TextButton(onClick = onClose) { Text("關閉") }
             }
         },
+        dismissButton = { TextButton(onClick = onClose) { Text("關閉") } },
     )
 }
 
@@ -2305,10 +2305,10 @@ private fun SettlePage(vm: MoneyViewModel, editId: Long? = null, onBack: () -> U
     var pick by remember { mutableStateOf("") }
     val all = remember(d) {
         // 修改時：清單照拿掉這次結清後的樣子（那幾筆恢復成沒結清，才勾得到）
-        val d = if (edit != null) d.withSettleRemoved(edit.id) ?: d else d
-        claimsOf(d.bookTxns).filter { !it.item.closed && it.item.remaining > 0L }
+        val base = if (edit != null) d.withSettleRemoved(edit.id) ?: d else d
+        claimsOf(base.bookTxns).filter { !it.item.closed && it.item.remaining > 0L }
             .map { SettleItem(tw.moneybook.app.ItemKey(it.txn.id, it.index), false, it.txn, it.who, it.item.remaining, "") } +
-            d.bookTxns.flatMap { t ->
+            base.bookTxns.flatMap { t ->
                 t.debtItems.mapIndexedNotNull { i, it ->
                     if (it.remainingUnits <= 0L) null
                     else SettleItem(
@@ -2318,19 +2318,15 @@ private fun SettlePage(vm: MoneyViewModel, editId: Long? = null, onBack: () -> U
                 }
             }
     }
+    // 修改時原本勾的帳（SettleItem.id）
+    val snapIds = remember(snap) { snap?.let { (it.reimbKeys.map { k -> k.reimbKey() } + it.debtKeys.map { k -> k.debtKey() }).toSet() } ?: emptySet() }
     // 取消勾選的項目（SettleItem.id）；修改時原本沒勾的先取消
-    val off = remember {
-        mutableStateListOf<String>().apply {
-            if (snap != null) {
-                val on = (snap.reimbKeys.map { it.reimbKey() } + snap.debtKeys.map { it.debtKey() }).toSet()
-                addAll(all.map { it.id }.filter { it !in on })
-            }
-        }
-    }
+    val off = remember { mutableStateListOf<String>().apply { if (snap != null) addAll(all.map { it.id }.filter { it !in snapIds }) } }
     val tagList = all.flatMap { it.txn.tags }.distinct().sorted()
     val start3 = LocalDate.now().minusMonths(3).toEpochDay()
+    // 修改時原本勾的帳不受篩選影響（不然切了篩選會悄悄少結清幾筆）
     val shown = all.filter { s ->
-        (tags.isEmpty() || s.txn.tags.any { it in tags }) && when (period) {
+        s.id in snapIds || (tags.isEmpty() || s.txn.tags.any { it in tags }) && when (period) {
             1 -> s.txn.day >= start3
             2 -> s.txn.day in from..to
             else -> true
@@ -2347,7 +2343,11 @@ private fun SettlePage(vm: MoneyViewModel, editId: Long? = null, onBack: () -> U
         ?: okAccs.firstOrNull { it.type != AccountType.CARD && it.type != AccountType.LOAN }?.id ?: okAccs.firstOrNull()?.id
     val moves = remember {
         mutableStateListOf<SettleMoveRow>().apply {
-            edit?.moves?.forEach { m -> add(SettleMoveRow(m.receive, m.amount.toString(), m.accountId).also { it.who = m.who }) }
+            // 原本的帳戶已經不在（或變成外幣帳戶）：清空，讓「請選錢進出哪個帳戶」提示接手
+            edit?.moves?.forEach { m ->
+                val acc = m.accountId?.takeIf { id -> d.accMap[id]?.let { !it.isForeign } == true }
+                add(SettleMoveRow(m.receive, m.amount.toString(), acc).also { it.who = m.who })
+            }
         }
     }
     var day by remember { mutableStateOf(edit?.day ?: today) }
@@ -2675,14 +2675,19 @@ private fun SettlePage(vm: MoneyViewModel, editId: Long? = null, onBack: () -> U
                             keepMode = false
                             keepInit?.let { k ->
                                 keepInit = null
-                                val items = sel.filter { s -> s.key in k }
+                                // 只帶回現在差額那一邊的帳（改了勾選可能變成多收、或剛好）；金額最後一個人補成剛好
+                                val items = if (diff == 0L) emptyList() else sel.filter { s -> s.debt == (diff > 0L) && s.id in k }
                                 if (items.isNotEmpty()) {
                                     keepMode = true
                                     items.groupBy { it.who }.forEach { (w, l) ->
                                         keepWho.add(w)
-                                        keepAmt[w] = l.sumOf { k[it.key] ?: 0L }
-                                        keepPicked[w] = l.map { it.id }.toSet()
+                                        val amt = l.sumOf { k[it.id] ?: 0L }
+                                        // 和自動挑的一樣就不鎖（之後差額變了還會自動挑），不一樣才當作自己勾過那幾筆
+                                        val auto = tw.moneybook.app.keepSpread(billsOf(w).map { it.id to it.twd }, amt).map { it.first }.toSet()
+                                        if (auto != l.map { it.id }.toSet()) keepPicked[w] = l.map { it.id }.toSet()
+                                        keepAmt[w] = amt.coerceAtMost(capOf(w))
                                     }
+                                    refill(keepWho.lastOrNull())
                                 }
                             }
                             step = 1

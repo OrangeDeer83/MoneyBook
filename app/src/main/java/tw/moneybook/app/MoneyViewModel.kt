@@ -524,9 +524,13 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     ): Boolean {
         val d = data
         val old = d.settles.firstOrNull { it.id == oldId } ?: return false
-        val after = d.withSettleReplaced(oldId, reimbKeys, debtKeys, moves, day, time, mode, keep) ?: return false
+        val after = d.withSettleReplaced(oldId, reimbKeys, debtKeys, moves, day, time, mode, keep) ?: run {
+            toast("存不了：請確認錢進出的帳戶還在、勾的帳都還沒結清")
+            return false
+        }
         val newId = after.settles.last().id
-        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        val am = after.txns.associateBy { it.id }
+        val before = d.txns.filter { t -> am[t.id].let { a -> a != null && a != t } }.associateBy { it.id }
         commit(after)
         _messages.tryEmit(UiMsg("已修改分帳結清", "復原") {
             val now = data
