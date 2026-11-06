@@ -114,6 +114,7 @@ object Codec {
                             st.moves.forEach { mv -> put(JSONObject().put("receive", mv.receive).put("who", mv.who).put("amount", mv.amount).put("accountId", mv.accountId ?: JSONObject.NULL)) }
                         })
                         .put("closed", JSONArray(st.closed))
+                        .put("kept", JSONObject().apply { st.kept.forEach { (k, v) -> put(k, v) } })
                 )
             }
         })
@@ -276,6 +277,7 @@ object Codec {
                     SettleMove(m.optBoolean("receive", true), m.optString("who", ""), m.optLong("amount", 0L), if (m.isNull("accountId")) null else m.optLong("accountId"))
                 },
                 closed = strings(o.optJSONArray("closed")),
+                kept = o.optJSONObject("kept")?.let { k -> k.keys().asSequence().associateWith { key -> k.optLong(key, 0L) }.filterValues { it > 0L } } ?: emptyMap(),
             )
         }
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +

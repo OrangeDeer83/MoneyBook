@@ -146,4 +146,50 @@ class SettleTest {
         assertEquals(700L, back.runningBalances(2L)["s${after.settles[0].id}_0"])
         assertEquals(700L, back.balanceAt(2L, day + 5, 23 * 60))
     }
+
+    @Test
+    fun snapshotBringsBackWhatWasSettled() {
+        val after = data().withSettle(rKeys, dKeys, bob(700), day + 5, 600)!!
+        val snap = after.settleSnapshot(after.settles[0].id)!!
+        assertEquals(rKeys, snap.reimbKeys)
+        assertEquals(dKeys, snap.debtKeys)
+        assertTrue(snap.keep.isEmpty())
+    }
+
+    @Test
+    fun snapshotKeepsFullyKeptItem() {
+        // Bob 只給 400（少 300），差的全部留在 Bob 那一筆：那一筆沒有收款紀錄，靠 kept 找回來
+        val after = data().withSettle(rKeys, dKeys, bob(400), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(12, 0) to 300L))!!
+        val st = after.settles[0]
+        assertEquals(mapOf("r12_0" to 300L), st.kept)
+        val snap = after.settleSnapshot(st.id)!!
+        assertEquals(rKeys, snap.reimbKeys)
+        assertEquals(mapOf(ItemKey(12, 0) to 300L), snap.keep)
+        assertEquals(st, Codec.decode(Codec.encode(after)).settles[0])
+    }
+
+    @Test
+    fun snapshotGuessesKeepForOldData() {
+        // 舊資料沒有 kept：留一部分的那一筆從還欠多少推回來
+        val after = data().withSettle(rKeys, dKeys, bob(650), day + 5, 600, SettleDiff.KEEP, mapOf(ItemKey(11, 0) to 50L))!!
+        val old = after.copy(settles = after.settles.map { it.copy(kept = emptyMap()) })
+        val snap = old.settleSnapshot(old.settles[0].id)!!
+        assertEquals(rKeys, snap.reimbKeys)
+        assertEquals(mapOf(ItemKey(11, 0) to 50L), snap.keep)
+    }
+
+    @Test
+    fun replaceSettleRedoesItWithNewAmount() {
+        val after = data().withSettle(rKeys, dKeys, bob(700), day + 5, 600)!!
+        val oldId = after.settles[0].id
+        // 改成實際收 650、差的算我的，日期也改
+        val re = after.withSettleReplaced(oldId, rKeys, dKeys, bob(650), day + 6, 700)!!
+        assertEquals(1, re.settles.size)
+        assertTrue(re.settles[0].id != oldId)
+        assertEquals(day + 6, re.settles[0].day)
+        assertEquals(650L, re.balances()[2L])
+        assertTrue(re.t(11).items[0].pays.none { it.offsetId == oldId })
+        assertEquals(0L, re.debtOutstanding())
+        assertNull(after.withSettleReplaced(999, rKeys, dKeys, bob(650), day, -1))
+    }
 }

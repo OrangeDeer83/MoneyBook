@@ -24,6 +24,8 @@ data class Settle(
     val moves: List<SettleMove>,
     /** 這次結清時才結案的報銷項目（"r<記錄 id>_<第幾項>"）、才結清的欠款項目（"d<記錄 id>_<第幾項>"）；刪除時恢復成沒結清 */
     val closed: List<String> = emptyList(),
+    /** 「繼續欠」時每一項留了多少台幣（鍵和 closed 一樣）；差的算我的、沒有差額是空的。修改這次結清時帶回來用（舊資料沒有，見 settleSnapshot） */
+    val kept: Map<String, Long> = emptyMap(),
 ) {
     val received: Long get() = moves.filter { it.receive }.sumOf { it.amount }
     val paidOut: Long get() = moves.filter { !it.receive }.sumOf { it.amount }
@@ -187,10 +189,60 @@ fun AppData.withSettle(
         }
         nt
     }
-    return copy(txns = newTxns, settles = settles + Settle(id, bookId, day, time, moves, closed), nextId = id + 1)
+    // 「繼續欠」留在哪幾項：留滿的那項沒有收款紀錄，不記下來修改時就找不回來
+    val kept = if (diff != 0L && mode == SettleDiff.KEEP) keep.mapKeys { (k, _) -> if (diff < 0L) k.reimbKey() else k.debtKey() } else emptyMap()
+    return copy(txns = newTxns, settles = settles + Settle(id, bookId, day, time, moves, closed, kept), nextId = id + 1)
 }
 
 /** 刪掉一次分帳結清：拿掉它的收款／還款，當時才結案／結清的項目恢復成沒結清，帳戶跟著回去 */
+/** 修改分帳結清時帶回原本的內容：勾了哪幾項報銷、欠款，「繼續欠」時每一項留了多少（空的＝差的算我的或沒有差額） */
+class SettleSnapshot(val reimbKeys: List<ItemKey>, val debtKeys: List<ItemKey>, val keep: Map<ItemKey, Long>)
+
+/**
+ * 某次分帳結清勾了哪些帳：有這次的收款／還款紀錄、這次才結案的、「繼續欠」整項留著的。
+ * 舊資料沒有記 kept：從刪掉這次結清後還欠多少、這次收／還了多少推回來（整項都留著的那幾項推不回來）。
+ */
+fun AppData.settleSnapshot(id: Long): SettleSnapshot? {
+    val s = settles.firstOrNull { it.id == id } ?: return null
+    val base = withSettleRemoved(id) ?: return null
+    val bm = base.txns.associateBy { it.id }
+    val closed = s.closed.toSet()
+    val r = ArrayList<ItemKey>()
+    val dk = ArrayList<ItemKey>()
+    val guess = LinkedHashMap<ItemKey, Long>()
+    for (t in txns.sortedWith(compareBy({ it.day }, { it.id }))) {
+        t.items.forEachIndexed { i, item ->
+            val k = ItemKey(t.id, i)
+            val pay = item.pays.filter { it.offsetId == id }.sumOf { it.amount }
+            if (pay == 0L && k.reimbKey() !in closed && k.reimbKey() !in s.kept) return@forEachIndexed
+            r.add(k)
+            val left = (bm[t.id]?.items?.getOrNull(i)?.remaining ?: 0L) - pay
+            if (!item.closed && left > 0L) guess[k] = left
+        }
+        t.debtItems.forEachIndexed { i, item ->
+            val k = ItemKey(t.id, i)
+            val pay = item.pays.filter { it.offsetId == id }.sumOf { it.amount }
+            if (pay == 0L && k.debtKey() !in closed && k.debtKey() !in s.kept) return@forEachIndexed
+            dk.add(k)
+            val left = (bm[t.id]?.debtItems?.getOrNull(i)?.remainingTwd ?: 0L) - pay
+            if (!item.done && left > 0L) guess[k] = left
+        }
+    }
+    val keep = if (s.kept.isNotEmpty()) {
+        (r.map { it to it.reimbKey() } + dk.map { it to it.debtKey() }).mapNotNull { (k, key) -> s.kept[key]?.let { k to it } }.toMap()
+    } else guess
+    return SettleSnapshot(r, dk, keep)
+}
+
+/** 修改分帳結清：先拿掉原本那次（那幾筆恢復、帳戶跟著回去），再照新的內容結清一次；不成立回傳 null */
+fun AppData.withSettleReplaced(
+    oldId: Long, reimbKeys: List<ItemKey>, debtKeys: List<ItemKey>, moves: List<SettleMove>, day: Long, time: Int,
+    mode: SettleDiff = SettleDiff.SELF, keep: Map<ItemKey, Long> = emptyMap(),
+): AppData? {
+    val old = settles.firstOrNull { it.id == oldId } ?: return null
+    return withSettleRemoved(oldId)?.withSettle(reimbKeys, debtKeys, moves, day, time, mode, keep, old.bookId)
+}
+
 fun AppData.withSettleRemoved(id: Long): AppData? {
     val s = settles.firstOrNull { it.id == id } ?: return null
     val closed = s.closed.toSet()

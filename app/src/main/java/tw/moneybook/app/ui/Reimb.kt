@@ -100,6 +100,8 @@ import tw.moneybook.app.DebtRepayPart
 import tw.moneybook.app.offsetDebtTwd
 import tw.moneybook.app.offsetFxTwd
 import tw.moneybook.app.offsetFxDefaultUnits
+import tw.moneybook.app.settleSnapshot
+import tw.moneybook.app.withSettleRemoved
 import tw.moneybook.app.SameTxnOffset
 import tw.moneybook.app.sameTxnOffsets
 import tw.moneybook.app.fmt
@@ -717,6 +719,8 @@ private sealed class ReimbPage {
     class Repay(val who: String) : ReimbPage()
     class Offset(val who: String) : ReimbPage()
     object Settle : ReimbPage()
+    /** 修改某次分帳結清 */
+    class SettleEdit(val id: Long) : ReimbPage()
 }
 
 /**
@@ -749,8 +753,11 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             onRepay = { fromPerson = null; page = ReimbPage.Repay(it) },
             onOffset = { fromPerson = null; page = ReimbPage.Offset(it) },
             onSettle = { fromPerson = null; page = ReimbPage.Settle },
+            onEditSettle = { fromPerson = null; page = ReimbPage.SettleEdit(it) },
         )
         is ReimbPage.Settle -> SettlePage(vm, onBack = { page = ReimbPage.Home }, onDone = { page = ReimbPage.Home })
+        // 修改完、或沒改直接返回：回到點進來的地方（總覽或那個人）
+        is ReimbPage.SettleEdit -> SettlePage(vm, p.id, onBack = { back() }, onDone = { back() })
         is ReimbPage.Receive -> ReimbReceivePage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Repay -> DebtRepayPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
@@ -761,6 +768,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             onReceive = { fromPerson = p.who; page = ReimbPage.Receive(p.who) },
             onRepay = { fromPerson = p.who; page = ReimbPage.Repay(p.who) },
             onOffset = { fromPerson = p.who; page = ReimbPage.Offset(p.who) },
+            onEditSettle = { fromPerson = p.who; page = ReimbPage.SettleEdit(it) },
         )
     }
 }
@@ -840,9 +848,14 @@ private fun ReimbHome(
     onRepay: (String) -> Unit,
     onOffset: (String) -> Unit,
     onSettle: () -> Unit,
+    /** 修改某次分帳結清 */
+    onEditSettle: (Long) -> Unit,
 ) {
     val d = vm.data
     val cute = LocalCute.current
+    // 點了紀錄裡的分帳結清：看這次結清了什麼
+    var showSettle by remember { mutableStateOf<Long?>(null) }
+    showSettle?.let { id -> SettleDetailDialog(vm, id, onEdit = { showSettle = null; onEditSettle(id) }, onClose = { showSettle = null }) }
     var tab by vm::reimbTab
     val pending = d.bookTxns.pendingReimb()
     val claims = claimsOf(d.bookTxns)
@@ -993,7 +1006,8 @@ private fun ReimbHome(
                     }
                     items(recs.size, key = { "p$it" }) { n ->
                         val r = recs[n]
-                        CuteCard(Modifier.fillMaxWidth().clickable { onPerson(r.who) }) {
+                        // 分帳結清不是某一個人的：點了看這次結清了什麼
+                        CuteCard(Modifier.fillMaxWidth().clickable { if (r.settleId != 0L) showSettle = r.settleId else onPerson(r.who) }) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text("${dayTimeLabel(r.day, r.time)}　${r.title}", style = MaterialTheme.typography.bodyLarge)
@@ -1010,6 +1024,81 @@ private fun ReimbHome(
 }
 
 /**
+ * 一次分帳結清的內容：實際轉的錢、結清了哪幾筆（這次收／還了多少；繼續欠的寫留多少）。
+ * 可以刪除（那幾筆恢復、帳戶跟著回去，可以復原）或修改（打開分帳結清頁，內容帶好）。
+ */
+@Composable
+private fun SettleDetailDialog(vm: MoneyViewModel, id: Long, onEdit: () -> Unit, onClose: () -> Unit) {
+    val d = vm.data
+    val cute = LocalCute.current
+    val s = d.settles.firstOrNull { it.id == id }
+    if (s == null) {
+        // 已經被刪掉（例如按了復原）
+        LaunchedEffect(Unit) { onClose() }
+        return
+    }
+    val snap = remember(d, id) { d.settleSnapshot(id) }
+    val tm = d.txns.associateBy { it.id }
+    @Composable
+    fun line(left: String, sub: String?, right: String, color: androidx.compose.ui.graphics.Color) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(left, style = MaterialTheme.typography.bodyMedium)
+                if (sub != null) Text(sub, style = MaterialTheme.typography.labelSmall, color = cute.sub)
+            }
+            Text(right, style = MaterialTheme.typography.bodyMedium, color = color)
+        }
+    }
+    fun keptText(k: tw.moneybook.app.ItemKey, pay: Long, done: String): String {
+        val kept = snap?.keep?.get(k) ?: 0L
+        return when {
+            pay > 0L && kept > 0L -> "${formatMoney(pay)}・繼續欠 ${formatMoney(kept)}"
+            pay > 0L -> formatMoney(pay)
+            kept > 0L -> "繼續欠 ${formatMoney(kept)}"
+            else -> done
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("分帳結清・${dayTimeLabel(s.day, s.time)}") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("實際轉的錢", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                s.moves.forEach { m ->
+                    val acc = m.accountId?.let { d.accMap[it] }?.name?.let { "（$it）" } ?: ""
+                    line(
+                        (if (m.receive) "收 " else "付給 ") + m.who.ifBlank { "對方" } + acc, null,
+                        (if (m.receive) "+" else "-") + formatMoney(m.amount), if (m.receive) cute.income else cute.expense,
+                    )
+                }
+                val n = (snap?.reimbKeys?.size ?: 0) + (snap?.debtKeys?.size ?: 0)
+                Spacer(Modifier.height(4.dp))
+                Text("結清了這 $n 筆", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                snap?.reimbKeys?.forEach { k ->
+                    val t = tm[k.txnId] ?: return@forEach
+                    val item = t.items.getOrNull(k.index) ?: return@forEach
+                    val pay = item.pays.filter { it.offsetId == id }.sumOf { it.amount }
+                    line("${ownerLabel(item.who.trim())} 欠我", billLabel(d, t), keptText(k, pay, "結案"), cute.income)
+                }
+                snap?.debtKeys?.forEach { k ->
+                    val t = tm[k.txnId] ?: return@forEach
+                    val item = t.debtItems.getOrNull(k.index) ?: return@forEach
+                    val pay = item.pays.filter { it.offsetId == id }.sumOf { it.amount }
+                    line("我欠 ${ownerLabel(item.who.trim())}", billLabel(d, t), keptText(k, pay, "還清"), cute.expense)
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { onClose(); vm.deleteSettle(id) }) { Text("刪除", color = cute.expense) }
+                TextButton(onClick = onEdit) { Text("修改") }
+                TextButton(onClick = onClose) { Text("關閉") }
+            }
+        },
+    )
+}
+
+/**
  * 收款、還款、互相抵銷的一筆紀錄。總覽的「紀錄」分頁：title（對象）、sub、amount；
  * 人頁：line（「收到 $800」「還款 $500」「互相抵銷 $300」）、sub。
  */
@@ -1022,6 +1111,8 @@ private class Rec(
     val claim: Claim? = null, val payIndex: Int = -1, val pay: ReimbPay? = null,
     /** 這筆紀錄動到哪幾筆帳（抵銷、結清是兩邊都算）：從記一筆「前往」過來時亮底色 */
     val txns: Set<Long> = emptySet(),
+    /** 分帳結清的紀錄：哪一次結清（0＝不是） */
+    val settleId: Long = 0L,
 ) {
     fun color(c: Cute) = when (kind) { 0 -> c.income; 1 -> c.expense; else -> c.sub }
 }
@@ -1055,7 +1146,7 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null, withTx
             val n = d.bookTxns.sumOf { t -> t.items.count { i -> i.pays.any { it.offsetId == s.id } } + t.debtItems.count { i -> i.pays.any { it.offsetId == s.id } } }
             out.add(Rec(
                 "", s.day, s.time, "分帳結清", movesText(s) + "・結清 $n 筆", (if (s.net >= 0L) "+" else "-") + formatMoney(kotlin.math.abs(s.net)), 2,
-                "分帳結清", movesText(s), { vm -> vm.deleteSettle(s.id) },
+                "分帳結清", movesText(s), { vm -> vm.deleteSettle(s.id) }, settleId = s.id,
             ))
         }
     }
@@ -1067,7 +1158,7 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null, withTx
                 if (who != null) out.add(Rec(
                     c.who, pay.day, pay.time, "分帳結清", "${billLabel(d, c.txn)}・${movesText(st)}", formatMoney(pay.amount), 2,
                     "分帳結清 ${formatMoney(pay.amount)}", "${billLabel(d, c.txn)}・${movesText(st)}", { vm -> vm.deleteSettle(st.id) },
-                    txns = txnsOf(c.txn.id, st.id),
+                    txns = txnsOf(c.txn.id, st.id), settleId = st.id,
                 ))
                 return@forEachIndexed
             }
@@ -1095,7 +1186,7 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null, withTx
                 if (st != null && who != null) out.add(Rec(
                     item.who.trim(), p.day, p.time, "分帳結清", "${billLabel(d, t)}・${movesText(st)}", formatMoney(p.amount), 2,
                     "分帳結清 ${formatMoney(p.amount)}", "${billLabel(d, t)}・${movesText(st)}", { vm -> vm.deleteSettle(st.id) },
-                    txns = txnsOf(t.id, st.id),
+                    txns = txnsOf(t.id, st.id), settleId = st.id,
                 ))
                 if (p.offsetId != 0L) return@forEachIndexed
                 val acc = p.accountId?.let { d.accMap[it] }
@@ -1512,6 +1603,8 @@ private fun ReimbPersonPage(
     onRepay: () -> Unit, onOffset: () -> Unit,
     /** 點帳單：到記一筆修改那一筆 */
     onEdit: (Long) -> Unit,
+    /** 修改某次分帳結清 */
+    onEditSettle: (Long) -> Unit,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -1527,6 +1620,8 @@ private fun ReimbPersonPage(
     val recs = records(d, claims, who, withTxns = hlTxn != null)
     var menuFor by remember { mutableStateOf<Int?>(null) }
     var editing by remember { mutableStateOf<Triple<Claim, Int, ReimbPay>?>(null) }
+    var showSettle by remember { mutableStateOf<Long?>(null) }
+    showSettle?.let { id -> SettleDetailDialog(vm, id, onEdit = { showSettle = null; onEditSettle(id) }, onClose = { showSettle = null }) }
 
     // 分頁：0 欠我、1 我欠、2 紀錄；只有一個方向時只有那一個和紀錄。一進來是還欠比較多的那一邊（都結清了是紀錄）
     val tabs = listOfNotNull(if (claims.isNotEmpty()) 0 else null, if (debtRefs.isNotEmpty()) 1 else null, 2)
@@ -1663,6 +1758,9 @@ private fun ReimbPersonPage(
                                         DropdownMenu(expanded = menuFor == n, onDismissRequest = { menuFor = null }) {
                                             if (r.claim != null && r.pay != null) {
                                                 DropdownMenuItem(text = { Text("修改") }, onClick = { menuFor = null; editing = Triple(r.claim, r.payIndex, r.pay) })
+                                            }
+                                            if (r.settleId != 0L) {
+                                                DropdownMenuItem(text = { Text("查看這次結清") }, onClick = { menuFor = null; showSettle = r.settleId })
                                             }
                                             DropdownMenuItem(
                                                 text = { Text(if (r.kind == 2) "刪除這次抵銷（兩邊一起）" else "刪除") },
@@ -2191,8 +2289,11 @@ private class SettleItem(val key: tw.moneybook.app.ItemKey, val debt: Boolean, v
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Unit) {
+private fun SettlePage(vm: MoneyViewModel, editId: Long? = null, onBack: () -> Unit, onDone: () -> Unit) {
     val d = vm.data
+    // 修改某次結清：原本的內容（勾了哪些、繼續欠留了多少），清單照拿掉這次結清後的樣子算
+    val edit = remember(editId) { editId?.let { id -> d.settles.firstOrNull { it.id == id } } }
+    val snap = remember(editId) { editId?.let { d.settleSnapshot(it) } }
     val cute = LocalCute.current
     val today = LocalDate.now().toEpochDay()
     var step by remember { mutableStateOf(0) }
@@ -2202,10 +2303,9 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
     var from by remember { mutableStateOf(today - 30) }
     var to by remember { mutableStateOf(today) }
     var pick by remember { mutableStateOf("") }
-    // 取消勾選的項目（SettleItem.id）
-    val off = remember { mutableStateListOf<String>() }
-
     val all = remember(d) {
+        // 修改時：清單照拿掉這次結清後的樣子（那幾筆恢復成沒結清，才勾得到）
+        val d = if (edit != null) d.withSettleRemoved(edit.id) ?: d else d
         claimsOf(d.bookTxns).filter { !it.item.closed && it.item.remaining > 0L }
             .map { SettleItem(tw.moneybook.app.ItemKey(it.txn.id, it.index), false, it.txn, it.who, it.item.remaining, "") } +
             d.bookTxns.flatMap { t ->
@@ -2217,6 +2317,15 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                     )
                 }
             }
+    }
+    // 取消勾選的項目（SettleItem.id）；修改時原本沒勾的先取消
+    val off = remember {
+        mutableStateListOf<String>().apply {
+            if (snap != null) {
+                val on = (snap.reimbKeys.map { it.reimbKey() } + snap.debtKeys.map { it.debtKey() }).toSet()
+                addAll(all.map { it.id }.filter { it !in on })
+            }
+        }
     }
     val tagList = all.flatMap { it.txn.tags }.distinct().sorted()
     val start3 = LocalDate.now().minusMonths(3).toEpochDay()
@@ -2236,9 +2345,15 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
     val okAccs = d.visibleAccounts.filter { !it.isForeign }
     val defAcc = d.frequentAccounts(okAccs.size.coerceAtLeast(3)).firstOrNull { f -> okAccs.any { it.id == f.id } && f.type != AccountType.CARD && f.type != AccountType.LOAN }?.id
         ?: okAccs.firstOrNull { it.type != AccountType.CARD && it.type != AccountType.LOAN }?.id ?: okAccs.firstOrNull()?.id
-    val moves = remember { mutableStateListOf<SettleMoveRow>() }
-    var day by remember { mutableStateOf(today) }
-    var timeMin by remember { mutableStateOf(java.time.LocalTime.now().let { it.hour * 60 + it.minute }) }
+    val moves = remember {
+        mutableStateListOf<SettleMoveRow>().apply {
+            edit?.moves?.forEach { m -> add(SettleMoveRow(m.receive, m.amount.toString(), m.accountId).also { it.who = m.who }) }
+        }
+    }
+    var day by remember { mutableStateOf(edit?.day ?: today) }
+    var timeMin by remember { mutableStateOf(edit?.time?.takeIf { it >= 0 } ?: java.time.LocalTime.now().let { it.hour * 60 + it.minute }) }
+    // 修改時第一次到第二步：帶回原本「繼續欠」留給誰、留多少（只帶一次）
+    var keepInit by remember { mutableStateOf(snap?.keep?.takeIf { it.isNotEmpty() }) }
     var pickTime by remember { mutableStateOf(false) }
     var pickAcc by remember { mutableStateOf(-1) }
     // 正在挑第幾筆錢的「從誰／給誰」（-1 是沒有）
@@ -2312,7 +2427,7 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
     )
     val nv = NeedView(need, tries.count)
 
-    SubPage(if (step == 0) "依分帳結論結清" else "分帳軟體的結論", { if (step == 1) { step = 0 } else onBack() }) {
+    SubPage(if (step == 0) (if (edit != null) "修改分帳結清" else "依分帳結論結清") else "分帳軟體的結論", { if (step == 1) { step = 0 } else onBack() }) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(),
@@ -2558,20 +2673,32 @@ private fun SettlePage(vm: MoneyViewModel, onBack: () -> Unit, onDone: () -> Uni
                             if (moves.isEmpty()) moves.add(SettleMoveRow(expected >= 0L, if (expected != 0L) kotlin.math.abs(expected).toString() else "", defAcc))
                             keepWho.clear(); keepAmt.clear(); keepPicked.clear(); keepOpen.clear()
                             keepMode = false
+                            keepInit?.let { k ->
+                                keepInit = null
+                                val items = sel.filter { s -> s.key in k }
+                                if (items.isNotEmpty()) {
+                                    keepMode = true
+                                    items.groupBy { it.who }.forEach { (w, l) ->
+                                        keepWho.add(w)
+                                        keepAmt[w] = l.sumOf { k[it.key] ?: 0L }
+                                        keepPicked[w] = l.map { it.id }.toSet()
+                                    }
+                                }
+                            }
                             step = 1
                             return@Button
                         }
-                        val ok = vm.settleUp(
-                            sel.filter { !it.debt }.map { it.key }, sel.filter { it.debt }.map { it.key },
-                            moves.map { tw.moneybook.app.SettleMove(it.receive, it.who.trim(), it.amt.toLongOrNull() ?: 0L, it.acc) },
-                            day, timeMin,
-                            if (keepMode) tw.moneybook.app.SettleDiff.KEEP else tw.moneybook.app.SettleDiff.SELF,
-                            keepChoices.mapNotNull { s -> keepSplit[s.id]?.let { s.key to it } }.toMap(),
-                        )
+                        val rk = sel.filter { !it.debt }.map { it.key }
+                        val dk = sel.filter { it.debt }.map { it.key }
+                        val mv = moves.map { tw.moneybook.app.SettleMove(it.receive, it.who.trim(), it.amt.toLongOrNull() ?: 0L, it.acc) }
+                        val mode = if (keepMode) tw.moneybook.app.SettleDiff.KEEP else tw.moneybook.app.SettleDiff.SELF
+                        val kp = keepChoices.mapNotNull { s -> keepSplit[s.id]?.let { s.key to it } }.toMap()
+                        val ok = if (edit != null) vm.replaceSettle(edit.id, rk, dk, mv, day, timeMin, mode, kp)
+                        else vm.settleUp(rk, dk, mv, day, timeMin, mode, kp)
                         if (ok) onDone()
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) { Text(if (step == 0) "下一步" else "確認結清", style = MaterialTheme.typography.titleMedium) }
+                ) { Text(if (step == 0) "下一步" else if (edit != null) "儲存修改" else "確認結清", style = MaterialTheme.typography.titleMedium) }
             }
         }
     }

@@ -517,6 +517,24 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    /** 修改一次分帳結清（見 withSettleReplaced），可以復原；成功回傳 true */
+    fun replaceSettle(
+        oldId: Long, reimbKeys: List<ItemKey>, debtKeys: List<ItemKey>, moves: List<SettleMove>, day: Long, time: Int,
+        mode: SettleDiff, keep: Map<ItemKey, Long>,
+    ): Boolean {
+        val d = data
+        val old = d.settles.firstOrNull { it.id == oldId } ?: return false
+        val after = d.withSettleReplaced(oldId, reimbKeys, debtKeys, moves, day, time, mode, keep) ?: return false
+        val newId = after.settles.last().id
+        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        commit(after)
+        _messages.tryEmit(UiMsg("已修改分帳結清", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { before[it.id] ?: it }, settles = now.settles.filter { it.id != newId } + old))
+        })
+        return true
+    }
+
     /** 刪掉一次分帳結清：那幾筆恢復成沒結清，帳戶跟著回去；可以復原 */
     fun deleteSettle(id: Long) {
         val d = data
