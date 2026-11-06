@@ -3632,8 +3632,9 @@ def t_reimb_merge_same_name():
     d.check("只剩一個人 Amy，金額 500", [e.text for e in ed[:2]] == ["Amy", "500"] and len(ed) == 2, [e.text for e in ed])
 
 
-def settle_seed():
-    """東京旅行（標籤 tokyo）：Amy 欠我 600、Bob 欠我 300、我欠 Carol 200；另外 Dan 欠我 150（沒有標籤）"""
+def settle_seed(snack=False):
+    """東京旅行（標籤 tokyo）：Amy 欠我 600、Bob 欠我 300、我欠 Carol 200；另外 Dan 欠我 150（沒有標籤）
+    snack：再加 Amy 欠我零食 80（沒有標籤，結清旅行的帳後 Amy 還在總覽上）"""
     s = S.Seed(f.today())
     s.expense(-5, 1000, S.C_FOOD, note="sushi", tags=("tokyo",), reimb=1, reimb_amount=600, items=[S.reimb_item("Amy", 600)])
     s.expense(-4, 500, S.C_TRAFFIC, note="train", tags=("tokyo",), reimb=1, reimb_amount=300, items=[S.reimb_item("Bob", 300)])
@@ -3642,6 +3643,8 @@ def settle_seed():
     t["debtSelf"] = 0
     t["debtItems"] = [dict(who="Carol", amount=200, units=0, pays=[], done=False)]
     s.expense(-2, 150, S.C_PLAY, note="movie", reimb=1, reimb_amount=150, items=[S.reimb_item("Dan", 150)])
+    if snack:
+        s.expense(-1, 80, S.C_FOOD, note="snack", reimb=1, reimb_amount=80, items=[S.reimb_item("Amy", 80)])
     return s.json()
 
 
@@ -4451,3 +4454,100 @@ def t_offset_goto_from_sheet():
     d.time.sleep(1.5)
     ns = d.shot("返回首頁")
     d.check("備註存成 bbq2", d.has(ns, "bbq2", False), [n.text for n in ns if n.text][:30])
+
+
+def settle_once(seed=None):
+    """篩 #tokyo，Bob 給我 700，Amy、Bob、Carol 一次結清，停在總覽"""
+    d.fresh(seed or settle_seed())
+    f.open_reimb_home()
+    d.tap_text("依分帳結論結清", exact=True)
+    d.wait_text("照理說你會收到", timeout=10)
+    d.tap_text("#tokyo", exact=True)
+    d.time.sleep(1)
+    d.tap_text("下一步", exact=True)
+    d.wait_text("分帳軟體的結論", timeout=10)
+    d.tap_text("從誰（選填）", exact=True)
+    d.wait_text("這次結清的人", timeout=8)
+    d.tap_text("Bob", exact=True)
+    d.time.sleep(1)
+    d.tap_text("確認結清", exact=True)
+    d.wait_text("別人欠我", timeout=10)
+    d.time.sleep(4)   # 等「已結清」的提示消失
+
+
+@case(D, "總覽紀錄點分帳結清：跳視窗看實際轉的錢、結清了哪幾筆；按修改打開分帳結清頁（內容帶好），改成 650 存檔取代原本那次", visual=True)
+def t_settle_detail_edit():
+    settle_once()
+    d.tap_text("紀錄", exact=True)
+    d.time.sleep(1)
+    row = next((n for n in d.nodes() if n.text.endswith("分帳結清")), None)
+    d.check("紀錄有分帳結清", row is not None, "")
+    if row is None:
+        return
+    d.tap(row)
+    try:
+        d.wait_text("實際轉的錢", timeout=8)
+        ok = True
+    except TimeoutError:
+        ok = False
+    ns = d.shot("分帳結清的內容")
+    d.check("跳視窗：實際轉的錢有收 Bob +$700、結清了這 3 筆（Amy、Bob 欠我、我欠 Carol）",
+            ok and any(n.text.startswith("收 Bob") for n in ns) and d.has(ns, "+$700", True) and d.has(ns, "結清了這 3 筆", True)
+            and all(d.has(ns, t, True) for t in ("Amy 欠我", "Bob 欠我", "我欠 Carol")), [n.text for n in ns if n.text][:30])
+    d.check("有刪除、修改、關閉", all(d.has(ns, t, True) for t in ("刪除", "修改", "關閉")), [n.text for n in ns if n.text][-8:])
+    if not ok:
+        return
+    d.tap_text("修改", exact=True)
+    try:
+        d.wait_text("修改分帳結清", timeout=8)
+        ok = True
+    except TimeoutError:
+        ok = False
+    ns = d.shot("修改分帳結清")
+    d.check("打開修改分帳結清：原本勾的 Amy、Bob、Carol 勾好（照理說收到 $700，Dan 沒勾）", ok and amount_right_of(ns, "照理說你會收到") == "$700", [n.text for n in ns if n.text][:30])
+    if not ok:
+        return
+    d.tap_text("下一步", exact=True)
+    d.wait_text("分帳軟體的結論", timeout=10)
+    ed = d.edits()
+    ns = d.shot("第二步帶好")
+    d.check("第二步：收 Bob 700 帶好、按鈕寫「儲存修改」", len(ed) >= 1 and ed[0].text == "700" and d.has(ns, "Bob", True) and d.has(ns, "儲存修改", True),
+            [e.text for e in ed] + [n.text for n in ns if "儲存" in n.text])
+    d.fill(ed[0], "650")
+    d.hide_ime()
+    d.tap_text("儲存修改", exact=True)
+    try:
+        d.wait_text("已修改分帳結清", timeout=8)
+        toast = True
+    except TimeoutError:
+        toast = False
+    d.check("提示「已修改分帳結清」", toast, "")
+    d.wait_text("別人欠我", timeout=10)
+    d.tap_text("紀錄", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("修改後的紀錄")
+    d.check("紀錄只有一筆分帳結清，變成收 Bob $650", sum(1 for n in ns if n.text.endswith("分帳結清")) == 1 and any("收 Bob $650" in n.text for n in ns),
+            [n.text for n in ns if n.text][:20])
+
+
+@case(D, "人頁分帳結清紀錄的「⋯」有「查看這次結清」，視窗裡可以刪除，那幾筆恢復成沒結清", visual=True)
+def t_settle_detail_from_person():
+    settle_once(settle_seed(snack=True))
+    f.tap_person("Amy")
+    f.person_page()
+    f.person_tab("紀錄")
+    d.tap_text("⋯", exact=True)
+    d.tap_text("查看這次結清", exact=True, timeout=6)
+    try:
+        d.wait_text("實際轉的錢", timeout=8)
+        ok = True
+    except TimeoutError:
+        ok = False
+    ns = d.shot("從人頁查看")
+    d.check("打開這次結清的內容（結清了這 3 筆）", ok and d.has(ns, "結清了這 3 筆", True), [n.text for n in ns if n.text][:30])
+    if not ok:
+        return
+    d.tap_text("刪除", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("刪除之後")
+    d.check("Amy 的紀錄沒了、Amy 又欠 $680（旅行 600＋零食 80）", d.has(ns, "紀錄 0", True) and d.has(ns, "$680", False), [n.text for n in ns if n.text][:30])
