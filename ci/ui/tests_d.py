@@ -4461,7 +4461,8 @@ def settle_once(seed=None):
     d.fresh(seed or settle_seed())
     f.open_reimb_home()
     d.tap_text("依分帳結論結清", exact=True)
-    d.wait_text("照理說你會收到", timeout=10)
+    # 帳多的時候「照理說你會收到」在畫面外，等最上面的標籤
+    d.wait_text("#tokyo", timeout=10)
     d.tap_text("#tokyo", exact=True)
     d.time.sleep(1)
     d.tap_text("下一步", exact=True)
