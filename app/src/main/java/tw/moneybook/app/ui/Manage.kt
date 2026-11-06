@@ -1000,12 +1000,14 @@ private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: B
     ) {
         CatBubble(c.emoji, c.color, if (small) 32.dp else 40.dp)
         Spacer(Modifier.width(10.dp))
-        Text(c.name, modifier = Modifier.weight(1f, fill = false), style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
-        if (out) {
-            Spacer(Modifier.width(6.dp))
-            OutTag()
+        // 名稱＋「預算外」吃掉剩下的寬度，≡ 固定貼右邊（原本名稱和空白各分一半，≡ 會跟著名稱長短跑）
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Text(c.name, modifier = Modifier.weight(1f, fill = false), style = if (small) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+            if (out) {
+                Spacer(Modifier.width(6.dp))
+                OutTag()
+            }
         }
-        Spacer(Modifier.weight(1f))
         DragHandle(handle)
     }
 }
