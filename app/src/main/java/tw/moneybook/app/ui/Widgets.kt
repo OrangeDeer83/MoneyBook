@@ -727,7 +727,7 @@ fun RatioBar(fraction: Float, color: Color, modifier: Modifier = Modifier, thick
 private val OP_KEYS = setOf("+", "-", "*", "/", "⌫", "C")
 
 /**
- * 5 欄 4 列：數字、運算符號（由上到下 + − × ÷）、最右邊退格／C／完成（完成是兩格高）。
+ * 5 欄 4 列：數字、運算符號（由上到下 ÷ × − +，和一般計算機一樣）、最右邊退格／C／完成（完成是兩格高）。
  * 傳給 onKey 的乘除是 * 和 /。
  */
 @Composable
@@ -739,7 +739,7 @@ fun Keypad(onKey: (String) -> Unit, doneLabel: String, doneEnabled: Boolean, onD
         listOf("7", "4", "1", "00"),
         listOf("8", "5", "2", "0"),
         listOf("9", "6", "3", "."),
-        listOf("+", "-", "*", "/"),
+        listOf("/", "*", "-", "+"),
         listOf("⌫", "C", "OK"),
     )
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
