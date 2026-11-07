@@ -41,6 +41,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.Icon
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -78,6 +81,8 @@ fun trendTitles(months: List<YearMonth>): List<String> = months.map { "${it.year
 fun CategoryLines(
     key: String, labels: List<String>, titles: List<String>, series: List<LineSeries>,
     modifier: Modifier = Modifier, avg: Long = 0L, warn: Set<Int> = emptySet(),
+    /** 下鑽頁長按選定的月份（明細換成那個月）：那一點加紅圈；-1 沒有 */
+    mark: Int = -1,
 ) {
     val cute = LocalCute.current
     val card = cute.card
@@ -125,6 +130,11 @@ fun CategoryLines(
                     // 只有一條線時每個月畫點（比平均多很多的紅色大點）；好幾條時只畫選到的那個月
                     s.values.forEachIndexed { i, v ->
                         val c = Offset(x(i), y(v))
+                        if (single && i == mark) {
+                            drawCircle(s.color, radius = 6.dp.toPx(), center = c)
+                            drawCircle(cute.expense, radius = 8.dp.toPx(), center = c, style = Stroke(width = 2.5f.dp.toPx()))
+                            return@forEachIndexed
+                        }
                         when {
                             single && i in warn -> drawCircle(cute.expense, radius = 6.dp.toPx(), center = c)
                             i == sel -> drawCircle(s.color, radius = 5.dp.toPx(), center = c)
@@ -153,9 +163,12 @@ fun CategoryLines(
 /** 比平均多／少幾 %（整數，四捨五入） */
 private fun pctVs(v: Long, avg: Long): Long = Math.round((v - avg) * 100.0 / avg)
 
-/** 統計下鑽頁（從支出分類點進來）上面的「近 12 個月」走勢 */
+/**
+ * 統計下鑽頁（從支出分類點進來）上面的「近 12 個月」走勢。
+ * 長按某個月：onFocus(那個月)，下面的明細換成那個月；點一下圖（不論點到哪裡）：onFocus(null) 回到原本的期間。
+ */
 @Composable
-fun DrillTrendCard(vm: MoneyViewModel, dr: Drill, cat: Category) {
+fun DrillTrendCard(vm: MoneyViewModel, dr: Drill, cat: Category, focus: YearMonth?, onFocus: (YearMonth?) -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
     val now = YearMonth.now()
@@ -165,6 +178,10 @@ fun DrillTrendCard(vm: MoneyViewModel, dr: Drill, cat: Category) {
     val first = remember(d, dr) { firstMonthOf(d.bookTxns, dr.pred) }
     val st = trendStat(values, months, first, now)
     val color = catColor(cat.color)
+    val pick = LocalChartPick.current
+    val sel = pick?.of("drillTrend") ?: -1
+    // 長按選到（手不放左右移動也算）就把明細換成那個月；資訊框收起來後明細還是停在那個月
+    androidx.compose.runtime.LaunchedEffect(sel) { if (sel in months.indices) onFocus(months[sel]) }
     CuteCard(Modifier.fillMaxWidth(), padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
         Text("近 12 個月", style = MaterialTheme.typography.titleSmall)
         val last = values.last()
@@ -184,7 +201,13 @@ fun DrillTrendCard(vm: MoneyViewModel, dr: Drill, cat: Category) {
             Text(head, style = MaterialTheme.typography.bodySmall, color = cute.sub)
         }
         Spacer(Modifier.height(8.dp))
-        CategoryLines("drillTrend", trendLabels(months), trendTitles(months), listOf(LineSeries(cat.name, color, values)), avg = st.avg, warn = st.warn)
+        // 點一下圖：回到原本的期間（長按放開時那一下已經被長按吃掉，不會算成點一下）
+        Box(Modifier.pointerInput(Unit) { detectTapGestures { pick?.clear(); onFocus(null) } }) {
+            CategoryLines(
+                "drillTrend", trendLabels(months), trendTitles(months), listOf(LineSeries(cat.name, color, values)),
+                avg = st.avg, warn = st.warn, mark = focus?.let { months.indexOf(it) } ?: -1,
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (st.avg > 0L) {
@@ -274,7 +297,10 @@ private fun CatTrendPickDialog(vm: MoneyViewModel, initial: List<Long>, onDone: 
     val primary = MaterialTheme.colorScheme.primary
     val picked = remember { mutableStateListOf<Long>().apply { addAll(initial) } }
     var warn by remember { mutableStateOf<String?>(null) }
-    val rows = remember(d) { d.topCategories(TxType.EXPENSE).flatMap { t -> listOf(t to false) + d.childrenOf(t.id).map { it to true } } }
+    val tops = remember(d) { d.topCategories(TxType.EXPENSE) }
+    // 展開的大分類：一打開時只展開有選子分類的（只選大分類或沒選的收起來）
+    val open = remember { mutableStateListOf<Long>().apply { addAll(tops.filter { t -> d.childrenOf(t.id).any { it.id in initial } }.map { it.id }) } }
+    val rows = tops.flatMap { t -> listOf(t to false) + if (t.id in open) d.childrenOf(t.id).map { it to true } else emptyList() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("要看哪幾個分類") },
@@ -300,7 +326,7 @@ private fun CatTrendPickDialog(vm: MoneyViewModel, initial: List<Long>, onDone: 
                                         else -> { picked.add(c.id); warn = null }
                                     }
                                 }
-                                .padding(start = if (child) 28.dp else 4.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                                .padding(start = if (child) 28.dp else 4.dp, top = 2.dp, bottom = 2.dp, end = 0.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
@@ -310,7 +336,34 @@ private fun CatTrendPickDialog(vm: MoneyViewModel, initial: List<Long>, onDone: 
                             Spacer(Modifier.width(10.dp))
                             Box(Modifier.size(12.dp).clip(CircleShape).background(catColor(c.color)))
                             Spacer(Modifier.width(8.dp))
-                            Text(c.name, style = if (child) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+                            val kids = if (child) emptyList() else d.childrenOf(c.id)
+                            val isOpen = c.id in open
+                            // 收起來時提醒裡面選了哪幾個子分類
+                            val pickedKids = if (isOpen) emptyList() else kids.filter { it.id in picked }
+                            // 名稱＋提醒吃掉剩下的寬度，箭頭固定在最右邊
+                            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                Text(c.name, style = if (child) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge)
+                                if (pickedKids.isNotEmpty()) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "已選 " + pickedKids.joinToString("、") { it.name }, style = MaterialTheme.typography.labelMedium,
+                                        color = primary, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                }
+                            }
+                            if (kids.isNotEmpty()) {
+                                Box(
+                                    Modifier.size(36.dp).clip(CircleShape).clickable { if (isOpen) open.remove(c.id) else open.add(c.id) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        if (isOpen) AppIcons.ChevronDown else AppIcons.ChevronRight,
+                                        contentDescription = if (isOpen) "收起${c.name}" else "展開${c.name}", tint = cute.sub,
+                                    )
+                                }
+                            } else {
+                                Spacer(Modifier.size(36.dp))
+                            }
                         }
                     }
                 }

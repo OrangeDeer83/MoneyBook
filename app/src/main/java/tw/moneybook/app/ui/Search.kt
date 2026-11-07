@@ -241,13 +241,21 @@ fun DrillScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
         SubPage("明細", onBack) { EmptyHint(d.prefs.mascot, "沒有資料") }
         return
     }
-    val list = periodFilter(d.bookTxns, dr.mode, vm).filter { dr.pred(it) }
+    // 在走勢圖上長按選的月份（年×100＋月；0＝統計頁原本的期間）。點進一筆修改再返回時要還原，所以用 rememberSaveable
+    var focusKey by rememberSaveable { mutableIntStateOf(0) }
+    val focus = if (focusKey > 0) java.time.YearMonth.of(focusKey / 100, focusKey % 100) else null
+    val list = if (focus != null) d.bookTxns.filter { it.month == focus && dr.pred(it) } else periodFilter(d.bookTxns, dr.mode, vm).filter { dr.pred(it) }
     val total = list.sumOf { dr.amt(it) }
-    val period = when (dr.mode) {
+    val period = if (focus != null) "${focus.year} 年 ${focus.monthValue} 月" else when (dr.mode) {
         0 -> "${vm.month.year} 年 ${vm.month.monthValue} 月"
         1 -> "${vm.statYear} 年"
         2 -> "${shortDate(vm.rangeStart)} ～ ${shortDate(vm.rangeEnd)}"
         else -> "全部"
+    }
+    val backLabel = when (dr.mode) {
+        0 -> "回到 ${vm.month.monthValue} 月"
+        1 -> "回到 ${vm.statYear} 年"
+        else -> "回到原本的期間"
     }
     val trendCat = dr.catId?.let { d.catMap[it] }
     SubPage(dr.title, onBack) {
@@ -259,13 +267,21 @@ fun DrillScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
         ) {
             item {
                 CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text(period, style = MaterialTheme.typography.labelLarge, color = cute.sub)
-                    Text(formatMoney(total), style = MaterialTheme.typography.headlineSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(period, style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                            Text(formatMoney(total), style = MaterialTheme.typography.headlineSmall)
+                        }
+                        // 在走勢圖上選了別的月份：回到原本的期間
+                        if (focus != null) SoftButton(backLabel, { focusKey = 0 }, compact = true)
+                    }
                     Text("共 ${list.size} 筆・點一筆可以修改，左滑可以刪除", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
             }
             if (trendCat != null) {
-                item(key = "trend") { DrillTrendCard(vm, dr, trendCat) }
+                item(key = "trend") {
+                    DrillTrendCard(vm, dr, trendCat, focus) { m -> focusKey = if (m == null) 0 else m.year * 100 + m.monthValue }
+                }
             }
             if (list.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "這段期間沒有記錄了") }
