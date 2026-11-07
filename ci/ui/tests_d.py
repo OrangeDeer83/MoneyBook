@@ -4755,14 +4755,14 @@ def t_trend_cat_card():
     got = card_chips()
     d.shot("換成醫療之後")
     d.check("卡片換成餐飲、交通、醫療", sorted(got) == sorted(["餐飲", "交通", "醫療"]), got)
-    # 切到別的分頁再回來還是一樣
-    d.tap_text("月", exact=True)
+    # 切到明細再回到統計還是一樣（統計頁往下捲過，上面的「月」看不到，用下面的分頁）
+    f.tab("明細")
     d.time.sleep(1)
-    d.tap_text("趨勢", exact=True)
+    f.tab("統計")
     d.time.sleep(1.5)
     for _ in range(6):
         if d.has(d.nodes(), "切換分類", True):
             break
         d.swipe(540, 1700, 540, 1000, 500)
     got = card_chips()
-    d.check("切到月再回來，還是餐飲、交通、醫療", sorted(got) == sorted(["餐飲", "交通", "醫療"]), got)
+    d.check("切到明細再回來，還是餐飲、交通、醫療", sorted(got) == sorted(["餐飲", "交通", "醫療"]), got)
