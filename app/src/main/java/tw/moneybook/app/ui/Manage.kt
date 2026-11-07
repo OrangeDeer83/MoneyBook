@@ -359,9 +359,10 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onAsset: () -> Un
     val showHidden = vm.accShowHidden
     val shown = sorted.filter { showHidden || !it.hidden }
     val hiddenCount = sorted.count { it.hidden }
+    val accScroll = rememberDragScroll(vm.accListState)
     LazyColumn(
         state = vm.accListState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().dragScrollArea(accScroll),
         // 底部多留一點空間：記一筆的 + 按鈕會凸出來蓋到清單最底下（約 20dp），再留一點縫隙
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 48.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -457,7 +458,8 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onAsset: () -> Un
                 androidx.compose.runtime.key(editing) {
                     ReorderColumn(
                         group, { it.id },
-                        { newGroupOrder ->
+                        scroll = accScroll,
+                        onReorder = { newGroupOrder ->
                             // 把這一組的新順序放回全部帳戶的順序裡，其他組不動
                             // （隱藏的帳戶不在這一組裡，保持原本的位置）
                             val inGroup = newGroupOrder.toSet()
@@ -936,17 +938,19 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
     var kindIdx by rememberSaveable { mutableStateOf(0) }
     val kind = if (kindIdx == 0) TxType.EXPENSE else TxType.INCOME
     var edit by remember { mutableStateOf<CatEdit?>(null) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val dragScroll = rememberDragScroll(listState)
     SubPage("分類管理", onBack) {
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(Modifier.dragScrollArea(dragScroll), state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item { PillSegment(listOf("支出", "收入"), kindIdx, { kindIdx = it }) }
             item {
-                ReorderColumn(d.topCategories(kind), { it.id }, { vm.reorderCategories(it) }) { c, handle, _ ->
+                ReorderColumn(d.topCategories(kind), { it.id }, { vm.reorderCategories(it) }, scroll = dragScroll) { c, handle, _ ->
                     val kids = d.childrenOf(c.id)
                     CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
                         CatLine(c, onClick = { edit = CatEdit(c, kind, null) }, handle = handle, out = d.categoryOutOfBudget(c.id))
                         if (kids.isNotEmpty()) {
                             Box(Modifier.padding(start = 28.dp)) {
-                                ReorderColumn(kids, { it.id }, { vm.reorderCategories(it) }, spacing = 2.dp) { k, kHandle, _ ->
+                                ReorderColumn(kids, { it.id }, { vm.reorderCategories(it) }, spacing = 2.dp, scroll = dragScroll) { k, kHandle, _ ->
                                     CatLine(k, onClick = { edit = CatEdit(k, kind, c.id) }, handle = kHandle, small = true, out = d.categoryOutOfBudget(k.id))
                                 }
                             }
@@ -1126,8 +1130,10 @@ fun OutTag(modifier: Modifier = Modifier) {
 fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val dragScroll = rememberDragScroll(listState)
     SubPage("常用記帳", onBack) {
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(Modifier.dragScrollArea(dragScroll), state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 Text(
                     "常用記帳會出現在記一筆畫面的「常用」分類裡和桌面小工具上，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤；按住右邊的 ≡ 可以拖曳排序。",
@@ -1138,7 +1144,7 @@ fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> U
                 item { EmptyHint(d.prefs.mascot, "還沒有常用記帳\n按下面的按鈕新增一個吧") }
             }
             item {
-              ReorderColumn(d.templates, { it.id }, { vm.reorderTemplates(it) }) { t, handle, _ ->
+              ReorderColumn(d.templates, { it.id }, { vm.reorderTemplates(it) }, scroll = dragScroll) { t, handle, _ ->
                 val c = t.categoryId?.let { d.catMap[it] }
                 val a = t.accountId?.let { d.accMap[it] }
                 CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(t.id) }, padding = PaddingValues(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {

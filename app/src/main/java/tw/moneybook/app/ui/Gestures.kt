@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.foundation.layout.Box
@@ -188,9 +189,41 @@ fun DragHandle(modifier: Modifier) {
 }
 
 /**
+ * 拖曳排序時碰到清單上下邊界自動捲動：外層可捲動的清單用 [dragScrollArea] 記下自己在畫面上的範圍，
+ * 再把這個物件傳給 [ReorderColumn]。
+ */
+class DragScroll(val state: androidx.compose.foundation.gestures.ScrollableState) {
+    internal var top = 0f
+    internal var bottom = 0f
+
+    /** 手指在畫面上的位置 → 每秒捲多少 px（往上是負的）；離邊界越近越快，手離開邊界那一段就停 */
+    internal fun speed(y: Float, edge: Float, slow: Float, fast: Float): Float {
+        if (bottom <= top) return 0f
+        val up = (top + edge - y) / edge
+        val down = (y - (bottom - edge)) / edge
+        return when {
+            up > 0f -> -(slow + (fast - slow) * up.coerceAtMost(1f))
+            down > 0f -> slow + (fast - slow) * down.coerceAtMost(1f)
+            else -> 0f
+        }
+    }
+}
+
+@Composable
+fun rememberDragScroll(state: androidx.compose.foundation.gestures.ScrollableState): DragScroll = remember(state) { DragScroll(state) }
+
+/** 掛在可捲動的清單上，記下它在畫面上的上下邊界 */
+fun Modifier.dragScrollArea(ds: DragScroll): Modifier = onGloballyPositioned {
+    val b = it.boundsInRoot()
+    ds.top = b.top
+    ds.bottom = b.bottom
+}
+
+/**
  * 可以用把手拖曳排序的清單（非 Lazy，適合項目不多的清單）。
  * itemContent 會拿到要掛在把手上的 Modifier（用來記錄把手位置）。
  * 手勢由外層 Column 統一處理：外層不會跟著項目移動，座標才不會亂跳。
+ * 有傳 [scroll] 時，拖到外層清單的上下邊界（72dp 內）會一路捲動，手離開那一段才停。
  */
 @Composable
 fun <T> ReorderColumn(
@@ -198,6 +231,7 @@ fun <T> ReorderColumn(
     key: (T) -> Long,
     onReorder: (List<Long>) -> Unit,
     spacing: androidx.compose.ui.unit.Dp = 8.dp,
+    scroll: DragScroll? = null,
     itemContent: @Composable (item: T, handle: Modifier, dragging: Boolean) -> Unit,
 ) {
     val keys = items.map(key)
@@ -208,7 +242,13 @@ fun <T> ReorderColumn(
     val heights = remember { HashMap<Long, Int>() }
     val handleRects = remember { HashMap<Long, androidx.compose.ui.geometry.Rect>() }
     var colRoot by remember { mutableStateOf(Offset.Zero) }
-    val spacingPx = with(LocalDensity.current) { spacing.toPx() }
+    var colH by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val spacingPx = with(density) { spacing.toPx() }
+    val edgePx = with(density) { 72.dp.toPx() }
+    val slowPx = with(density) { 150.dp.toPx() }
+    val fastPx = with(density) { 1500.dp.toPx() }
+    val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val latestReorder by androidx.compose.runtime.rememberUpdatedState(onReorder)
 
@@ -221,9 +261,29 @@ fun <T> ReorderColumn(
         return y
     }
 
+    /** 手指在這個 Column 裡的高度是 fingerY 時，把拖的項目換到對的位置、算出它要往下移多少 */
+    fun follow(k: Long, grab: Float, fingerY: Float) {
+        var idx = order.indexOf(k)
+        if (idx < 0) return
+        var t = fingerY - grab - topOf(k, order)
+        while (idx < order.lastIndex && t > ((heights[order[idx + 1]] ?: 0) + spacingPx) / 2f) {
+            val next = order[idx + 1]
+            order = order.toMutableList().also { it[idx] = next; it[idx + 1] = k }
+            idx++
+            t = fingerY - grab - topOf(k, order)
+        }
+        while (idx > 0 && t < -((heights[order[idx - 1]] ?: 0) + spacingPx) / 2f) {
+            val prev = order[idx - 1]
+            order = order.toMutableList().also { it[idx] = prev; it[idx - 1] = k }
+            idx--
+            t = fingerY - grab - topOf(k, order)
+        }
+        dragTrans = t
+    }
+
     androidx.compose.foundation.layout.Column(
         Modifier
-            .onGloballyPositioned { colRoot = it.positionInRoot() }
+            .onGloballyPositioned { colRoot = it.positionInRoot(); colH = it.size.height.toFloat() }
             .pointerInput(keys) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -235,27 +295,36 @@ fun <T> ReorderColumn(
                         val grab = down.position.y - topOf(k, order)
                         draggingKey = k
                         dragTrans = 0f
-                        while (true) {
-                            val ev = awaitPointerEvent(PointerEventPass.Initial)
-                            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                            ch.consume()
-                            if (!ch.pressed) break
-                            val fingerY = ch.position.y
-                            var idx = order.indexOf(k)
-                            var t = fingerY - grab - topOf(k, order)
-                            while (idx < order.lastIndex && t > ((heights[order[idx + 1]] ?: 0) + spacingPx) / 2f) {
-                                val next = order[idx + 1]
-                                order = order.toMutableList().also { it[idx] = next; it[idx + 1] = k }
-                                idx++
-                                t = fingerY - grab - topOf(k, order)
+                        // 手指在畫面上的高度（清單捲動時手沒動，它也不變）
+                        var rootY = colRoot.y + down.position.y
+                        // 手停在邊界不動時不會有觸控事件，所以另外每一格畫面檢查一次要不要捲
+                        val auto = scroll?.let { s ->
+                            scope.launch {
+                                var last = androidx.compose.runtime.withFrameNanos { it }
+                                while (true) {
+                                    val now = androidx.compose.runtime.withFrameNanos { it }
+                                    val dt = (now - last) / 1_000_000_000f
+                                    last = now
+                                    // 上一格捲過之後 Column 的位置已經更新，先讓拖的項目跟上手指
+                                    follow(k, grab, rootY - colRoot.y)
+                                    val v = s.speed(rootY, edgePx, slowPx, fastPx)
+                                    // 這一組已經整組捲過手指的位置就不再捲（項目只能在這一組裡排，再捲這一組會被捲出畫面）
+                                    val room = if (v > 0f) colRoot.y + colH > rootY else colRoot.y < rootY
+                                    if (v != 0f && room) s.state.scrollBy(v * dt)
+                                }
                             }
-                            while (idx > 0 && t < -((heights[order[idx - 1]] ?: 0) + spacingPx) / 2f) {
-                                val prev = order[idx - 1]
-                                order = order.toMutableList().also { it[idx] = prev; it[idx - 1] = k }
-                                idx--
-                                t = fingerY - grab - topOf(k, order)
+                        }
+                        try {
+                            while (true) {
+                                val ev = awaitPointerEvent(PointerEventPass.Initial)
+                                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                                ch.consume()
+                                if (!ch.pressed) break
+                                rootY = colRoot.y + ch.position.y
+                                follow(k, grab, ch.position.y)
                             }
-                            dragTrans = t
+                        } finally {
+                            auto?.cancel()
                         }
                         draggingKey = null
                         dragTrans = 0f
