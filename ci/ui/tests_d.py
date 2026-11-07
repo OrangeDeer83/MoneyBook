@@ -4661,7 +4661,7 @@ def cat_trend_seed():
     return s
 
 
-@case(D, "分類走勢：統計點分類進去，上面有近 12 個月的折線、平均虛線，這個月比平均多 30% 以上標紅點", visual=True)
+@case(D, "分類走勢：統計點分類進去，上面有近 12 個月的折線、平均虛線，比平均多 30% 以上標紅點；長按某個月下面換成那個月，點圖或按鈕回到原本", visual=True)
 def t_drill_cat_trend():
     d.fresh(cat_trend_seed().json())
     f.tab("統計")
@@ -4689,6 +4689,35 @@ def t_drill_cat_trend():
         ns = d.shot("長按這個月")
         d.check("長按跳出資訊框：2026 年 N 月（這個月）、餐飲 $2,000、平均 $1,000",
                 sum(1 for n in ns if n.text.endswith(" 月") and " 年 " in n.text) >= 2 and d.has(ns, "平均 $1,000", True), [n.text for n in ns if n.text][:25])
+        # 長按上個月（12 格的倒數第二格）：下面的明細換成上個月（只有一筆午餐 $1,000），多一顆「回到 N 月」
+        t = f.today()
+        pm = t.month - 1 or 12
+        py = t.year if t.month > 1 else t.year - 1
+        left, right = w * 32 / 411, w - w * 32 / 411
+        def slot_x(i):
+            return int(left + (right - left) * (i + 0.5) / 12)
+        back = f"回到 {t.month} 月"
+        d.sh(f"input swipe {slot_x(10)} {y} {slot_x(10)} {y} 1200")
+        d.time.sleep(1.2)
+        ns = d.shot("長按上個月")
+        d.check(f"明細換成 {py} 年 {pm} 月：$1,000、共 1 筆、餐飲 › 午餐，有「{back}」",
+                d.has(ns, f"{py} 年 {pm} 月", True) and d.has(ns, "共 1 筆・點一筆可以修改，左滑可以刪除", True) and d.has(ns, "餐飲 › 午餐", True)
+                and d.has(ns, back, True), [n.text for n in ns if n.text][:30])
+        # 點一下圖：回到這個月
+        d.sh(f"input tap {slot_x(3)} {y}")
+        d.time.sleep(1.2)
+        ns = d.shot("點一下圖")
+        d.check(f"點一下圖回到 {t.year} 年 {t.month} 月，沒有「{back}」", d.has(ns, f"{t.year} 年 {t.month} 月", True) and not d.has(ns, back, True)
+                and d.has(ns, "餐飲 › 晚餐", True), [n.text for n in ns if n.text][:30])
+        # 再長按上個月，這次按「回到 N 月」
+        d.sh(f"input swipe {slot_x(10)} {y} {slot_x(10)} {y} 1200")
+        d.time.sleep(1.2)
+        btn = d.first(d.nodes(), back, True)
+        if btn:
+            d.tap(btn)
+            d.time.sleep(1.2)
+        ns = d.shot(f"按{back}")
+        d.check(f"按「{back}」也回到這個月", btn is not None and not d.has(ns, back, True) and d.has(ns, "餐飲 › 晚餐", True), [n.text for n in ns if n.text][:30])
     d.tap_back()
     d.time.sleep(1.5)
     # 依標籤點進去沒有走勢
@@ -4703,66 +4732,75 @@ def t_drill_cat_trend():
         d.check("依標籤點進去沒有走勢圖", not d.has(ns, "近 12 個月", True), [n.text for n in ns if n.text][:12])
 
 
-@case(D, "趨勢頁「分類走勢」卡片：預設花最多的 3 個大分類；「切換分類」最多選 3 個，換成醫療後記住", visual=True)
+@case(D, "趨勢頁「分類走勢」卡片：預設花最多的 3 個大分類；「切換分類」大分類可以收折、最多選 3 個，換成早餐後記住", visual=True)
 def t_trend_cat_card():
     d.fresh(cat_trend_seed().json())
     f.tab("統計")
     d.time.sleep(2)
     d.tap_text("趨勢", exact=True)
     d.time.sleep(2)
-    for _ in range(6):
-        if d.has(d.nodes(), "切換分類", True):
-            break
-        d.swipe(540, 1700, 540, 1000, 500)
-    d.time.sleep(1)
+    names = ("餐飲", "交通", "購物", "醫療", "早餐")
+
+    def to_card():
+        for _ in range(6):
+            if d.has(d.nodes(), "切換分類", True):
+                break
+            d.swipe(540, 1700, 540, 1000, 500)
+        d.time.sleep(1)
+
+    def card_chips():
+        ns = d.nodes()
+        b = d.first(ns, "切換分類", True)
+        t = d.first(ns, "分類走勢", True)
+        return [n.text for n in ns if t and b and n.text in names and t.cy < n.cy < b.cy + 120]
+
+    to_card()
     ns = d.shot("分類走勢卡片")
     btn = d.first(ns, "切換分類", True)
-    title = d.first(ns, "分類走勢", True)
-    chips = [n.text for n in ns if title and btn and n.text in ("餐飲", "交通", "購物", "醫療") and title.cy < n.cy < btn.cy + 120]
+    chips = card_chips()
     d.check("預設是花最多的 3 個大分類：餐飲、交通、購物（沒有醫療）", btn is not None and sorted(chips) == sorted(["餐飲", "交通", "購物"]), chips)
     if not btn:
         return
     d.tap(btn)
     d.wait_text("要看哪幾個分類", timeout=8)
-    ns = d.shot("切換分類視窗")
-    d.check("視窗寫「最多 3 個（已選 3）」，大分類和子分類（早餐、捷運）都有",
-            d.has(ns, "最多 3 個（已選 3）", True) and d.has(ns, "挑分類：早餐", True) and d.has(ns, "挑分類：捷運", True))
-    # 醫療在清單最下面：在視窗的清單上往上滑
-    c3 = d.first(ns, "挑分類：3C", True)
-    if c3:
-        d.swipe(c3.cx, c3.cy, c3.cx, c3.cy - 600, 500)
-    ns = d.nodes()
+    ns = d.shot("切換分類視窗（都收起來）")
+    d.check("只選了大分類：大分類都收起來（看不到早餐、捷運），醫療不用捲就看得到",
+            d.has(ns, "最多 3 個（已選 3）", True) and not d.has(ns, "挑分類：早餐", True) and not d.has(ns, "挑分類：捷運", True)
+            and d.has(ns, "挑分類：醫療", True) and d.has(ns, "展開餐飲", True))
     d.tap(d.first(ns, "挑分類：醫療", True))
     d.time.sleep(0.8)
     ns = d.nodes()
     d.check("已經 3 個再點醫療：提示「最多 3 個，先取消一個再選」", d.has(ns, "最多 3 個，先取消一個再選", True))
-    gw = d.first(ns, "挑分類：購物", True)
-    if gw is None:   # 捲到下面時購物在畫面外：捲回上面
-        m = d.first(ns, "挑分類：醫療", True)
-        d.swipe(m.cx, m.cy - 300, m.cx, m.cy + 300, 500)
-        gw = d.first(d.nodes(), "挑分類：購物", True)
-    d.tap(gw)
+    d.tap(d.first(ns, "挑分類：購物", True))
     d.time.sleep(0.6)
-    d.tap(d.first(d.nodes(), "挑分類：醫療", True))
+    d.tap(d.first(d.nodes(), "展開餐飲", True))
+    d.time.sleep(0.8)
+    ns = d.nodes()
+    d.check("點餐飲的箭頭展開：看得到早餐、午餐", d.has(ns, "挑分類：早餐", True) and d.has(ns, "挑分類：午餐", True))
+    d.tap(d.first(ns, "挑分類：早餐", True))
     d.time.sleep(0.6)
+    d.tap(d.first(d.nodes(), "收起餐飲", True))
+    d.time.sleep(0.8)
+    ns = d.shot("選了早餐再收起來")
+    d.check("收起來後餐飲旁邊寫「已選 早餐」", d.has(ns, "已選 早餐", True) and not d.has(ns, "挑分類：早餐", True), [n.text for n in ns if n.text][:20])
     d.tap_text("完成", exact=True, lowest=True)
     d.time.sleep(1.5)
-    def card_chips():
-        ns = d.nodes()
-        b = d.first(ns, "切換分類", True)
-        t = d.first(ns, "分類走勢", True)
-        return [n.text for n in ns if t and b and n.text in ("餐飲", "交通", "購物", "醫療") and t.cy < n.cy < b.cy + 120]
     got = card_chips()
-    d.shot("換成醫療之後")
-    d.check("卡片換成餐飲、交通、醫療", sorted(got) == sorted(["餐飲", "交通", "醫療"]), got)
+    d.shot("換成早餐之後")
+    d.check("卡片換成餐飲、交通、早餐", sorted(got) == sorted(["餐飲", "交通", "早餐"]), got)
+    # 再打開：選了子分類的餐飲一開始就展開
+    d.tap_text("切換分類", exact=True)
+    d.wait_text("要看哪幾個分類", timeout=8)
+    ns = d.shot("再打開切換分類")
+    d.check("再打開時，選了早餐的餐飲自動展開；交通（只選大分類）收起來",
+            d.has(ns, "挑分類：早餐", True) and d.has(ns, "收起餐飲", True) and d.has(ns, "展開交通", True))
+    d.tap_text("取消", exact=True, lowest=True)
+    d.time.sleep(1)
     # 切到明細再回到統計還是一樣（統計頁往下捲過，上面的「月」看不到，用下面的分頁）
     f.tab("明細")
     d.time.sleep(1)
     f.tab("統計")
     d.time.sleep(1.5)
-    for _ in range(6):
-        if d.has(d.nodes(), "切換分類", True):
-            break
-        d.swipe(540, 1700, 540, 1000, 500)
+    to_card()
     got = card_chips()
-    d.check("切到明細再回來，還是餐飲、交通、醫療", sorted(got) == sorted(["餐飲", "交通", "醫療"]), got)
+    d.check("切到明細再回來，還是餐飲、交通、早餐", sorted(got) == sorted(["餐飲", "交通", "早餐"]), got)
