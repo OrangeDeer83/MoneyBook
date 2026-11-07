@@ -4554,10 +4554,10 @@ def t_settle_detail_from_person():
     d.check("Amy 的紀錄沒了、Amy 又欠 $680（旅行 600＋零食 80）", d.has(ns, "紀錄 0", True) and d.has(ns, "$680", False), [n.text for n in ns if n.text][:30])
 
 
-def hold_drag(x, y1, y2, hold):
-    """按住 (x, y1) 拖到 (x, y2)，在那裡停 hold 秒才放開（測拖到邊界自動捲動）"""
+def hold_drag(x, y1, y2, hold, press=0.3):
+    """按住 (x, y1) 拖到 (x, y2)，在那裡停 hold 秒才放開（測拖到邊界自動捲動）；要長按才能拖的地方 press 給 1 秒"""
     d.sh(f"input motionevent DOWN {x} {y1}")
-    d.time.sleep(0.3)
+    d.time.sleep(press)
     for i in range(1, 9):
         d.sh(f"input motionevent MOVE {x} {y1 + (y2 - y1) * i // 8}")
     d.time.sleep(hold)
@@ -4603,3 +4603,36 @@ def t_drag_autoscroll():
     f.me_page("常用記帳")
     ns = d.shot("再進來")
     d.check("再進來還是項目01、項目02…", order(ns)[:2] == ["項目01", "項目02"], order(ns))
+
+
+@case(D, "統計調整排版：長按卡片拖到清單頂部停住會一路往上捲，放開排到第一個（字放大、放不下時）", visual=True)
+def t_card_edit_autoscroll():
+    d.fresh(f.base_seed())
+    names = ["本月重點（年沒有）", "收支", "預算內／外（有設預算外才有）", "分類（圓環圖＋清單）", "平日／週末", "時段", "每天熱度（只有月）", "每月收支（只有年）"]
+
+    def order(ns):
+        return [n.text for n in sorted([n for n in ns if n.text in names], key=lambda n: (n.cy, n.cx))]
+
+    try:
+        # 把字放大，讓卡片放不下一個畫面
+        d.sh("wm density 700")
+        d.time.sleep(3)
+        f.tab("統計")
+        d.time.sleep(2)
+        open_card_menu("收支", "調整排版…")
+        ns = d.shot("調整排版（字放大）")
+        d.check("一個畫面放不下（看不到隱藏區）", not d.has(ns, "隱藏的卡片（0）", True), order(ns))
+        for _ in range(3):
+            d.swipe(540, 1900, 540, 700, 500)
+        ns = d.shot("捲到最下面")
+        last = d.first(ns, "每月收支（只有年）", True)
+        top = d.first(ns, "調整排版・月・年・區間", True) or d.first(ns, "完成", True)
+        d.check("捲到最下面看得到「每月收支（只有年）」、看不到「本月重點」", last is not None and not d.has(ns, "本月重點（年沒有）", True), order(ns))
+        if not last or not top:
+            return
+        hold_drag(last.cx, last.cy, top.y2 + 40, 5, press=1.2)
+        ns = d.shot("拖到頂部停住後放開")
+        d.check("捲回最上面，「每月收支（只有年）」排在第一個", order(ns)[:2] == ["每月收支（只有年）", "本月重點（年沒有）"], order(ns))
+    finally:
+        d.sh("wm density reset")
+        d.time.sleep(2)
