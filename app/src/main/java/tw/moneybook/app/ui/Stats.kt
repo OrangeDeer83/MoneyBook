@@ -233,6 +233,7 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
                             "savings" -> SavingsCard(t, menu)
                             "bars" -> TrendBarsCard(t, menu)
                             "months" -> MonthsCard(t, menu)
+                            "catTrend" -> CatTrendCard(vm, t.months, menu)
                         }
                     }
                 } else {
@@ -463,7 +464,12 @@ private fun CategoryCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, onDril
                 "gain" -> ({ t: Txn -> t.reimbGain })
                 else -> amt
             }
-            vm.drill = tw.moneybook.app.Drill(iconLabel(sl.emoji, sl.label), mode, base2, useAmt)
+            // 支出分類（大分類或子分類）點進去，上面多一張近 12 個月走勢；未細分、未分類、標籤、手續費沒有
+            val catId = if (type != TxType.EXPENSE || group != 0) null else when (sl.key.firstOrNull()) {
+                't', 'c' -> sl.key.drop(1).toLongOrNull()?.takeIf { d.catMap.containsKey(it) }
+                else -> null
+            }
+            vm.drill = tw.moneybook.app.Drill(iconLabel(sl.emoji, sl.label), mode, base2, useAmt, catId)
             onDrill()
         }
         slices.forEach { s ->

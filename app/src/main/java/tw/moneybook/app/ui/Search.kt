@@ -249,7 +249,10 @@ fun DrillScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
         2 -> "${shortDate(vm.rangeStart)} ～ ${shortDate(vm.rangeEnd)}"
         else -> "全部"
     }
+    val trendCat = dr.catId?.let { d.catMap[it] }
     SubPage(dr.title, onBack) {
+      // 走勢圖可以長按看數字：點其他地方收起資訊框
+      ChartPickArea {
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -261,6 +264,9 @@ fun DrillScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
                     Text("共 ${list.size} 筆・點一筆可以修改，左滑可以刪除", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                 }
             }
+            if (trendCat != null) {
+                item(key = "trend") { DrillTrendCard(vm, dr, trendCat) }
+            }
             if (list.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "這段期間沒有記錄了") }
             }
@@ -271,5 +277,6 @@ fun DrillScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
                 }
             }
         }
+      }
     }
 }

@@ -21,6 +21,8 @@ class Drill(
     val mode: Int,
     val pred: (Txn) -> Boolean,
     val amt: (Txn) -> Long,
+    /** 從支出分類點進來時是那個分類（上面畫近 12 個月走勢）；標籤、未細分、手續費這些是 null */
+    val catId: Long? = null,
 )
 
 /** 畫面下方的提示訊息，可以附一個動作按鈕（例如復原） */
@@ -154,6 +156,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 某一頁目前的卡片排版（沒調整過是預設排版） */
     fun cardLayout(page: CardPage): CardLayout =
         page.normalize(data.prefs.cardLayouts[page.key]?.let { CardLayout.decode(it) })
+
+    /** 趨勢頁「分類走勢」挑的分類（空的＝回到預設） */
+    fun setTrendCats(ids: List<Long>) {
+        update { d -> d.copy(prefs = d.prefs.copy(trendCats = ids.distinct().take(3))) }
+    }
 
     fun setCardLayout(page: CardPage, l: CardLayout) {
         update { d -> d.copy(prefs = d.prefs.copy(cardLayouts = d.prefs.cardLayouts + (page.key to l.encode()))) }

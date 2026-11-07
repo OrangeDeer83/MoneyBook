@@ -37,8 +37,11 @@ data class CardLayout(val rows: List<CardRow>, val hidden: List<String> = emptyL
     }
 }
 
-/** 一種卡片：canHalf＝可以半排（數字、短條這種小卡片；大圖表只能整排） */
-class CardSpec(val id: String, val name: String, val canHalf: Boolean = false)
+/**
+ * 一種卡片：canHalf＝可以半排（數字、短條這種小卡片；大圖表只能整排）。
+ * after：舊排版沒有這張新卡片時，放在哪張卡片那一排的下面（那張不在排版裡就照舊加到最下面）。
+ */
+class CardSpec(val id: String, val name: String, val canHalf: Boolean = false, val after: String? = null)
 
 /** 一頁可以排的卡片與預設排版 */
 class CardPage(val key: String, val title: String, val specs: List<CardSpec>, val default: CardLayout) {
@@ -79,6 +82,16 @@ class CardPage(val key: String, val title: String, val specs: List<CardSpec>, va
         for (s in specs) {
             if (!seen.add(s.id)) continue
             if (s.id in default.hidden) hidden.add(s.id) else rows.add(CardRow(s.id))
+        }
+        // 指定了位置的新卡片：從最下面搬到指定那張卡片的下一排
+        for (s in specs) {
+            val a = s.after ?: continue
+            if (saved.rows.any { s.id in it.ids } || s.id in saved.hidden) continue
+            val from = rows.indexOfFirst { it == CardRow(s.id) }
+            val at = rows.indexOfFirst { a in it.ids }
+            if (from < 0 || at < 0) continue
+            val r = rows.removeAt(from)
+            rows.add(rows.indexOfFirst { a in it.ids } + 1, r)
         }
         return CardLayout(rows, hidden)
     }
@@ -197,9 +210,10 @@ object CardPages {
             CardSpec("saved", "這個月存下", canHalf = true),
             CardSpec("savings", "存錢趨勢"),
             CardSpec("bars", "近幾個月收支"),
+            CardSpec("catTrend", "分類走勢", after = "bars"),
             CardSpec("months", "每月明細"),
         ),
-        CardLayout(listOf(CardRow("asset"), CardRow("savings"), CardRow("bars"), CardRow("months")), hidden = listOf("saved")),
+        CardLayout(listOf(CardRow("asset"), CardRow("savings"), CardRow("bars"), CardRow("catTrend"), CardRow("months")), hidden = listOf("saved")),
     )
 
     /** 總資產頁 */

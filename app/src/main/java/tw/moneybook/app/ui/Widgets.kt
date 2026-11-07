@@ -252,7 +252,7 @@ fun ChartPickArea(modifier: Modifier = Modifier, content: @Composable () -> Unit
 
 /** 長按（約半秒）選這張圖最近的那一組，手指不放左右拖可以換；n 是有幾組（平均分在整個寬度） */
 @Composable
-private fun Modifier.chartPick(key: String, n: Int): Modifier {
+internal fun Modifier.chartPick(key: String, n: Int): Modifier {
     val pick = LocalChartPick.current ?: return this
     if (n <= 0) return this
     val haptic = LocalHapticFeedback.current
@@ -282,7 +282,7 @@ class TipLine(val label: String, val value: String, val color: Color)
 
 /** 長按圖表跳出的資訊框：放在選到的那一組旁邊（右半邊的放左邊），寬度固定 */
 @Composable
-private fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, footer: List<TipLine> = emptyList(), tipWidth: androidx.compose.ui.unit.Dp = 176.dp) {
+internal fun ChartTip(index: Int, n: Int, title: String, lines: List<TipLine>, footer: List<TipLine> = emptyList(), tipWidth: androidx.compose.ui.unit.Dp = 176.dp) {
     val cute = LocalCute.current
     // 不用 BoxWithConstraints：半排的卡片要量「內容的高度」（IntrinsicSize），BoxWithConstraints 不支援會閃退
     Layout(
@@ -707,7 +707,7 @@ fun MiniLine(values: List<Long>, color: Color, modifier: Modifier = Modifier) {
     }
 }
 
-private fun formatMoneyShort(v: Long): String =
+internal fun formatMoneyShort(v: Long): String =
     (if (v < 0) "-" else "") + tw.moneybook.app.Money.twd + tw.moneybook.app.formatShort(kotlin.math.abs(v))
 
 /** 橫向比例條 */

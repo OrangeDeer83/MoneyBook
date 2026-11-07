@@ -258,6 +258,8 @@ data class Prefs(
     val collapsedAccTypes: List<String> = emptyList(),
     /** 統計頁、總資產頁的卡片排版（CardPage.key → CardLayout.encode()）；沒有的頁用預設排版 */
     val cardLayouts: Map<String, List<String>> = emptyMap(),
+    /** 趨勢頁「分類走勢」挑的分類（最多 3 個）；空的＝用預設（最近 12 個月花最多的 3 個大分類） */
+    val trendCats: List<Long> = emptyList(),
 )
 
 data class AppData(

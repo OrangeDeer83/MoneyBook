@@ -129,6 +129,7 @@ object Codec {
                 .put("priceFetch", p.priceFetch).put("priceFetchDay", p.priceFetchDay)
                 .put("collapsedAccTypes", JSONArray(p.collapsedAccTypes))
                 .put("cardLayouts", JSONObject().apply { p.cardLayouts.forEach { (k, v) -> put(k, JSONArray(v)) } })
+                .put("trendCats", JSONArray(p.trendCats))
         )
         return root.toString()
     }
@@ -266,6 +267,7 @@ object Codec {
             priceFetchDay = po.optLong("priceFetchDay", 0L),
             collapsedAccTypes = strings(po.optJSONArray("collapsedAccTypes")),
             cardLayouts = po.optJSONObject("cardLayouts")?.let { o -> o.keys().asSequence().associateWith { k -> strings(o.optJSONArray(k)) } } ?: emptyMap(),
+            trendCats = po.optJSONArray("trendCats")?.let { a -> (0 until a.length()).mapNotNull { i -> a.optLong(i, 0L).takeIf { it > 0L } } } ?: emptyList(),
         )
         val settles = objects(root.optJSONArray("settles")) { o ->
             Settle(
