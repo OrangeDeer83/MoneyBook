@@ -4552,3 +4552,54 @@ def t_settle_detail_from_person():
     d.time.sleep(1.5)
     ns = d.shot("刪除之後")
     d.check("Amy 的紀錄沒了、Amy 又欠 $680（旅行 600＋零食 80）", d.has(ns, "紀錄 0", True) and d.has(ns, "$680", False), [n.text for n in ns if n.text][:30])
+
+
+def hold_drag(x, y1, y2, hold):
+    """按住 (x, y1) 拖到 (x, y2)，在那裡停 hold 秒才放開（測拖到邊界自動捲動）"""
+    d.sh(f"input motionevent DOWN {x} {y1}")
+    d.time.sleep(0.3)
+    for i in range(1, 9):
+        d.sh(f"input motionevent MOVE {x} {y1 + (y2 - y1) * i // 8}")
+    d.time.sleep(hold)
+    d.sh(f"input motionevent UP {x} {y2}")
+    d.time.sleep(1.5)
+
+
+@case(D, "拖曳排序碰到清單上下邊界會一路捲動：常用記帳第一個拖到底部停住，捲到最後放開就排到最後；再拖到頂部停住就回到第一個", visual=True)
+def t_drag_autoscroll():
+    s = S.Seed(f.today())
+    names = [f"項目{i:02d}" for i in range(1, 17)]
+    for i, n in enumerate(names):
+        s.template(n, 10 + i, S.C_BREAKFAST)
+    d.fresh(s.json())
+    f.me_page("常用記帳")
+    ns = d.shot("常用記帳 16 個")
+    w, h = d._screen()
+    title = d.first(ns, "常用記帳", True)
+
+    def handle_of(ns, name):
+        a = d.first(ns, name, True)
+        hs = [x for x in d.find(ns, "按住拖曳排序", True) if a and abs(x.cy - a.cy) < 90]
+        return hs[0] if hs else None
+
+    def order(ns):
+        return [n.text for n in sorted([n for n in ns if n.text in names], key=lambda n: n.cy)]
+
+    hd = handle_of(ns, "項目01")
+    d.check("畫面放不下全部（看不到項目16）", hd is not None and not d.has(ns, "項目16", True), order(ns))
+    if not hd:
+        return
+    hold_drag(hd.cx, hd.cy, h - 30, 6)
+    ns = d.shot("拖到底部停住後放開")
+    d.check("捲到最下面，項目01 排在最後", order(ns)[-1:] == ["項目01"] and d.has(ns, "項目16", True), order(ns))
+    hd = handle_of(ns, "項目01")
+    if not hd or not title:
+        return
+    hold_drag(hd.cx, hd.cy, title.y2 + 40, 6)
+    ns = d.shot("拖到頂部停住後放開")
+    d.check("捲回最上面，項目01 排在第一個", order(ns)[:2] == ["項目01", "項目02"], order(ns))
+    d.tap_back()
+    d.time.sleep(1)
+    f.me_page("常用記帳")
+    ns = d.shot("再進來")
+    d.check("再進來還是項目01、項目02…", order(ns)[:2] == ["項目01", "項目02"], order(ns))
