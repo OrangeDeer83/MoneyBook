@@ -4687,8 +4687,9 @@ def t_drill_cat_trend():
         d.sh(f"input swipe {x} {y} {x} {y} 1200")
         d.time.sleep(1)
         ns = d.shot("長按這個月")
-        d.check("長按跳出資訊框：2026 年 N 月（這個月）、餐飲 $2,000、平均 $1,000",
-                sum(1 for n in ns if n.text.endswith(" 月") and " 年 " in n.text) >= 2 and d.has(ns, "平均 $1,000", True), [n.text for n in ns if n.text][:25])
+        d.check("長按跳出資訊框：2026 年 N 月（這個月）、餐飲 $2,000、平均 $1,000；長按的就是這個月，沒有「回到」按鈕",
+                sum(1 for n in ns if n.text.endswith(" 月") and " 年 " in n.text) >= 2 and d.has(ns, "平均 $1,000", True)
+                and not any(n.text.startswith("回到 ") for n in ns), [n.text for n in ns if n.text][:25])
         # 長按上個月（12 格的倒數第二格）：下面的明細換成上個月（只有一筆午餐 $1,000），多一顆「回到 N 月」
         t = f.today()
         pm = t.month - 1 or 12

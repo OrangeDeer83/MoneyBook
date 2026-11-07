@@ -280,7 +280,8 @@ fun DrillScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             }
             if (trendCat != null) {
                 item(key = "trend") {
-                    DrillTrendCard(vm, dr, trendCat, focus) { m -> focusKey = if (m == null) 0 else m.year * 100 + m.monthValue }
+                    // 看「月」時長按的就是原本那個月：等於沒換，不出現「回到 N 月」
+                    DrillTrendCard(vm, dr, trendCat, focus) { m -> focusKey = if (m == null || (dr.mode == 0 && m == vm.month)) 0 else m.year * 100 + m.monthValue }
                 }
             }
             if (list.isEmpty()) {
