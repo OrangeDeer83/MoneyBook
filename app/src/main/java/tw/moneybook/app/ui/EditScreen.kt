@@ -536,27 +536,17 @@ fun EditScreen(
                     if (tight && fxAcc != null) {
                         val buy = plan.mode == FxMode.BUY
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        CompactField(
+                        // 點了跳出小算盤（買＝收到的外幣、可以有小數；賣＝收到的台幣）
+                        AmountField(
                             otherText,
-                            { v ->
-                                otherTouched = true
-                                otherText = if (buy) {
-                                    var dot = false
-                                    val sb = StringBuilder()
-                                    for (c in v) when {
-                                        c.isDigit() -> sb.append(c)
-                                        c == '.' && !dot && dec > 0 -> { dot = true; sb.append(c) }
-                                    }
-                                    val t = sb.toString()
-                                    val at = t.indexOf('.')
-                                    (if (at >= 0 && t.length - at - 1 > dec) t.take(at + 1 + dec) else t).take(14)
-                                } else v.filter { c -> c.isDigit() }.take(10)
-                            },
+                            { v -> otherTouched = true; otherText = v },
+                            if (buy) "收到的外幣（${fxAcc.currency}）" else "收到的台幣",
                             if (buy) "收到的外幣（${fxAcc.currency}）" else "收到的台幣",
                             Modifier.weight(1f),
-                            number = true, decimal = buy && dec > 0,
                             prefix = if (buy) fxAcc.cur.symbol.trim() else tw.moneybook.app.Money.twd,
+                            dec = if (buy) dec else 0,
                             error = nv.on("other"),
+                            maxDigits = if (buy) 11 else 10,
                         )
                         if (rate != null) {
                             SoftButton("依匯率算", { otherTouched = false; focus.clearFocus() }, compact = true)

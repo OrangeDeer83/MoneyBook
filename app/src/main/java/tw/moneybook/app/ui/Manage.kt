@@ -194,12 +194,9 @@ fun BudgetDialog(vm: MoneyViewModel, month: java.time.YearMonth, onDismiss: () -
                     else "只套用在 ${month.year} 年 ${month.monthValue} 月，其他月份還是用每月預設（${formatMoney(book.budget)}）。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
-                OutlinedTextField(
-                    text, { text = it.filter { c -> c.isDigit() }.take(10) },
-                    prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    visualTransformation = ThousandsVisual,
-                    modifier = Modifier.fillMaxWidth(),
+                AmountField(
+                    text, { text = it.filter { c -> c.isDigit() }.take(10) }, "不設定",
+                    if (mode == 0) "每月預算" else "${month.monthValue} 月預算", Modifier.fillMaxWidth(), maxDigits = 10,
                 )
                 val others = book.monthBudgets.entries.sortedByDescending { it.key }
                 if (others.isNotEmpty()) {
@@ -309,13 +306,10 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
                         isError = nv.on("name"), supportingText = nv.supporting("name"), modifier = Modifier.weight(1f),
                     )
                 }
-                OutlinedTextField(
-                    budget, { budget = it.filter { c -> c.isDigit() }.take(10) },
-                    label = { Text("每月預算（選填）") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    visualTransformation = ThousandsVisual,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("每月預算（選填）", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
+                    AmountField(budget, { budget = it.filter { c -> c.isDigit() }.take(10) }, "不設定", "每月預算", Modifier.fillMaxWidth(), maxDigits = 10)
+                }
                 if (onDelete != null) {
                     SoftButton("刪除這本帳本", { confirmDel = true }, Modifier.fillMaxWidth(), danger = true)
                 }
@@ -879,13 +873,10 @@ fun AccountDialog(
                     if (sharedOf != 0L && owner != null) {
                         Text("額度和已用金額跟「${owner.name}」一起算，額度請到那張卡設定。", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                     } else {
-                        OutlinedTextField(
-                            limit, { limit = it.filter { c -> c.isDigit() }.take(9) },
-                            label = { Text("信用額度") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            visualTransformation = ThousandsVisual,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("信用額度", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
+                            AmountField(limit, { limit = it.filter { c -> c.isDigit() }.take(9) }, "不設定", "信用額度", Modifier.fillMaxWidth())
+                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(

@@ -666,15 +666,19 @@ private fun TradeDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().needInView(nv, "rate"),
                     )
                 }
-                OutlinedTextField(
-                    fee, { fee = if (cashFx) it.filter { c -> c.isDigit() || c == '.' }.take(10) else it.filter { c -> c.isDigit() }.take(9) },
-                    label = {
-                        val what = if (buy) "手續費（選填" else "手續費與證交稅（選填"
-                        Text(what + (if (cashFx) "，$cur）" else if (cur.isNotEmpty()) "，台幣）" else "）"))
-                    }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = if (cashFx) KeyboardType.Decimal else KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = ThousandsVisual,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val what = if (buy) "手續費" else "手續費與證交稅"
+                    Text(
+                        what + "（選填" + (if (cashFx) "，$cur）" else if (cur.isNotEmpty()) "，台幣）" else "）"),
+                        style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                    )
+                    // 用外幣帳戶付款時手續費是外幣（可以有小數），其他是台幣
+                    AmountField(
+                        fee, { fee = it }, "0", what, Modifier.fillMaxWidth(),
+                        prefix = if (cashFx) "" else tw.moneybook.app.Money.twd,
+                        dec = if (cashFx) tw.moneybook.app.Currencies.of(cur).decimals else 0, maxDigits = if (cashFx) 8 else 9,
+                    )
+                }
                 Text(if (buy) "從哪個帳戶付款" else "賣出的錢轉到哪個帳戶", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                 PickerButton(cashAcc?.let { it.name + if (it.isForeign) "（${it.currency}）" else "" } ?: "不連動（只記買賣，不動帳戶）", { pickCash = true })
                 if (pickCash) {

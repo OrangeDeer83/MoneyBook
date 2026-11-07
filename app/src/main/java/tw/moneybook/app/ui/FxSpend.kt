@@ -125,14 +125,14 @@ fun FxSpendDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PickerButton(currencyLabel(code), { pickCur = true })
                 if (pickCur) CurrencyPickDialog(cur, { cur = it; pickCur = false }, { pickCur = false })
-                OutlinedTextField(
-                    amountText, { amountText = it.filter { ch -> ch.isDigit() || (ch == '.' && dec > 0) }.take(14) },
-                    label = { Text("外幣金額（${code.ifEmpty { "外幣" }}）") }, singleLine = true,
-                    isError = nv.on("amount"), supportingText = nv.supporting("amount"),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    visualTransformation = ThousandsVisual,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("外幣金額（${code.ifEmpty { "外幣" }}）", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
+                    AmountField(
+                        amountText, { amountText = it }, "0", "外幣金額（${code.ifEmpty { "外幣" }}）", Modifier.fillMaxWidth(),
+                        prefix = "", dec = dec, error = nv.on("amount"), maxDigits = 11,
+                    )
+                    nv.Message("amount")
+                }
                 if (!debt) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CuteChip("還沒請款（預估）", pending, { pending = true })
                     CuteChip("已請款（填實際台幣）", !pending, { pending = false })
@@ -164,14 +164,14 @@ fun FxSpendDialog(
                         )
                     }
                 } else {
-                    OutlinedTextField(
-                        twdText, { twdText = it.filter { ch -> ch.isDigit() }.take(10) },
-                        label = { Text("實際請款的台幣金額（含海外手續費）") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
-                        isError = nv.on("twd"), supportingText = nv.supporting("twd"),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        visualTransformation = ThousandsVisual,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("實際請款的台幣金額（含海外手續費）", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
+                        AmountField(
+                            twdText, { twdText = it.filter { ch -> ch.isDigit() }.take(10) }, "0", "實際請款的台幣金額", Modifier.fillMaxWidth(),
+                            error = nv.on("twd"), maxDigits = 10,
+                        )
+                        nv.Message("twd")
+                    }
                     val real = if (minor != null && twdActual != null) impliedRate(twdActual, minor, dec) else null
                     if (real != null) {
                         Text("實際匯率 ${formatMoney(twdActual ?: 0L)} ÷ ${formatFx(minor ?: 0L, code)} = ${rateText(real)}", style = MaterialTheme.typography.bodySmall, color = cute.sub)
@@ -222,14 +222,14 @@ fun SettleFxDialog(t: Txn, onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(t.fxSpendNote() ?: "", style = MaterialTheme.typography.bodyMedium, color = cute.sub)
-                OutlinedTextField(
-                    text, { text = it.filter { ch -> ch.isDigit() }.take(10) },
-                    label = { Text("實際請款的台幣金額（含海外手續費）") }, prefix = { Text(tw.moneybook.app.Money.twd) }, singleLine = true,
-                    isError = nv.on("twd"), supportingText = nv.supporting("twd"),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    visualTransformation = ThousandsVisual,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("實際請款的台幣金額（含海外手續費）", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
+                    AmountField(
+                        text, { text = it.filter { ch -> ch.isDigit() }.take(10) }, "0", "實際請款的台幣金額", Modifier.fillMaxWidth(),
+                        error = nv.on("twd"), maxDigits = 10,
+                    )
+                    nv.Message("twd")
+                }
                 if (real != null && twd != null) {
                     val diff = twd - t.amount
                     Text(
