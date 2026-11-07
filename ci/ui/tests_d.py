@@ -3356,14 +3356,21 @@ def t_stat_cards_drag():
         d.time.sleep(1)
     d.tap_text("完成", exact=True)
     d.time.sleep(1.5)
-    ns = d.shot("回趨勢頁")
-    mo, sv = d.first(ns, "每月明細", True), d.first(ns, "存錢趨勢", True)
-    d.check("趨勢頁：沒有近幾個月收支、每月明細在存錢趨勢上面",
-            not any(n.text.startswith("近 ") and n.text.endswith("個月收支") for n in ns) and bool(mo and sv) and mo.cy < sv.cy, [n.text for n in ns if n.text][:30])
-    for _ in range(4):
-        if d.has(d.nodes(), "這個月存下", True):
+    d.shot("回趨勢頁")
+    # 卡片比較多（中間有分類走勢），一個畫面放不下：往下捲，記下卡片標題出現的順序
+    titles = ("總資產", "分類走勢", "每月明細", "存錢趨勢", "這個月存下")
+    seen, bars_seen = [], False
+    for _ in range(6):
+        ns = d.nodes()
+        bars_seen = bars_seen or any(n.text.startswith("近 ") and n.text.endswith("個月收支") for n in ns)
+        for n in sorted(ns, key=lambda n: n.cy):
+            if n.text in titles and n.text not in seen:
+                seen.append(n.text)
+        if "這個月存下" in seen:
             break
-        d.swipe(540, 1700, 540, 900, 500)
+        d.swipe(540, 1700, 540, 1000, 500)
+    d.check("趨勢頁：沒有近幾個月收支、每月明細在存錢趨勢上面",
+            not bars_seen and "每月明細" in seen and "存錢趨勢" in seen and seen.index("每月明細") < seen.index("存錢趨勢"), seen)
     ns = d.shot("最下面是這個月存下")
     d.check("加回來的「這個月存下」在最下面", d.has(ns, "這個月存下", True))
 
@@ -4672,7 +4679,7 @@ def t_drill_cat_trend():
     d.check("有紅點的說明「比平均多 30% 以上」", d.has(ns, "比平均多 30% 以上", False))
     # 長按這個月（最右邊）看金額
     chart = d.first(ns, "這個月 $2,000", False)
-    leg = d.first(ns, "平均 $1,000", False)
+    leg = d.first(ns, "比平均多 30% 以上", False)   # 圖下面的圖例（「平均 $1,000」上面那行也有，不能用）
     if chart and leg:
         w, _ = d._screen()
         x = int(w * 0.87)          # 最右邊那個月（12 格的最後一格）
@@ -4680,7 +4687,8 @@ def t_drill_cat_trend():
         d.sh(f"input swipe {x} {y} {x} {y} 1200")
         d.time.sleep(1)
         ns = d.shot("長按這個月")
-        d.check("長按跳出資訊框：餐飲 $2,000、平均 $1,000", d.has(ns, "$2,000", True) and d.has(ns, "平均", True), [n.text for n in ns if n.text][:25])
+        d.check("長按跳出資訊框：2026 年 N 月（這個月）、餐飲 $2,000、平均 $1,000",
+                sum(1 for n in ns if n.text.endswith(" 月") and " 年 " in n.text) >= 2 and d.has(ns, "平均 $1,000", True), [n.text for n in ns if n.text][:25])
     d.tap_back()
     d.time.sleep(1.5)
     # 依標籤點進去沒有走勢
@@ -4719,11 +4727,21 @@ def t_trend_cat_card():
     ns = d.shot("切換分類視窗")
     d.check("視窗寫「最多 3 個（已選 3）」，大分類和子分類（早餐、捷運）都有",
             d.has(ns, "最多 3 個（已選 3）", True) and d.has(ns, "挑分類：早餐", True) and d.has(ns, "挑分類：捷運", True))
+    # 醫療在清單最下面：在視窗的清單上往上滑
+    c3 = d.first(ns, "挑分類：3C", True)
+    if c3:
+        d.swipe(c3.cx, c3.cy, c3.cx, c3.cy - 600, 500)
+    ns = d.nodes()
     d.tap(d.first(ns, "挑分類：醫療", True))
     d.time.sleep(0.8)
     ns = d.nodes()
     d.check("已經 3 個再點醫療：提示「最多 3 個，先取消一個再選」", d.has(ns, "最多 3 個，先取消一個再選", True))
-    d.tap(d.first(ns, "挑分類：購物", True))
+    gw = d.first(ns, "挑分類：購物", True)
+    if gw is None:   # 捲到下面時購物在畫面外：捲回上面
+        m = d.first(ns, "挑分類：醫療", True)
+        d.swipe(m.cx, m.cy - 300, m.cx, m.cy + 300, 500)
+        gw = d.first(d.nodes(), "挑分類：購物", True)
+    d.tap(gw)
     d.time.sleep(0.6)
     d.tap(d.first(d.nodes(), "挑分類：醫療", True))
     d.time.sleep(0.6)
