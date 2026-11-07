@@ -212,6 +212,31 @@ class DragScroll(val state: androidx.compose.foundation.gestures.ScrollableState
 @Composable
 fun rememberDragScroll(state: androidx.compose.foundation.gestures.ScrollableState): DragScroll = remember(state) { DragScroll(state) }
 
+/**
+ * 拖曳中一直跑：每一格畫面看手指（[fingerY]，畫面座標）有沒有碰到邊界，碰到就捲；呼叫的協程取消就停。
+ * 邊界 72dp 內開始捲，剛碰到每秒 150dp、貼到最邊每秒 1500dp。
+ * [onFrame] 在每一格捲之前呼叫（讓拖的東西跟上前一格捲的距離）；[allow] 回傳 false 就不捲（參數是速度，往上是負的）。
+ */
+suspend fun DragScroll.run(
+    density: androidx.compose.ui.unit.Density,
+    fingerY: () -> Float,
+    onFrame: () -> Unit = {},
+    allow: (Float) -> Boolean = { true },
+) {
+    val edge = with(density) { 72.dp.toPx() }
+    val slow = with(density) { 150.dp.toPx() }
+    val fast = with(density) { 1500.dp.toPx() }
+    var last = androidx.compose.runtime.withFrameNanos { it }
+    while (true) {
+        val now = androidx.compose.runtime.withFrameNanos { it }
+        val dt = (now - last) / 1_000_000_000f
+        last = now
+        onFrame()
+        val v = speed(fingerY(), edge, slow, fast)
+        if (v != 0f && allow(v)) state.scrollBy(v * dt)
+    }
+}
+
 /** 掛在可捲動的清單上，記下它在畫面上的上下邊界 */
 fun Modifier.dragScrollArea(ds: DragScroll): Modifier = onGloballyPositioned {
     val b = it.boundsInRoot()
@@ -245,9 +270,6 @@ fun <T> ReorderColumn(
     var colH by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val spacingPx = with(density) { spacing.toPx() }
-    val edgePx = with(density) { 72.dp.toPx() }
-    val slowPx = with(density) { 150.dp.toPx() }
-    val fastPx = with(density) { 1500.dp.toPx() }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val latestReorder by androidx.compose.runtime.rememberUpdatedState(onReorder)
@@ -300,18 +322,13 @@ fun <T> ReorderColumn(
                         // 手停在邊界不動時不會有觸控事件，所以另外每一格畫面檢查一次要不要捲
                         val auto = scroll?.let { s ->
                             scope.launch {
-                                var last = androidx.compose.runtime.withFrameNanos { it }
-                                while (true) {
-                                    val now = androidx.compose.runtime.withFrameNanos { it }
-                                    val dt = (now - last) / 1_000_000_000f
-                                    last = now
+                                s.run(
+                                    density, { rootY },
                                     // 上一格捲過之後 Column 的位置已經更新，先讓拖的項目跟上手指
-                                    follow(k, grab, rootY - colRoot.y)
-                                    val v = s.speed(rootY, edgePx, slowPx, fastPx)
+                                    onFrame = { follow(k, grab, rootY - colRoot.y) },
                                     // 這一組已經整組捲過手指的位置就不再捲（項目只能在這一組裡排，再捲這一組會被捲出畫面）
-                                    val room = if (v > 0f) colRoot.y + colH > rootY else colRoot.y < rootY
-                                    if (v != 0f && room) s.state.scrollBy(v * dt)
-                                }
+                                    allow = { v -> if (v > 0f) colRoot.y + colH > rootY else colRoot.y < rootY },
+                                )
                             }
                         }
                         try {

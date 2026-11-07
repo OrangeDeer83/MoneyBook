@@ -95,6 +95,12 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
     // 每一排、每一個半排格子、隱藏區在螢幕上的位置（找放下的位置用）
     val rowBounds = remember { mutableStateMapOf<Int, Rect>() }
     var hiddenArea by remember { mutableStateOf(Rect.Zero) }
+    // 拖到清單上下邊界時一路捲動（卡片多時才拖得到畫面外的位置）
+    val scroll = rememberScrollState()
+    val dragScroll = rememberDragScroll(scroll)
+    androidx.compose.runtime.LaunchedEffect(dragId != null) {
+        if (dragId != null) dragScroll.run(density, { finger.y })
+    }
 
     fun targetOf(id: String, p: Offset): Drop? {
         if (hiddenArea.contains(p)) return if (id in layout.hidden) null else Drop.Hide
@@ -206,7 +212,7 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
                 TextButton(onClick = onBack) { Text("完成", style = MaterialTheme.typography.titleSmall) }
             }
             Column(
-                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState(), enabled = dragId == null)
+                Modifier.fillMaxWidth().weight(1f).dragScrollArea(dragScroll).verticalScroll(scroll, enabled = dragId == null)
                     .padding(horizontal = 16.dp).padding(bottom = 24.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
