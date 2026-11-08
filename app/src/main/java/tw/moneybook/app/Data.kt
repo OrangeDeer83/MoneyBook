@@ -507,13 +507,13 @@ fun billRange(statementDay: Int, month: YearMonth): Pair<LocalDate, LocalDate> {
 
 /**
  * 這筆在帳戶 a 的明細裡算在哪個月。有設結帳日的信用卡，明細是「一期一期」看的：消費算在它所屬的那一期帳單
- * （見 billMonthFor），繳卡費、轉帳等放在發生那天所在的那一期。其他帳戶一律是日期所在的月份；
+ * （見 billMonthFor），從這張卡轉出的轉帳（例如儲值悠遊卡）也一樣可以改入帳月份；繳卡費（轉進這張卡）放在發生那天所在的那一期。其他帳戶一律是日期所在的月份；
  * 沒設結帳日的信用卡，手動指定了入帳月份的算在那個月（舊資料）。首頁的明細與統計仍然看消費日期。
  */
 fun Txn.accountMonthFor(a: Account): YearMonth {
     if (a.type != AccountType.CARD) return month
     if (a.statementDay in 1..31) {
-        return if (accountId == a.id && type != TxType.TRANSFER) billMonthFor(a) ?: month else autoBillMonth(a.statementDay, date)
+        return if (accountId == a.id) billMonthFor(a) ?: month else autoBillMonth(a.statementDay, date)
     }
     return if (accountId == a.id) billMonthFromCode(billMonth) ?: month else month
 }
@@ -527,9 +527,9 @@ fun Txn.billMonthFor(a: Account): YearMonth? {
     return if (manual != null && manual >= auto) manual else auto
 }
 
-/** 這筆可以在信用卡 a 改入帳月份嗎：記在這張卡（設了結帳日）的支出／收入，餘額調整不算 */
+/** 這筆可以在信用卡 a 改入帳月份嗎：記在這張卡（設了結帳日）的支出／收入、從這張卡轉出的轉帳；繳卡費（轉進來的）和餘額調整不算 */
 fun Txn.billMovable(a: Account): Boolean =
-    a.type == AccountType.CARD && a.statementDay in 1..31 && accountId == a.id && type != TxType.TRANSFER && !adjust
+    a.type == AccountType.CARD && a.statementDay in 1..31 && accountId == a.id && !adjust
 
 /**
  * 一次改好幾筆在信用卡 a 的入帳月份：target 是 null＝依消費日期自動；

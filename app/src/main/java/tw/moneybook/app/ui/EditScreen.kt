@@ -310,8 +310,8 @@ fun EditScreen(
         // 上限跟著目前的金額走：先填報銷、後填金額時，金額還是 0，不能先把報銷金額截成 0
         else -> ReimbCodec.decode(reimbJson).map { if (amount + fee > 0L && it.pays.isEmpty() && !it.closed) it.copy(amount = it.amount.coerceAtMost(amount + fee)) else it }
     }
-    // 信用卡的入帳月份：選的是設了結帳日的信用卡、而且是支出／收入才有
-    val cardAcc = accId?.let { d.accMap[it] }?.takeIf { !debtAll && it.type == tw.moneybook.app.AccountType.CARD && it.statementDay in 1..31 && type != TxType.TRANSFER && !tplMode }
+    // 信用卡的入帳月份：記在（轉帳是「從」）設了結帳日的信用卡才有
+    val cardAcc = accId?.let { d.accMap[it] }?.takeIf { !debtAll && it.type == tw.moneybook.app.AccountType.CARD && it.statementDay in 1..31 && !tplMode }
     var billMonth by rememberSaveable { mutableIntStateOf(orig?.billMonth ?: 0) }
     val billAuto: java.time.YearMonth? = cardAcc?.let { tw.moneybook.app.autoBillMonth(it.statementDay, LocalDate.ofEpochDay(day)) }
     val billManual = tw.moneybook.app.billMonthFromCode(billMonth)

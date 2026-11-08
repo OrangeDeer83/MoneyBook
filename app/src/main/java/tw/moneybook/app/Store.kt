@@ -758,7 +758,7 @@ object CsvIO {
                     reimb = if (type == TxType.EXPENSE && !isAdjust) when (get(cReimb)) { "待報銷" -> 1; "已報銷" -> 2; else -> 0 } else 0,
                     adjust = isAdjust,
                     fxAmount = fxVal,
-                    billMonth = if (type != TxType.TRANSFER && !isAdjust) runCatching { billCode(YearMonth.parse(get(cBill).trim())) }.getOrDefault(0) else 0,
+                    billMonth = if (!isAdjust) runCatching { billCode(YearMonth.parse(get(cBill).trim())) }.getOrDefault(0) else 0,
                     debtItems = debtList.map { it.copy(done = debtDoneAll) },
                     debtSelf = debtSelfCsv,
                 ).let { t0 ->

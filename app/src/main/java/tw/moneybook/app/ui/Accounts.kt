@@ -354,7 +354,7 @@ fun AccountDetailScreen(
                 items(list, key = { it.key }) { e ->
                     val t = e.txn
                     if (t != null && selecting) {
-                        // 多選：點一筆＝勾／取消（不會跳去修改）；不能改入帳月份的（轉帳、餘額調整）沒有勾選框
+                        // 多選：點一筆＝勾／取消（不會跳去修改）；不能改入帳月份的（繳卡費、餘額調整）沒有勾選框
                         val ok = t.billMovable(a)
                         val toggle = { if (t.id in picked) picked.remove(t.id) else picked.add(t.id) }
                         Row(verticalAlignment = Alignment.CenterVertically) {
