@@ -1032,12 +1032,16 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     // ───────── 訂閱／固定扣款（見 Subs.kt） ─────────
 
-    /** 新增（s.id = 0）或修改訂閱。新增的從今天開始提醒（開始日在以前的，以前那幾次不提醒） */
-    fun saveSub(s: Sub) {
+    /**
+     * 新增（s.id = 0）或修改訂閱。新增的從今天開始提醒（開始日在以前的，以前那幾次不提醒）；
+     * recordedDay：從某一筆記錄「設成固定扣款」時那筆的日期，那一次已經記了，不再提醒
+     */
+    fun saveSub(s: Sub, recordedDay: Long? = null) {
         update { d ->
             if (s.id == 0L) {
                 val today = LocalDate.now().toEpochDay()
-                d.copy(subs = d.subs + s.copy(id = d.nextId, bookId = d.currentBook.id, doneUntil = newDoneUntil(s.start, today), doneDays = emptyList()), nextId = d.nextId + 1)
+                val du = maxOf(newDoneUntil(s.start, today), recordedDay ?: Long.MIN_VALUE)
+                d.copy(subs = d.subs + s.copy(id = d.nextId, bookId = d.currentBook.id, doneUntil = du, doneDays = emptyList()), nextId = d.nextId + 1)
             } else {
                 // 改了扣款日期（頻率、間隔、哪幾天、開始日）：今天以前的照新的算會冒出沒處理的，當作都處理過了，從今天開始照新的提醒
                 val today = LocalDate.now().toEpochDay()

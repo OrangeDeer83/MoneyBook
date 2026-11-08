@@ -4844,3 +4844,230 @@ def t_card_transfer_bill():
     d.time.sleep(1)
     ns = d.shot(f"切到 {nxt[1]} 月")
     d.check(f"{nxt[1]} 月那一期有 topup，標「入帳 {nxt[1]} 月」", d.has(ns, "topup", True) and any(f"入帳 {nxt[1]} 月" in n.text for n in ns), [n.text for n in ns if n.text][:25])
+
+
+def sub_list():
+    f.me_page("訂閱／固定扣款")
+    d.wait_text("每月固定扣款", timeout=10)
+    d.time.sleep(0.8)
+
+
+def sub_save():
+    """訂閱的新增／修改頁：往下捲到「儲存」按下去"""
+    for _ in range(8):
+        b = [n for n in d.nodes() if n.text == "儲存"]
+        if b:
+            d.tap(b[-1])
+            d.time.sleep(1.2)
+            return
+        d.swipe(540, 1700, 540, 900, 400)
+        d.time.sleep(0.4)
+    raise TimeoutError("找不到「儲存」")
+
+
+def sub_today_wd():
+    return (f.today().weekday() + 1) % 7     # 0＝星期日
+
+
+@case(D, "訂閱：從我的新增一個每月扣款，沒填名稱會提示，存好後清單有到期日和每月合計，首頁出現提醒", visual=True)
+def t_sub_add():
+    d.fresh(S.Seed(f.today()).json())
+    sub_list()
+    ns = d.shot("訂閱清單（空的）")
+    d.check("空的：有說明、合計 $0", d.has(ns, "還沒有訂閱", False) and d.has(ns, "$0", True), [n.text for n in ns if n.text][:12])
+    d.tap_text("＋ 新增訂閱", exact=True)
+    d.wait_text("新增訂閱", timeout=8)
+    d.time.sleep(0.8)
+    sub_save()
+    ns = d.shot("沒填就按儲存")
+    d.check("名稱下面提示「請輸入名稱，例如 Netflix」", d.has(ns, "請輸入名稱，例如 Netflix", True), [n.text for n in ns if n.text][:15])
+    d.fill(d.edits()[0], "Netflix")
+    d.hide_ime()
+    d.time.sleep(0.5)
+    d.fill(next(e for e in d.edits() if d.is_amount(e)), "390")
+    d.time.sleep(0.6)
+    # 帳戶：點目前的（預設現金）換成測試信用卡
+    d.tap(d.first(d.nodes(), "現金", False))
+    d.wait_text("從哪個帳戶扣", timeout=8)
+    d.tap_text("測試信用卡", exact=False, lowest=True)
+    d.time.sleep(0.8)
+    d.tap_text("選擇分類", exact=True)
+    d.time.sleep(1)
+    d.tap_text("娛樂", exact=True, lowest=True)
+    d.time.sleep(0.8)
+    ns = d.shot("填好")
+    d.check("帳戶是測試信用卡、分類娛樂、每月", d.has(ns, "測試信用卡", False) and d.has(ns, "娛樂", True) and d.has(ns, "每月", True), [n.text for n in ns if n.text][:25])
+    sub_save()
+    d.wait_text("每月固定扣款", timeout=8)
+    ns = d.shot("存好回到清單")
+    t = f.today()
+    d.check(f"清單有 Netflix $390、每月 {t.day} 號・測試信用卡、今天到期；合計 $390",
+            d.has(ns, "Netflix", True) and d.has(ns, f"每月 {t.day} 號・測試信用卡", True) and d.has(ns, "今天到期", True)
+            and sum(1 for n in ns if n.text == "$390") >= 2, [n.text for n in ns if n.text][:20])
+    d.tap_back()
+    d.time.sleep(1)
+    ns = d.nodes()
+    d.check("我的：寫「1 個・每月 $390」", d.has(ns, "1 個・每月 $390", True), [n.text for n in ns if n.text][:20])
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("首頁提醒")
+    d.check("首頁最上面：固定扣款到期了、Netflix、略過", d.has(ns, "固定扣款到期了", True) and d.has(ns, "Netflix", True) and d.has(ns, "略過", True),
+            [n.text for n in ns if n.text][:20])
+
+
+def sub_due_seed(**kw):
+    """今天到期：Spotify $149（每月今天這一號・信用卡）、iCloud $90（每週今天星期幾・銀行）"""
+    s = S.Seed(f.today(), **kw)
+    s.sub("Spotify", 149, [f.today().day], cat=S.C_PLAY, acc=S.CARD, done_off=-1)
+    s.sub("iCloud", 90, [sub_today_wd()], freq=0, cat=S.C_HOME, acc=S.BANK, done_off=-1)
+    return s
+
+
+@case(D, "訂閱：首頁提醒卡略過可以復原、按「記」記成一筆（標 #訂閱），記完提醒消失", visual=True)
+def t_sub_home():
+    d.fresh(sub_due_seed().json())
+    d.time.sleep(1.5)
+    ns = d.shot("兩筆到期")
+    d.check("有 2 筆固定扣款還沒記、有「全部記」", d.has(ns, "有 2 筆固定扣款還沒記", True) and d.has(ns, "全部記", True), [n.text for n in ns if n.text][:20])
+    skips = [n for n in ns if n.text == "略過"]
+    d.tap(max(skips, key=lambda n: n.cy))       # 第二筆 iCloud
+    d.time.sleep(0.6)
+    ns = d.nodes()
+    undo = d.first(ns, "復原", True)
+    d.check("略過 iCloud：剩 1 筆，提示可以復原", d.has(ns, "固定扣款到期了", True) and not d.has(ns, "iCloud", True) and undo is not None, [n.text for n in ns if n.text][:20])
+    if undo:
+        d.tap(undo)
+        d.time.sleep(1)
+    ns = d.shot("復原略過")
+    d.check("復原後 iCloud 回來，又是 2 筆", d.has(ns, "有 2 筆固定扣款還沒記", True) and d.has(ns, "iCloud", True), [n.text for n in ns if n.text][:20])
+    d.tap(d.wait(lambda n: n.desc == "記 Spotify", 8, "記 Spotify"))
+    d.time.sleep(1.2)
+    ns = d.shot("記 Spotify")
+    d.check("記好 Spotify：剩 iCloud；明細多一筆標 #訂閱",
+            d.has(ns, "固定扣款到期了", True) and d.has(ns, "#訂閱", True) and d.has(ns, "已記 Spotify $149", True), [n.text for n in ns if n.text][:25])
+    d.tap(d.wait(lambda n: n.desc == "記 iCloud", 8, "記 iCloud"))
+    d.time.sleep(1.2)
+    ns = d.shot("都記好")
+    d.check("都記好：提醒卡不見了", not d.has(ns, "固定扣款到期了", True) and not d.has(ns, "略過", True), [n.text for n in ns if n.text][:20])
+    sub_list()
+    ns = d.shot("清單")
+    d.check("清單：兩個都寫下次扣款日", not any(n.text.endswith("到期") for n in ns) and sum(1 for n in ns if n.text.startswith("下次 ")) == 2, [n.text for n in ns if n.text][:20])
+
+
+@case(D, "訂閱：好幾筆按「全部記」一次記好，可以一起復原", visual=True)
+def t_sub_all():
+    d.fresh(sub_due_seed().json())
+    d.time.sleep(1.5)
+    d.tap_text("全部記", exact=True)
+    d.time.sleep(0.6)
+    ns = d.nodes()
+    undo = d.first(ns, "復原", True)
+    d.check("全部記：提示「已記 2 筆固定扣款」、提醒卡不見", d.has(ns, "已記 2 筆固定扣款", True) and not d.has(ns, "全部記", True), [n.text for n in ns if n.text][:20])
+    if undo:
+        d.tap(undo)
+        d.time.sleep(1.2)
+    ns = d.shot("復原全部記")
+    d.check("復原：又是 2 筆還沒記，明細沒有 #訂閱", d.has(ns, "有 2 筆固定扣款還沒記", True) and not d.has(ns, "#訂閱", True), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "訂閱：美金計價刷台幣卡，按「記」先確認匯率記成外幣消費；扣美元帳戶的直接記", visual=True)
+def t_sub_fx():
+    s = S.Seed(f.today(), usd=True)
+    s.sub("Netflix", 1549, [f.today().day], cur="USD", acc=S.CARD, done_off=-1)
+    s.sub("Domain", 500, [f.today().day], cur="USD", acc=S.USD, done_off=-1)
+    d.fresh(s.json())
+    d.time.sleep(1.5)
+    ns = d.shot("外幣訂閱到期")
+    d.check("提醒卡寫 US$15.49、US$5.00", d.has(ns, "US$15.49", True) and d.has(ns, "US$5.00", True), [n.text for n in ns if n.text][:20])
+    d.tap(d.wait(lambda n: n.desc == "記 Netflix", 8, "記 Netflix"))
+    d.wait_text("還沒請款（預估）", timeout=8)
+    d.time.sleep(0.8)
+    ns = d.shot("確認匯率")
+    d.check("跳出 Netflix 視窗：預估 $488（匯率 31.5）", d.has(ns, "Netflix", True) and any(n.text.startswith("預估 $488") for n in ns), [n.text for n in ns if n.text][:25])
+    d.tap_text("確定", exact=True, lowest=True)
+    d.time.sleep(1.2)
+    ns = d.shot("記好 Netflix")
+    d.check("記成外幣消費：剩 Domain，明細有 #訂閱", d.has(ns, "固定扣款到期了", True) and d.has(ns, "#訂閱", True), [n.text for n in ns if n.text][:25])
+    d.tap(d.wait(lambda n: n.desc == "記 Domain", 8, "記 Domain"))
+    d.time.sleep(1.2)
+    ns = d.shot("記好 Domain")
+    d.check("美元帳戶的直接記好（不跳視窗），提醒卡不見", not d.has(ns, "固定扣款到期了", True) and not d.has(ns, "還沒請款（預估）", True), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "訂閱：修改記錄右上角 •••「設成固定扣款」，帶入那筆的內容，存好不會馬上再提醒", visual=True)
+def t_sub_from_txn():
+    s = S.Seed(f.today())
+    s.expense(0, 1288, S.C_PLAY, acc=S.BANK, note="gym")
+    d.fresh(s.json())
+    d.time.sleep(1.5)
+    d.tap_text("gym", exact=True)
+    f.edit_open()
+    d.tap(d.wait(lambda n: n.desc == "更多", 8, "更多"))
+    d.time.sleep(0.6)
+    d.tap_text("設成固定扣款", exact=True)
+    d.wait_text("新增訂閱", timeout=8)
+    d.time.sleep(0.8)
+    ns = d.shot("帶入那筆的內容")
+    d.check("名稱 gym、金額 1,288、帳戶測試銀行、分類娛樂",
+            any(e.text == "gym" for e in d.edits()) and any("1,288" in n.text or "1288" in n.text for n in ns)
+            and d.has(ns, "測試銀行", False) and d.has(ns, "娛樂", True), [n.text for n in ns if n.text][:25])
+    sub_save()
+    f.edit_open()
+    d.tap_back()
+    d.time.sleep(1.5)
+    ns = d.shot("回到首頁")
+    d.check("今天這一次已經記了：首頁沒有提醒", not d.has(ns, "固定扣款到期了", True), [n.text for n in ns if n.text][:20])
+    sub_list()
+    ns = d.shot("清單")
+    d.check("清單有 gym，寫下次扣款日", d.has(ns, "gym", True) and any(n.text.startswith("下次 ") for n in ns), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "訂閱：改成每 2 週、星期可以複選；暫停後清單寫已暫停、不算合計", visual=True)
+def t_sub_week_pause():
+    s = S.Seed(f.today())
+    s.sub("Gym", 1000, [f.today().day], acc=S.BANK, done_off=0)
+    d.fresh(s.json())
+    sub_list()
+    d.tap_text("Gym", exact=True)
+    d.wait_text("修改訂閱", timeout=8)
+    d.time.sleep(0.8)
+    for _ in range(4):
+        if d.has(d.nodes(), "每週", True):
+            break
+        d.swipe(540, 1600, 540, 1000, 400)
+    d.tap_text("每週", exact=True)
+    d.time.sleep(0.6)
+    d.tap(next(n for n in d.nodes() if n.desc == "增加"))
+    d.time.sleep(0.4)
+    wd = sub_today_wd()
+    other = 0 if wd != 0 else 3
+    names = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"]
+    sw = None
+    for _ in range(4):
+        sw = next((n for n in d.nodes() if n.desc == names[other]), None)
+        if sw:
+            break
+        d.swipe(540, 1600, 540, 1100, 400)
+    d.tap(sw)
+    d.time.sleep(0.5)
+    ns = d.shot("每 2 週、開兩天")
+    d.check("間隔寫「每 2 週」", d.has(ns, "每 2 週", True), [n.text for n in ns if n.text][:25])
+    sub_save()
+    d.wait_text("每月固定扣款", timeout=8)
+    ns = d.shot("清單：每 2 週")
+    want = "每 2 週的星期" + "、".join("日一二三四五六"[i] for i in sorted({wd, other}))
+    d.check(f"清單寫「{want}・測試銀行」", d.has(ns, f"{want}・測試銀行", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("Gym", exact=True)
+    d.wait_text("修改訂閱", timeout=8)
+    p = None
+    for _ in range(8):
+        p = next((n for n in d.nodes() if n.desc == "暫停"), None)
+        if p:
+            break
+        d.swipe(540, 1700, 540, 900, 400)
+    d.tap(p)
+    d.time.sleep(0.5)
+    sub_save()
+    d.wait_text("每月固定扣款", timeout=8)
+    ns = d.shot("暫停")
+    d.check("清單寫已暫停，合計 $0", d.has(ns, "已暫停", True) and d.has(ns, "$0", True), [n.text for n in ns if n.text][:20])

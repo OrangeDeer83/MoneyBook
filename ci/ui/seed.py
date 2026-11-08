@@ -55,6 +55,7 @@ class Seed:
             self.expense(self.back(1), 394, C_FOOD, acc=USD, note="fx lunch", fx=1250, time=720)
         self.trades = []
         self.prices = []
+        self.subs = []
 
     def nid(self):
         self._id += 1
@@ -100,6 +101,17 @@ class Seed:
 
     def template(self, name, amount, cat, acc=CASH, note=""):
         self.templates.append(dict(id=self.nid(), name=name, type="EXPENSE", amount=amount, categoryId=cat, accountId=acc, note=note, tags=[]))
+
+    def sub(self, name, amount, days, cat=C_PLAY, acc=CARD, freq=1, every=1, start_off=-60, done_off=None, cur="", **kw):
+        """訂閱／固定扣款：freq 0 每週（days 是星期，0＝星期日）、1 每月（幾號）、2 每年（月×100＋日）；
+        start_off 開始日（相對今天）；done_off 這天（含）以前都處理過了（None＝開始前一天，到期的全部會提醒）"""
+        st = self.day(start_off)
+        s = dict(id=self.nid(), bookId=BOOK, name=name, amount=amount, cur=cur, categoryId=cat, accountId=acc, note="", tags=[],
+                 freq=freq, every=every, days=list(days), start=st, endMode=0, endCount=12, endDay=0, paused=False,
+                 doneUntil=(self.day(done_off) if done_off is not None else st - 1), doneDays=[])
+        s.update(kw)
+        self.subs.append(s)
+        return s
 
     def json(self):
         cats = []
@@ -153,7 +165,7 @@ class Seed:
             books=[dict(id=BOOK, name="我的帳本", emoji="img:ui_ledger", budget=self.budget, monthBudgets=mb)]
             + [dict(id=700 + i, name=f"帳本{i + 2:02d}", emoji="img:ui_ledger", budget=0, monthBudgets={}) for i in range(self.extra_books)],
             accounts=accounts, categories=cats, txns=self.txns, templates=self.templates,
-            trades=self.trades, prices=self.prices,
+            trades=self.trades, prices=self.prices, subs=self.subs,
             prefs=dict(bookId=BOOK, palette="milktea", mascot=self.mascot, mascotName="", mascotLast=self.mascot, dark=self.dark, celebrate=False),
         )
         return json.dumps(root, ensure_ascii=False)

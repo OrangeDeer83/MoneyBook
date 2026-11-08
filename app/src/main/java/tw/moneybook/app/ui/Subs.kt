@@ -253,7 +253,7 @@ fun SubEditScreen(vm: MoneyViewModel, id: Long?, fromTxn: Long?, onClose: () -> 
 
     fun save() {
         if (need != null) { tries.count++; return }
-        vm.saveSub(draft())
+        vm.saveSub(draft(), if (orig == null) txn?.day else null)
         onClose()
     }
     fun tryClose() { if (dirty) dialog = "unsaved" else onClose() }
