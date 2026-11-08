@@ -4983,7 +4983,7 @@ def t_sub_fx():
     d.wait_text("還沒請款（預估）", timeout=8)
     d.time.sleep(0.8)
     ns = d.shot("確認匯率")
-    d.check("跳出 Netflix 視窗：預估 $488（匯率 31.5）", d.has(ns, "Netflix", True) and any(n.text.startswith("預估 $488") for n in ns), [n.text for n in ns if n.text][:25])
+    d.check("跳出 Netflix 視窗：預估 $488（匯率 31.5）", d.has(ns, "Netflix", True) and any("$488（US$15.49" in n.text for n in ns), [n.text for n in ns if n.text][:25])
     d.tap_text("確定", exact=True, lowest=True)
     d.time.sleep(1.2)
     ns = d.shot("記好 Netflix")
