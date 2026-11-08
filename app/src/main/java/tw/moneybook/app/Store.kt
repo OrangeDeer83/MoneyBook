@@ -93,6 +93,7 @@ object Codec {
                 )
             }
         })
+        root.put("subs", SubCodec.toJson(d.subs))
         root.put("trades", JSONArray().apply {
             d.trades.forEach { t ->
                 put(
@@ -282,8 +283,9 @@ object Codec {
                 kept = o.optJSONObject("kept")?.let { k -> k.keys().asSequence().associateWith { key -> k.optLong(key, 0L) }.filterValues { it > 0L } } ?: emptyMap(),
             )
         }
+        val subs = SubCodec.fromJson(root.optJSONArray("subs"), books.first().id)
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
-            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id }).maxOrNull() ?: 0L
+            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id } + subs.map { it.id }).maxOrNull() ?: 0L
         return AppData(
             books = books,
             accounts = accounts,
@@ -296,6 +298,7 @@ object Codec {
             prices = prices,
             rates = rates,
             settles = settles,
+            subs = subs,
         )
     }
 

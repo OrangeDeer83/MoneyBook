@@ -871,6 +871,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             d.copy(
                 books = books,
                 txns = d.txns.filter { it.bookId != id },
+                subs = d.subs.filter { it.bookId != id },
                 prefs = if (d.prefs.bookId == id) d.prefs.copy(bookId = books.first().id) else d.prefs,
             )
         }
@@ -926,7 +927,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 有記錄在用的帳戶不能刪，改成隱藏 */
     fun deleteAccount(id: Long) {
-        val used = data.txns.any { it.accountId == id || it.toAccountId == id } || data.trades.any { it.accountId == id }
+        val used = data.txns.any { it.accountId == id || it.toAccountId == id } || data.trades.any { it.accountId == id } || data.subs.any { it.accountId == id }
         if (used) {
             update { d -> d.copy(accounts = d.accounts.map { if (it.id == id) it.copy(hidden = true) else it }) }
             toast("這個帳戶還有記錄，已改為隱藏")
@@ -988,6 +989,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     categories = d.categories.filter { it.id != id },
                     txns = d.txns.map { if (it.categoryId == id) it.copy(categoryId = pid) else it },
                     templates = d.templates.map { if (it.categoryId == id) it.copy(categoryId = pid) else it },
+                    subs = d.subs.map { if (it.categoryId == id) it.copy(categoryId = pid) else it },
                 )
             )
             return true
@@ -996,6 +998,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val used = d.txns.count { it.categoryId in ids }
         if (used > 0) {
             toast("還有 $used 筆記錄使用這個分類，請先把它們改到別的分類")
+            return false
+        }
+        d.subs.firstOrNull { it.categoryId in ids }?.let { s ->
+            toast("訂閱「${s.name}」使用這個分類，請先把它改到別的分類")
             return false
         }
         if (d.topCategories(c.kind).size <= 1) {
@@ -1022,6 +1028,104 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             val newOrder = siblings.mapIndexed { idx, s -> s.id to idx }.toMap()
             d.copy(categories = d.categories.map { cat -> newOrder[cat.id]?.let { cat.copy(order = it) } ?: cat })
         }
+    }
+
+    // ───────── 訂閱／固定扣款（見 Subs.kt） ─────────
+
+    /** 新增（s.id = 0）或修改訂閱。新增的從今天開始提醒（開始日在以前的，以前那幾次不提醒） */
+    fun saveSub(s: Sub) {
+        update { d ->
+            if (s.id == 0L) {
+                val today = LocalDate.now().toEpochDay()
+                d.copy(subs = d.subs + s.copy(id = d.nextId, bookId = d.currentBook.id, doneUntil = newDoneUntil(s.start, today), doneDays = emptyList()), nextId = d.nextId + 1)
+            } else {
+                // 改了扣款日期（頻率、間隔、哪幾天、開始日）：今天以前的照新的算會冒出沒處理的，當作都處理過了，從今天開始照新的提醒
+                val today = LocalDate.now().toEpochDay()
+                d.copy(subs = d.subs.map {
+                    if (it.id != s.id) it
+                    else {
+                        val ruleChanged = it.freq != s.freq || it.every != s.every || it.days != s.days || it.start != s.start
+                        val du = if (ruleChanged) maxOf(it.doneUntil, today - 1) else it.doneUntil
+                        s.copy(bookId = it.bookId, doneUntil = du, doneDays = it.doneDays.filter { x -> x > du })
+                    }
+                })
+            }
+        }
+        toast(if (s.id == 0L) "已新增訂閱「${s.name}」" else "訂閱已儲存")
+    }
+
+    fun setSubPaused(id: Long, paused: Boolean) =
+        update { d -> d.copy(subs = d.subs.map { if (it.id == id) it.copy(paused = paused) else it }) }
+
+    /** 刪除訂閱（已經記好的記錄不動），可以復原 */
+    fun deleteSubWithUndo(id: Long) {
+        val d = data
+        val i = d.subs.indexOfFirst { it.id == id }
+        if (i < 0) return
+        val s = d.subs[i]
+        commit(d.copy(subs = d.subs.filter { it.id != id }))
+        _messages.tryEmit(UiMsg("已刪除訂閱「${s.name}」", "復原") {
+            val now = data
+            if (now.subs.none { it.id == id }) commit(now.copy(subs = now.subs.toMutableList().apply { add(i.coerceAtMost(size), s) }))
+        })
+    }
+
+    /**
+     * 記下訂閱 id 在 day 的這次扣款（twd：台幣金額；外幣扣台幣帳戶時 pending＝待請款）。
+     * 可以復原：刪掉那一筆、這一次回到還沒處理。外幣沒有給 twd 時用目前匯率，沒有匯率就不記、回傳 false。
+     */
+    fun recordSub(id: Long, day: Long, twd: Long? = null, pending: Boolean = true): Boolean {
+        val d = data
+        val s = d.subs.firstOrNull { it.id == id } ?: return false
+        val amt = twd ?: d.subTwd(s) ?: run { toast("還沒有 ${s.cur} 的匯率，請先設定匯率"); return false }
+        val t = d.subTxn(s, day, d.nextId, amt, pending)
+        commit(d.copy(txns = sortTxns(d.txns + t), subs = d.subs.map { if (it.id == id) it.markDone(day) else it }, nextId = d.nextId + 1))
+        val shown = if (s.isForeign) formatFx(s.amount, s.cur) else formatMoney(s.amount)
+        _messages.tryEmit(UiMsg("已記 ${s.name} $shown", "復原") { undoSub(id, s, t.id) })
+        return true
+    }
+
+    /** 這一次不記（例如這個月退訂了），可以復原 */
+    fun skipSub(id: Long, day: Long) {
+        val d = data
+        val s = d.subs.firstOrNull { it.id == id } ?: return
+        commit(d.copy(subs = d.subs.map { if (it.id == id) it.markDone(day) else it }))
+        _messages.tryEmit(UiMsg("已略過 ${s.name}（${LocalDate.ofEpochDay(day).monthValue}/${LocalDate.ofEpochDay(day).dayOfMonth}）", "復原") { undoSub(id, s, null) })
+    }
+
+    /** 首頁「全部記」：到期的都記（外幣用目前匯率、待請款；沒有匯率的留著），可以一起復原 */
+    fun recordAllSubs(items: List<Pair<Long, Long>>) {
+        var d = data
+        val before = d.subs.associateBy { it.id }
+        val added = ArrayList<Long>()
+        var left = 0
+        for ((id, day) in items) {
+            val s = d.subs.firstOrNull { it.id == id } ?: continue
+            val amt = d.subTwd(s)
+            if (amt == null) { left++; continue }
+            val t = d.subTxn(s, day, d.nextId, amt, true)
+            added.add(t.id)
+            d = d.copy(txns = d.txns + t, subs = d.subs.map { if (it.id == id) it.markDone(day) else it }, nextId = d.nextId + 1)
+        }
+        if (added.isEmpty()) {
+            if (left > 0) toast("還沒有匯率，請先設定匯率")
+            return
+        }
+        commit(d.copy(txns = sortTxns(d.txns)))
+        val ids = added.toSet()
+        _messages.tryEmit(UiMsg("已記 ${added.size} 筆固定扣款" + if (left > 0) "（$left 筆沒有匯率，還留著）" else "", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.filter { it.id !in ids }, subs = now.subs.map { x -> before[x.id]?.let { b -> x.copy(doneUntil = b.doneUntil, doneDays = b.doneDays) } ?: x }))
+        })
+    }
+
+    /** 復原記下／略過：那一次回到還沒處理（訂閱其他設定照現在的），記下的那一筆刪掉 */
+    private fun undoSub(id: Long, old: Sub, txnId: Long?) {
+        val now = data
+        commit(now.copy(
+            txns = if (txnId != null) now.txns.filter { it.id != txnId } else now.txns,
+            subs = now.subs.map { if (it.id == id) it.copy(doneUntil = old.doneUntil, doneDays = old.doneDays) else it },
+        ))
     }
 
     // ───────── 常用範本 ─────────

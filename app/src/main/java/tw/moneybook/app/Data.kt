@@ -277,6 +277,8 @@ data class AppData(
     val prices: List<PriceSnap> = emptyList(),
     /** 分帳結清（見 Settle.kt），舊資料沒有這個欄位 */
     val settles: List<Settle> = emptyList(),
+    /** 訂閱／固定扣款（見 Subs.kt），舊資料沒有這個欄位 */
+    val subs: List<Sub> = emptyList(),
 ) {
     val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }
