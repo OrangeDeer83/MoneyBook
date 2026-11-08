@@ -74,6 +74,8 @@ fun FxSpendDialog(
     onDismiss: () -> Unit,
     /** 外幣欠款：一律是預估（還款時才填實際扣的台幣），不問請款了沒有 */
     debt: Boolean = false,
+    /** 標題（訂閱扣款時是訂閱的名稱）；null＝「外幣消費」 */
+    title: String? = null,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -120,7 +122,7 @@ fun FxSpendDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (debt) "外幣欠款" else "外幣消費") },
+        title = { Text(title ?: if (debt) "外幣欠款" else "外幣消費") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PickerButton(currencyLabel(code), { pickCur = true })

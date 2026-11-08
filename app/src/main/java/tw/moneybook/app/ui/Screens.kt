@@ -77,6 +77,7 @@ import tw.moneybook.app.Account
 import tw.moneybook.app.Txn
 import tw.moneybook.app.expenseSum
 import tw.moneybook.app.billMonthFor
+import tw.moneybook.app.subsDue
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.formatShort
 import tw.moneybook.app.inMonth
@@ -618,8 +619,10 @@ fun HomeScreen(
     val mascot = d.prefs.mascot
     var showBooks by remember { mutableStateOf(false) }
     var showBudget by remember { mutableStateOf(false) }
-    // 前面固定的項目：書本列、吉祥物（可以關）、預算、本月摘要
-    val homeBase = 3 + if (mascot != "none") 1 else 0
+    // 到期還沒記的固定扣款（見 Subs.kt）：放在書本列下面
+    val subsDue = remember(d) { d.subsDue(LocalDate.now().toEpochDay()) }
+    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、吉祥物（可以關）、預算、本月摘要
+    val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0)
     // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排
     val settleIds = d.settles.map { it.id }.toSet()
     val homeRecvs = reimbRecvsOf(d.bookTxns, settleIds).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.pay.day)) == month }
@@ -654,6 +657,10 @@ fun HomeScreen(
                 Spacer(Modifier.width(8.dp))
                 MonthSwitcher(month, { vm.month = it })
             }
+        }
+
+        if (subsDue.isNotEmpty()) {
+            item(key = "subsDue") { SubDueCard(vm, subsDue) }
         }
 
         if (mascot != "none") {

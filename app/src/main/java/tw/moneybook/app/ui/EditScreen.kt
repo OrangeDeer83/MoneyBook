@@ -133,6 +133,8 @@ fun EditScreen(
     presetAcc: Long? = null,
     /** 前往某個人的報銷／欠款紀錄（看要不要刪掉還款、抵銷）：這個畫面會關掉 */
     onGoRecords: (String) -> Unit = {},
+    /** 右上角 •••「設成固定扣款」：用這筆記錄新增訂閱（傳記錄 id） */
+    onMakeSub: (Long) -> Unit = {},
     onClose: () -> Unit,
 ) {
     val d = vm.data
@@ -493,6 +495,16 @@ fun EditScreen(
             Spacer(Modifier.weight(1f))
             if (orig != null || (tplMode && tplId != null)) {
                 IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除") }
+                // •••：目前只有「設成固定扣款」（一般的支出才有）
+                if (orig != null && orig.type == TxType.EXPENSE && !orig.adjust && orig.instTotal <= 1 && orig.debtItems.isEmpty()) {
+                    var more by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { more = true }) { Icon(AppIcons.More, contentDescription = "更多") }
+                        androidx.compose.material3.DropdownMenu(more, { more = false }) {
+                            DropdownMenuItem(text = { Text("設成固定扣款") }, onClick = { more = false; onMakeSub(orig.id) })
+                        }
+                    }
+                }
             } else {
                 Spacer(Modifier.width(48.dp))
             }

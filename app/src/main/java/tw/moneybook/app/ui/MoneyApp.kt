@@ -203,6 +203,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
             )
             is Route.Edit -> EditScreen(
                 vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, presetFrom = top.presetFrom, presetAcc = top.presetAcc,
+                onMakeSub = { push(Route.Page("sub:from:$it")) },
                 onGoRecords = { who ->
                     // 關掉記一筆，打開這個人的紀錄分頁；本來就是從報銷頁過來的就不再疊一層
                     vm.reimbPerson = who
@@ -222,6 +223,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "data" -> DataScreen(vm) { pop() }
                 "reimb" -> ReimbScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "fxpending" -> FxPendingScreen(vm) { pop() }
+                "subs" -> SubsScreen(vm, onOpen = { push(Route.Page(if (it == null) "sub:new" else "sub:$it")) }) { pop() }
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "asset" -> AssetScreen(vm, onLayout = { push(Route.Page("layout:$it")) }) { pop() }
@@ -232,6 +234,11 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                     // 那一天的明細（統計的每天熱度點進來）：day:<epochDay>
                     val dayEp = top.name.removePrefix("day:").toLongOrNull()
                     if (top.name.startsWith("day:") && dayEp != null) DayScreen(vm, dayEp, onEdit = { editTxn(it) }) { pop() }
+                    // 訂閱：sub:new 新增、sub:<id> 修改、sub:from:<記錄 id> 用那筆記錄新增
+                    if (top.name.startsWith("sub:")) {
+                        val rest = top.name.removePrefix("sub:")
+                        SubEditScreen(vm, rest.toLongOrNull(), rest.removePrefix("from:").takeIf { rest.startsWith("from:") }?.toLongOrNull()) { pop() }
+                    }
                     val accId = top.name.removePrefix("account:").toLongOrNull()
                     if (cardPage == null && top.name.startsWith("account:") && accId != null) {
                         AccountDetailScreen(

@@ -1074,14 +1074,16 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
      * 記下訂閱 id 在 day 的這次扣款（twd：台幣金額；外幣扣台幣帳戶時 pending＝待請款）。
      * 可以復原：刪掉那一筆、這一次回到還沒處理。外幣沒有給 twd 時用目前匯率，沒有匯率就不記、回傳 false。
      */
-    fun recordSub(id: Long, day: Long, twd: Long? = null, pending: Boolean = true): Boolean {
+    fun recordSub(id: Long, day: Long, twd: Long? = null, pending: Boolean = true, fxMinor: Long? = null): Boolean {
         val d = data
-        val s = d.subs.firstOrNull { it.id == id } ?: return false
+        val orig = d.subs.firstOrNull { it.id == id } ?: return false
+        // 外幣這一次的金額可以和設定的不同（確認視窗裡改了）；訂閱本身不動
+        val s = if (fxMinor != null && orig.isForeign) orig.copy(amount = fxMinor) else orig
         val amt = twd ?: d.subTwd(s) ?: run { toast("還沒有 ${s.cur} 的匯率，請先設定匯率"); return false }
         val t = d.subTxn(s, day, d.nextId, amt, pending)
         commit(d.copy(txns = sortTxns(d.txns + t), subs = d.subs.map { if (it.id == id) it.markDone(day) else it }, nextId = d.nextId + 1))
         val shown = if (s.isForeign) formatFx(s.amount, s.cur) else formatMoney(s.amount)
-        _messages.tryEmit(UiMsg("已記 ${s.name} $shown", "復原") { undoSub(id, s, t.id) })
+        _messages.tryEmit(UiMsg("已記 ${s.name} $shown", "復原") { undoSub(id, orig, t.id) })
         return true
     }
 

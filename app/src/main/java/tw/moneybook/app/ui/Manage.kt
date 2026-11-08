@@ -64,6 +64,8 @@ import tw.moneybook.app.Book
 import tw.moneybook.app.Category
 import tw.moneybook.app.categoryOutOfBudget
 import tw.moneybook.app.MoneyViewModel
+import tw.moneybook.app.bookSubs
+import tw.moneybook.app.subsMonthly
 import tw.moneybook.app.Currencies
 import tw.moneybook.app.cur
 import tw.moneybook.app.fmt
@@ -141,6 +143,10 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
                     ).joinToString("・").ifEmpty { "沒有待報銷或欠款" }
                 }) { open("reimb") }
                 MenuRow("vec:star", "常用記帳", if (d.templates.isEmpty()) "在記一筆畫面按「存為常用」" else "${d.templates.size} 個") { open("templates") }
+                MenuRow("vec:repeat", "訂閱／固定扣款", run {
+                    val n = d.bookSubs.size
+                    if (n == 0) "每月固定的扣款，到期提醒你記" else "$n 個・每月 ${formatMoney(d.subsMonthly(java.time.LocalDate.now().toEpochDay()))}"
+                }) { open("subs") }
                 MenuRow(
                     "vec:target", "每月預算",
                     d.currentBook.budgetFor(vm.month).let { b -> if (b > 0) "${vm.month.monthValue} 月：${formatMoney(b)}" + (if (d.currentBook.monthBudgets.isNotEmpty()) "・有個別月份設定" else "") else "尚未設定" },
