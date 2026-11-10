@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -608,6 +609,8 @@ fun HomeScreen(
     onReimb: () -> Unit,
     onFxPending: () -> Unit = {},
     onDebt: () -> Unit = {},
+    /** 預算排行「看明細」：打開統計下鑽頁（vm.drill 已經設好） */
+    onDrill: () -> Unit = {},
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -619,6 +622,10 @@ fun HomeScreen(
     val mascot = d.prefs.mascot
     var showBooks by remember { mutableStateOf(false) }
     var showBudget by remember { mutableStateOf(false) }
+    // 點預算卡：這個月錢花在哪（見 BudgetRank.kt）；rankBudget＝從排行點了改預算（排行先收起來，存好再回來）
+    var showRank by remember { mutableStateOf(false) }
+    var rankBudget by remember { mutableStateOf(false) }
+    var rankTab by rememberSaveable { mutableIntStateOf(0) }
     // 到期還沒記的固定扣款（見 Subs.kt）：放在書本列下面
     val subsDue = remember(d) { d.subsDue(LocalDate.now().toEpochDay()) }
     // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、吉祥物（可以關）、預算、本月摘要
@@ -714,7 +721,7 @@ fun HomeScreen(
                             else if (level == 1) Modifier.border(1.5.dp, cute.accent2, RoundedCornerShape(20.dp))
                             else Modifier
                         )
-                        .clickable { showBudget = true }
+                        .clickable { showRank = true }
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -756,6 +763,10 @@ fun HomeScreen(
                             style = MaterialTheme.typography.labelSmall, color = cute.out, modifier = Modifier.padding(top = 3.dp),
                         )
                     }
+                    Text(
+                        "點這裡看錢花在哪  ›", style = MaterialTheme.typography.labelMedium,
+                        color = if (level == 2) cute.expense else MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 3.dp),
+                    )
                 }
             } else {
                 Row(
@@ -847,6 +858,16 @@ fun HomeScreen(
     }
 
     if (showBudget) BudgetDialog(vm, month) { showBudget = false }
+    if (showRank) {
+        if (rankBudget) BudgetDialog(vm, month) { rankBudget = false }
+        else BudgetRankDialog(
+            vm, month, list, rankTab, { rankTab = it },
+            onBudget = { rankBudget = true },
+            onEdit = { showRank = false; onEdit(it) },
+            onDrill = { showRank = false; onDrill() },
+            onDismiss = { showRank = false },
+        )
+    }
 
     if (showBooks) {
         AlertDialog(

@@ -28,3 +28,17 @@ fun AppData.budgetSpent(list: List<Txn>): Long = list.filter { !isOutOfBudget(it
 
 /** 這些記錄預算外的支出 */
 fun AppData.outOfBudgetSpent(list: List<Txn>): Long = list.filter { isOutOfBudget(it) }.sumOf { it.spent }
+
+/** 算預算的支出這一筆（首頁預算排行用）：支出、不是預算外、真的有花錢 */
+fun AppData.countsInBudget(t: Txn): Boolean = t.type == TxType.EXPENSE && !t.adjust && !isOutOfBudget(t) && t.spent > 0L
+
+/** 預算排行「依分類」：算預算的支出照大分類（含子分類）加總，由多到少；沒有分類的是 null */
+fun AppData.budgetRankCats(list: List<Txn>): List<Pair<Long?, Long>> =
+    list.filter { countsInBudget(it) }
+        .groupBy { t -> t.categoryId?.let { catMap[it] }?.let { topOf(it).id } }
+        .map { (k, v) -> k to v.sumOf { it.spent } }
+        .sortedWith(compareByDescending<Pair<Long?, Long>> { it.second }.thenBy { it.first ?: Long.MAX_VALUE })
+
+/** 預算排行「單筆最大」：算預算的支出由大到小前 n 筆（一樣大的新的在前） */
+fun AppData.budgetTopTxns(list: List<Txn>, n: Int = 10): List<Txn> =
+    list.filter { countsInBudget(it) }.sortedWith(compareByDescending<Txn> { it.spent }.thenByDescending { it.day }.thenByDescending { it.id }).take(n)

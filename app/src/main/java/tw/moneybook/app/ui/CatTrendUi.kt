@@ -161,7 +161,7 @@ fun CategoryLines(
 }
 
 /** 比平均多／少幾 %（整數，四捨五入） */
-private fun pctVs(v: Long, avg: Long): Long = Math.round((v - avg) * 100.0 / avg)
+internal fun pctVs(v: Long, avg: Long): Long = Math.round((v - avg) * 100.0 / avg)
 
 /**
  * 統計下鑽頁（從支出分類點進來）上面的「近 12 個月」走勢。
@@ -228,7 +228,7 @@ fun DrillTrendCard(vm: MoneyViewModel, dr: Drill, cat: Category, focus: YearMont
 
 /** 圖例的一小段虛線 */
 @Composable
-private fun DashMark(color: Color) {
+internal fun DashMark(color: Color) {
     Canvas(Modifier.size(width = 16.dp, height = 4.dp)) {
         drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 5f)))
     }

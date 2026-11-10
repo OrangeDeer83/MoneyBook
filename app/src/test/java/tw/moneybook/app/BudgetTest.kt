@@ -62,4 +62,21 @@ class BudgetTest {
         assertEquals(2, back.txns.first { it.id == 1L }.budgetOut)
         assertEquals(0, Codec.decode(Codec.encode(base)).categories.maxOf { it.budgetMode })
     }
+
+    @Test
+    fun rankByCategoryAndTopSingles() {
+        // 大分類算預算、kidB 預算外；other 一筆被單筆設成預算外
+        val d = data(
+            t(1, kidA.id, 300), t(2, parent.id, 200), t(3, kidB.id, 9999),
+            t(4, other.id, 400), t(5, other.id, 700, out = 1), t(6, other.id, 400, d = day - 1),
+            parentMode = 0, kidBMode = 1,
+        )
+        // 餐飲類：300＋200（kidB 預算外不算）＝ 500；other：400＋400（700 預算外不算）＝ 800
+        assertEquals(listOf<Long?>(other.id, parent.id), d.budgetRankCats(d.txns).map { it.first })
+        assertEquals(listOf(800L, 500L), d.budgetRankCats(d.txns).map { it.second })
+        assertEquals(d.budgetSpent(d.txns), d.budgetRankCats(d.txns).sumOf { it.second })   // 合計和預算卡一樣
+        // 單筆：400（今天）、400（昨天）、300、200；一樣大的新的在前；預算外的不在裡面
+        assertEquals(listOf(4L, 6L, 1L, 2L), d.budgetTopTxns(d.txns).map { it.id })
+        assertEquals(listOf(4L, 6L), d.budgetTopTxns(d.txns, 2).map { it.id })
+    }
 }

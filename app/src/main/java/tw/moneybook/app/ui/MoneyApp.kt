@@ -325,6 +325,7 @@ private fun MainTabs(
                     onManageBooks = { open("books") },
                     onReimb = { open("reimb") },
                     onFxPending = { open("fxpending") },
+                    onDrill = { open("drill") },
                 )
                 1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") }, onAsset = { open("asset") })
                 2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") }, onLayout = { open("layout:$it") }, onAsset = { open("asset") }, onDay = { open("day:$it") })
