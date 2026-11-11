@@ -1129,49 +1129,70 @@ fun TemplatesScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> U
     val cute = LocalCute.current
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val dragScroll = rememberDragScroll(listState)
-    SubPage("常用記帳", onBack) {
+    // 編輯排序模式：右上角按鈕切換，開啟後右邊才出現拖曳把手（和帳戶頁一樣）；平常往左滑可以刪除
+    var editing by remember { mutableStateOf(false) }
+    SubPage("常用記帳", onBack, actions = if (d.templates.size > 1 || editing) ({
+        CuteChip(if (editing) "完成" else "編輯排序", editing, { editing = !editing }, icon = if (editing) null else "vec:pencil", modifier = Modifier.padding(end = 12.dp))
+    }) else null) {
         LazyColumn(Modifier.dragScrollArea(dragScroll), state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 Text(
-                    "常用記帳會出現在記一筆畫面的「常用」分類裡和桌面小工具上，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤；按住右邊的 ≡ 可以拖曳排序。",
+                    if (editing) "按住右邊的 ≡ 拖曳排序，排好按右上角「完成」。"
+                    else "常用記帳會出現在記一筆畫面的「常用」分類裡和桌面小工具上，點一下就帶入。點下面的項目可以修改分類、帳戶、金額、備註和標籤；往左滑可以刪除，右上角「編輯排序」可以調整順序。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
             if (d.templates.isEmpty()) {
                 item { EmptyHint(d.prefs.mascot, "還沒有常用記帳\n按下面的按鈕新增一個吧") }
             }
-            item {
-              ReorderColumn(d.templates, { it.id }, { vm.reorderTemplates(it) }, scroll = dragScroll) { t, handle, _ ->
-                val c = t.categoryId?.let { d.catMap[it] }
-                val a = t.accountId?.let { d.accMap[it] }
-                CuteCard(Modifier.fillMaxWidth(), onClick = { onOpen(t.id) }, padding = PaddingValues(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CatBubble(c?.emoji ?: "img:ui_transfer", c?.color ?: 5, 40.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(t.name, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                listOfNotNull(
-                                    when (t.type) { TxType.EXPENSE -> "支出"; TxType.INCOME -> "收入"; TxType.TRANSFER -> "轉帳" },
-                                    c?.let { cc -> d.topOf(cc).let { p -> if (p.id != cc.id) "${p.name}・${cc.name}" else cc.name } },
-                                    a?.name,
-                                    if (t.amount > 0) formatMoney(t.amount) else "金額自訂",
-                                ).joinToString("・"),
-                                style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
-                            )
-                            if (t.note.isNotBlank() || t.tags.isNotEmpty()) {
-                                Text(
-                                    (listOf(t.note.lineSequence().first()).filter { it.isNotBlank() } + t.tags.map { "#$it" }).joinToString(" "),
-                                    style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
-                                )
-                            }
-                        }
-                        DragHandle(handle)
+            if (!editing) {
+                items(d.templates, key = { it.id }) { t ->
+                    SwipeRow(onDelete = { vm.deleteTemplateWithUndo(t.id) }) { TemplateCard(d, t, null) { onOpen(t.id) } }
+                }
+                item { OutlinedButton(onClick = { onOpen(null) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增常用記帳") } }
+            } else {
+                item {
+                    ReorderColumn(d.templates, { it.id }, { vm.reorderTemplates(it) }, scroll = dragScroll) { t, handle, _ ->
+                        TemplateCard(d, t, handle) {}
                     }
                 }
-              }
             }
-            item { OutlinedButton(onClick = { onOpen(null) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增常用記帳") } }
+        }
+    }
+}
+
+/** 常用記帳清單的一張卡片；handle 不是 null（編輯排序模式）時右邊有拖曳把手、點了不會打開 */
+@Composable
+private fun TemplateCard(d: tw.moneybook.app.AppData, t: tw.moneybook.app.Template, handle: Modifier?, onClick: () -> Unit) {
+    val cute = LocalCute.current
+    val c = t.categoryId?.let { d.catMap[it] }
+    val a = t.accountId?.let { d.accMap[it] }
+    CuteCard(
+        Modifier.fillMaxWidth(), onClick = if (handle == null) onClick else null,
+        padding = PaddingValues(start = 16.dp, end = if (handle != null) 4.dp else 16.dp, top = 12.dp, bottom = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CatBubble(c?.emoji ?: "img:ui_transfer", c?.color ?: 5, 40.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(t.name, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    listOfNotNull(
+                        when (t.type) { TxType.EXPENSE -> "支出"; TxType.INCOME -> "收入"; TxType.TRANSFER -> "轉帳" },
+                        c?.let { cc -> d.topOf(cc).let { p -> if (p.id != cc.id) "${p.name}・${cc.name}" else cc.name } },
+                        a?.name,
+                        if (t.amount > 0) formatMoney(t.amount) else "金額自訂",
+                    ).joinToString("・"),
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1,
+                )
+                if (t.note.isNotBlank() || t.tags.isNotEmpty()) {
+                    Text(
+                        (listOf(t.note.lineSequence().first()).filter { it.isNotBlank() } + t.tags.map { "#$it" }).joinToString(" "),
+                        style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
+                    )
+                }
+            }
+            if (handle != null) DragHandle(handle)
         }
     }
 }

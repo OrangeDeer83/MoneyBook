@@ -4092,13 +4092,17 @@ def tpl_seed():
     return s
 
 
-@case(D, "常用記帳可以拖曳排序，離開再進來還是新的順序", visual=True)
+@case(D, "常用記帳按「編輯排序」才出現把手、可以拖曳排序，離開再進來還是新的順序", visual=True)
 def t_tpl_reorder():
     d.fresh(tpl_seed().json())
     f.me_page("常用記帳")
     ns = d.shot("常用記帳")
+    d.check("平常沒有拖曳把手，右上角有「編輯排序」", not d.has(ns, "按住拖曳排序", True) and d.has(ns, "編輯排序", True))
+    d.tap_text("編輯排序", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("編輯排序")
     handles = d.find(ns, "按住拖曳排序", True)
-    d.check("每個常用記帳右邊有拖曳把手（3 個）", len(handles) == 3, len(handles))
+    d.check("每個常用記帳右邊有拖曳把手（3 個）、按鈕變成「完成」、沒有新增按鈕", len(handles) == 3 and d.has(ns, "完成", True) and not d.has(ns, "＋ 新增常用記帳", True), len(handles))
     a, c = d.first(ns, "早餐", True), d.first(ns, "午餐", True)
     hs = [h for h in handles if a and abs(h.cy - a.cy) < 90]
     if hs and c:
@@ -4109,6 +4113,9 @@ def t_tpl_reorder():
         return [n.text for n in sorted(names, key=lambda n: n.cy)]
     ns = d.shot("早餐拖到最下面")
     d.check("順序變成捷運、午餐、早餐", order(ns) == ["捷運", "午餐", "早餐"], order(ns))
+    d.tap_text("完成", exact=True)
+    d.time.sleep(0.8)
+    d.check("按完成：把手不見", not d.has(d.nodes(), "按住拖曳排序", True))
     d.tap_back()
     d.time.sleep(1)
     f.me_page("常用記帳")
@@ -4580,6 +4587,8 @@ def t_drag_autoscroll():
         s.template(n, 10 + i, S.C_BREAKFAST)
     d.fresh(s.json())
     f.me_page("常用記帳")
+    d.tap_text("編輯排序", exact=True)
+    d.time.sleep(1)
     ns = d.shot("常用記帳 16 個")
     w, h = d._screen()
     title = d.first(ns, "常用記帳", True)
@@ -5133,3 +5142,28 @@ def t_budget_rank():
     d.wait_text("近 12 個月", timeout=10)
     ns = d.shot("看明細")
     d.check("打開餐飲的下鑽頁：近 12 個月、這個月 $600", d.has(ns, "近 12 個月", True) and d.has(ns, "$600", True), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "常用記帳往左滑可以刪除、可以復原；修改頁的垃圾桶是紅色", visual=True)
+def t_tpl_swipe_delete():
+    d.fresh(tpl_seed().json())
+    f.me_page("常用記帳")
+    row = d.first(d.nodes(), "捷運", True)
+    f.swipe_row_left(row)
+    d.time.sleep(0.8)
+    d.tap_text("刪除", exact=True)
+    d.time.sleep(0.6)
+    ns = d.nodes()
+    undo = d.first(ns, "復原", True)
+    d.check("捷運不見了，提示可以復原", not d.has(ns, "捷運", True) and d.has(ns, "已刪除常用記帳「捷運」", True) and undo is not None, [n.text for n in ns if n.text][:20])
+    if undo:
+        d.tap(undo)
+        d.time.sleep(1)
+    names = [n for n in d.nodes() if n.text in ("早餐", "捷運", "午餐")]
+    order = [n.text for n in sorted(names, key=lambda n: n.cy)]
+    d.shot("復原")
+    d.check("復原後捷運回到原本的位置（第二個）", order == ["早餐", "捷運", "午餐"], order)
+    d.tap_text("午餐", exact=True)
+    d.time.sleep(1.5)
+    d.shot("修改常用記帳：紅色垃圾桶")
+    d.check("修改頁右上角有刪除", any(n.desc == "刪除" for n in d.nodes()))

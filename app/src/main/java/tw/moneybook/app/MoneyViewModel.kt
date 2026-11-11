@@ -1163,6 +1163,19 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteTemplate(id: Long) = update { d -> d.copy(templates = d.templates.filter { it.id != id }) }
 
+    /** 常用記帳清單左滑刪除：可以復原（放回原本的位置） */
+    fun deleteTemplateWithUndo(id: Long) {
+        val d = data
+        val i = d.templates.indexOfFirst { it.id == id }
+        if (i < 0) return
+        val t = d.templates[i]
+        commit(d.copy(templates = d.templates.filter { it.id != id }))
+        _messages.tryEmit(UiMsg("已刪除常用記帳「${t.name}」", "復原") {
+            val now = data
+            if (now.templates.none { it.id == id }) commit(now.copy(templates = now.templates.toMutableList().apply { add(i.coerceAtMost(size), t) }))
+        })
+    }
+
     /** 常用記帳排序（記一筆的「常用」、桌面小工具都照這個順序）：ids 是拖曳後的順序 */
     fun reorderTemplates(ids: List<Long>) {
         val pos = ids.withIndex().associate { it.value to it.index }
