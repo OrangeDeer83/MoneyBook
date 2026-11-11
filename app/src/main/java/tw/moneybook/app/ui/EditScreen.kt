@@ -494,8 +494,8 @@ fun EditScreen(
             )
             Spacer(Modifier.weight(1f))
             if (orig != null || (tplMode && tplId != null)) {
-                // 常用記帳的刪除是紅色的
-                IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除", tint = if (tplMode) cute.expense else LocalContentColor.current) }
+                // 刪除是紅色的（記錄和常用記帳都一樣）
+                IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除", tint = cute.expense) }
                 // •••：目前只有「設成固定扣款」（一般的支出才有）
                 if (orig != null && orig.type == TxType.EXPENSE && !orig.adjust && orig.instTotal <= 1 && orig.debtItems.isEmpty()) {
                     var more by remember { mutableStateOf(false) }

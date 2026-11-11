@@ -260,7 +260,7 @@ fun SubEditScreen(vm: MoneyViewModel, id: Long?, fromTxn: Long?, onClose: () -> 
 
     SubPage(
         if (orig == null) "新增訂閱" else "修改訂閱", { tryClose() },
-        actions = if (orig != null) ({ IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除") } }) else null,
+        actions = if (orig != null) ({ IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除", tint = cute.expense) } }) else null,
     ) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
