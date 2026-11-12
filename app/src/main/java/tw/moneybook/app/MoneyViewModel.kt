@@ -687,60 +687,87 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 這次開 App 已經自動抓過價的投資帳戶（不用每次進去都抓） */
     val autoFetched = HashSet<Long>()
 
-    /** 上網抓持股的最新價格；accountId 有填就只抓那個投資帳戶的持股，空白是所有投資帳戶一起抓；silent 時全部成功就不顯示提示 */
+    /**
+     * 上網抓持股的最新價格，順便補抓歷史收盤價與歷史匯率（投資成效的折線用）；accountId 有填就只抓那個投資帳戶的，
+     * 空白是所有投資帳戶一起抓；silent 時全部成功就不顯示提示。
+     * 歷史只補還沒有的那一段（見 histFrom）：隔幾天沒開 App，一次就把中間每天的收盤價補齊；已經賣光、也補齊的代號不再連網。
+     */
     fun refreshPrices(silent: Boolean = false, accountId: Long? = null) {
         if (fetching) return
         val all = data.portfolio(accountId).positions
         val positions = all.distinctBy { it.symbol }
-        if (positions.isEmpty()) return
+        // 價格的日期記「抓取當天」，不是市場的交易日：休市（例如週末）時抓到的是上一個交易日的最後成交價，
+        // 如果記成交易日，會比使用者今天記的持股還舊而被當成舊價格丟掉，看起來像沒更新
+        val fetchDay = LocalDate.now().toEpochDay()
+        val targets = data.priceTargets(fetchDay, accountId)
+        if (targets.isEmpty()) return
         // 抓之前最近一次記下的價格（比較變動大不大）、每一檔用新價格算的市值合計（結果只列市值最大的幾檔）
         val before = data.prices
         fun prevOf(p: tw.moneybook.app.Position) = before.filter { it.symbol == p.symbol && it.currency == p.currency }.maxByOrNull { it.day }
         fun valueOf(p: tw.moneybook.app.Position, price: Double?) = all.filter { it.symbol == p.symbol }.sumOf { kotlin.math.round(it.qty * (price ?: it.price) * it.rate).toLong() }
+        // 已經補到的收盤價、歷史匯率日期
+        val closeDays = before.filter { it.close }.groupBy { it.symbol to it.currency }.mapValues { (_, v) -> v.map { it.day } }
+        val rateDays = data.rateHist.groupBy { it.code }.mapValues { (_, v) -> v.map { it.day } }
         fetching = true
         viewModelScope.launch {
             val got = ArrayList<PriceSnap>()
             val results = ArrayList<FetchResult>()
-            // 價格的日期記「抓取當天」，不是市場的交易日：休市（例如週末）時抓到的是上一個交易日的最後成交價，
-            // 如果記成交易日，會比使用者今天記的持股還舊而被當成舊價格丟掉，看起來像沒更新
-            val fetchDay = LocalDate.now().toEpochDay()
-            for (p in positions) {
-                if (p.currency.isNotEmpty()) {
-                    // 外幣單價的持股（美股）：保留原幣價格，市值用匯率換算
-                    val q = try { PriceFetcher.fetchNative(p.symbol, p.market) } catch (_: Exception) { null }
-                    val ok = q != null && q.currency.equals(p.currency, ignoreCase = true)
-                    if (ok) got.add(PriceSnap(p.symbol, fetchDay, q!!.price, p.currency))
-                    results.add(FetchResult(p.symbol, p.name, p.market, if (ok) q!!.price else null, p.currency, prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p, if (ok) q!!.price else null)))
-                } else {
-                    val q = try { PriceFetcher.fetch(p.symbol, p.market) } catch (_: Exception) { null }
-                    if (q != null) got.add(PriceSnap(p.symbol, fetchDay, q.price))
-                    results.add(FetchResult(p.symbol, p.name, p.market, q?.price, "", prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p, q?.price)))
+            for (t in targets) {
+                // 持有中的才要最新價格與抓價結果；賣光的只補歷史
+                val p = positions.firstOrNull { it.symbol == t.symbol }
+                val from = histFrom(closeDays[t.symbol to t.currency].orEmpty(), t.start, t.end, fetchDay)
+                if (p == null && from == null) continue
+                val h = try { PriceFetcher.history(t.symbol, t.market, from ?: (fetchDay - 7)) } catch (_: Exception) { null }
+                // 幣別要對得上（台股是 TWD；美股是 USD），舊的台幣價格不能當美金用
+                val match = h != null && (if (t.currency.isEmpty()) h.currency == "TWD" || h.currency.isEmpty() else h.currency.equals(t.currency, ignoreCase = true))
+                var latest: Double? = null
+                if (match) {
+                    // 今天的收盤還沒定：今天用最新價格，收盤價只收到昨天
+                    h!!.closes.filter { it.first < fetchDay }.forEach { (day, c) -> got.add(PriceSnap(t.symbol, day, c, t.currency, close = true)) }
+                    latest = h.price
+                } else if (p != null && t.currency.isEmpty()) {
+                    // 舊資料：沒選市場、Yahoo 用外幣報價的，照舊換成台幣，只抓最新價格
+                    latest = try { PriceFetcher.fetch(t.symbol, t.market)?.price } catch (_: Exception) { null }
+                }
+                if (p != null) {
+                    if (latest != null) got.add(PriceSnap(t.symbol, fetchDay, latest, t.currency))
+                    results.add(FetchResult(p.symbol, p.name, p.market, latest, p.currency, prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p, latest)))
                 }
             }
-            // 外幣持股順便更新匯率，市值才跟得上
+            // 外幣：持有中的順便更新目前匯率（市值才跟得上），也補歷史匯率
             val newRates = ArrayList<FxRate>()
-            for (c in positions.map { it.currency }.filter { it.isNotEmpty() }.distinct()) {
-                val rt = try { PriceFetcher.fetchRate(c) } catch (_: Exception) { null }
-                if (rt != null) newRates.add(FxRate(c, rt, fetchDay))
+            val hist = ArrayList<FxRate>()
+            val heldCur = positions.map { it.currency }.filter { it.isNotEmpty() }.toSet()
+            for ((c, ts) in targets.filter { it.currency.isNotEmpty() }.groupBy { it.currency }) {
+                val from = histFrom(rateDays[c].orEmpty(), ts.minOf { it.start }, ts.maxOf { it.end }, fetchDay)
+                if (from == null && c !in heldCur) continue
+                val h = try { PriceFetcher.rateHistory(c, from ?: (fetchDay - 7)) } catch (_: Exception) { null } ?: continue
+                h.closes.filter { it.first < fetchDay }.forEach { (day, r) -> hist.add(FxRate(c, r, day)) }
+                if (c in heldCur && h.price != null) newRates.add(FxRate(c, h.price, fetchDay))
             }
             val fail = results.count { !it.ok }
             // 只抓某個帳戶時，其他帳戶上次沒抓到的標示保留
             priceFailed = (if (accountId == null) emptySet() else priceFailed - positions.map { it.symbol }.toSet()) + results.filter { !it.ok }.map { it.symbol }.toSet()
             fetching = false
-            val today = LocalDate.now()
-            if (got.isNotEmpty() || newRates.isNotEmpty()) {
+            if (got.isNotEmpty() || newRates.isNotEmpty() || hist.isNotEmpty()) {
                 update { d ->
-                    val kept = d.prices.filterNot { p -> got.any { it.symbol == p.symbol && it.day == p.day } }
                     d.copy(
-                        prices = pruneMonthly(kept + got, today),
+                        prices = mergePrices(d.prices, got),
                         rates = d.rates.filter { r -> newRates.none { it.code == r.code } } + newRates,
-                        prefs = d.prefs.copy(priceFetchDay = today.toEpochDay()),
+                        rateHist = mergeRates(d.rateHist, hist),
+                        prefs = d.prefs.copy(priceFetchDay = fetchDay),
                     )
                 }
             }
             // 有沒抓到、或價格變動很大的一定要列出是哪幾檔；全部正常時，自動抓價就不打擾
-            if (fail > 0 || results.any { it.bigMove } || !silent) fetchReport = results
+            if (results.isNotEmpty() && (fail > 0 || results.any { it.bigMove } || !silent)) fetchReport = results
         }
+    }
+
+    /** 打開 App 時：已同意上網抓價、而且今天還沒抓過，就抓一次全部持股（順便補齊沒開 App 那幾天的收盤價） */
+    fun autoFetchOnOpen() {
+        val d = data
+        if (d.prefs.priceFetch && d.prefs.priceFetchDay < LocalDate.now().toEpochDay() && d.trades.isNotEmpty()) refreshPrices(silent = true)
     }
 
     fun moveTxnDay(id: Long, day: Long) {

@@ -18,17 +18,20 @@ object PriceFetcher {
     data class Quote(val price: Double, val day: Long)
 
     /** 回傳 meta 區塊（價格、幣別、時間都在裡面）；任何錯誤都回 null */
-    private fun meta(symbol: String): JSONObject? {
+    private fun meta(symbol: String): JSONObject? = result(symbol, "range=5d&interval=1d")?.optJSONObject("meta")
+
+    /** 回傳 chart.result[0]（meta、每天的時間與收盤價都在裡面）；任何錯誤都回 null */
+    private fun result(symbol: String, query: String): JSONObject? {
         var c: HttpURLConnection? = null
         return try {
-            c = URL("https://query1.finance.yahoo.com/v8/finance/chart/$symbol?range=5d&interval=1d").openConnection() as HttpURLConnection
+            c = URL("https://query1.finance.yahoo.com/v8/finance/chart/$symbol?$query").openConnection() as HttpURLConnection
             c.connectTimeout = 10_000
             c.readTimeout = 10_000
             c.setRequestProperty("User-Agent", "Mozilla/5.0")
             if (c.responseCode != 200) return null
             val text = c.inputStream.bufferedReader().use { it.readText() }
             val res = JSONObject(text).getJSONObject("chart").optJSONArray("result")
-            if (res == null || res.length() == 0) null else res.getJSONObject(0).getJSONObject("meta")
+            if (res == null || res.length() == 0) null else res.getJSONObject(0)
         } catch (_: Exception) {
             null
         } finally {
@@ -51,6 +54,56 @@ object PriceFetcher {
             return@withContext NativeQuote(price, day, m.optString("currency", "").uppercase())
         }
         null
+    }
+
+    /**
+     * 最新價格和歷史收盤價：price／priceDay 是最新成交價（抓不到是 null），closes 是每個交易日（交易所當地日期）的收盤價。
+     * currency 是 Yahoo 回報的幣別。
+     */
+    data class History(val currency: String, val price: Double?, val priceDay: Long, val closes: List<Pair<Long, Double>>)
+
+    /** 從 chart.result[0] 讀出每天的收盤價（日期用交易所的時區；沒成交的 null 跳過，同一天只留最後一筆） */
+    internal fun closesOf(r: JSONObject): List<Pair<Long, Double>> {
+        val ts = r.optJSONArray("timestamp") ?: return emptyList()
+        val close = r.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close") ?: return emptyList()
+        val tz = try { ZoneId.of(r.optJSONObject("meta")?.optString("exchangeTimezoneName", "").orEmpty()) } catch (_: Exception) { ZoneId.of("Asia/Taipei") }
+        val out = java.util.TreeMap<Long, Double>()
+        for (i in 0 until minOf(ts.length(), close.length())) {
+            if (close.isNull(i)) continue
+            val c = close.optDouble(i, Double.NaN)
+            if (c.isNaN() || c <= 0.0) continue
+            out[Instant.ofEpochSecond(ts.getLong(i)).atZone(tz).toLocalDate().toEpochDay()] = c
+        }
+        return out.entries.map { it.key to it.value }
+    }
+
+    /** 用 Yahoo 的代號抓 fromDay 到今天的收盤價和最新價格 */
+    private fun historyOf(yahoo: String, fromDay: Long): History? {
+        val p1 = java.time.LocalDate.ofEpochDay(fromDay).atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
+        val p2 = Instant.now().epochSecond + 86_400L
+        val r = result(yahoo, "period1=$p1&period2=$p2&interval=1d") ?: return null
+        val m = r.optJSONObject("meta") ?: return null
+        val price = m.optDouble("regularMarketPrice", Double.NaN)
+        val closes = closesOf(r)
+        val ok = !price.isNaN() && price > 0.0
+        if (!ok && closes.isEmpty()) return null
+        val t = m.optLong("regularMarketTime", 0L)
+        val day = if (t > 0L) Instant.ofEpochSecond(t).atZone(ZoneId.of("Asia/Taipei")).toLocalDate().toEpochDay()
+        else java.time.LocalDate.now().toEpochDay()
+        return History(m.optString("currency", "").uppercase(), if (ok) price else null, day, closes)
+    }
+
+    /** 抓某個代號 fromDay 到今天的收盤價和最新價格（依市場試各種代號寫法）；抓不到回傳 null */
+    suspend fun history(symbol: String, market: String, fromDay: Long): History? = withContext(Dispatchers.IO) {
+        for (s in Markets.candidates(symbol, market)) {
+            historyOf(s, fromDay)?.let { return@withContext it }
+        }
+        null
+    }
+
+    /** 抓外幣換台幣 fromDay 到今天的匯率（1 單位外幣 = 幾元台幣）；只送出幣別代碼 */
+    suspend fun rateHistory(code: String, fromDay: Long): History? = withContext(Dispatchers.IO) {
+        historyOf("${code.trim().uppercase()}TWD=X", fromDay)
     }
 
     /** 抓外幣換台幣的目前匯率（1 單位外幣 = 幾元台幣，例如 USD → 31.5）；抓不到回傳 null。只送出幣別代碼 */

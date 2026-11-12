@@ -29,8 +29,11 @@ data class Trade(
     val rate: Double = 0.0,
 )
 
-/** 某個代號在某一天的價格（抓到的或手動輸入的）。每個月抓幾次，當作那個月的代表。currency 是價格的幣別，空白是台幣 */
-data class PriceSnap(val symbol: String, val day: Long, val price: Double, val currency: String = "")
+/**
+ * 某個代號在某一天的價格（抓到的或手動輸入的），每天的都留著，投資成效的折線用它算每天的現值。
+ * currency 是價格的幣別，空白是台幣；close＝從 Yahoo 補抓的那天收盤價（判斷歷史補到哪裡用）
+ */
+data class PriceSnap(val symbol: String, val day: Long, val price: Double, val currency: String = "", val close: Boolean = false)
 
 /** 目前持有的部位 */
 data class Position(
@@ -67,13 +70,48 @@ data class Portfolio(
     val gain: Long get() = value - cost
 }
 
-/** 價格快照只留「這個月全部」加「之前每個月最後一筆」：每個月抓幾次，過了月就只留一筆當代表 */
-fun pruneMonthly(list: List<PriceSnap>, today: java.time.LocalDate): List<PriceSnap> {
-    val cur = java.time.YearMonth.from(today)
-    val (now, old) = list.partition { java.time.YearMonth.from(java.time.LocalDate.ofEpochDay(it.day)) >= cur }
-    val kept = old.groupBy { it.symbol to java.time.YearMonth.from(java.time.LocalDate.ofEpochDay(it.day)) }
-        .map { (_, v) -> v.maxByOrNull { it.day }!! }
-    return (kept + now).sortedBy { it.day }
+/**
+ * 歷史收盤價要從哪一天開始補抓（往前多抓 7 天，避開週末、連假）：
+ * have＝已經補到的收盤價日期，start..end＝需要價格的期間（第一次買進到今天；已經賣光是到最後一筆買賣）。
+ * 開頭還沒補過就從 start 抓；補過了就從最後一筆接著抓；已經賣光、而且補到 end 了就不用抓（回傳 null）。
+ */
+fun histFrom(have: Collection<Long>, start: Long, end: Long, today: Long): Long? {
+    val min = have.minOrNull()
+    val max = have.maxOrNull()
+    if (min == null || max == null || min > start + 7) return start - 7
+    if (end < today && max >= end - 7) return null
+    return maxOf(start, max) - 7
+}
+
+/** 把新抓到的價格併進去：同一個代號同一天只留一筆，新的取代舊的 */
+fun mergePrices(old: List<PriceSnap>, got: List<PriceSnap>): List<PriceSnap> {
+    if (got.isEmpty()) return old
+    val keys = got.map { it.symbol to it.day }.toHashSet()
+    return (old.filterNot { (it.symbol to it.day) in keys } + got).sortedBy { it.day }
+}
+
+/** 把新抓到的歷史匯率併進去：同一個幣別同一天只留一筆 */
+fun mergeRates(old: List<FxRate>, got: List<FxRate>): List<FxRate> {
+    if (got.isEmpty()) return old
+    val keys = got.map { it.code to it.day }.toHashSet()
+    return (old.filterNot { (it.code to it.day) in keys } + got).sortedBy { it.day }
+}
+
+/** 要抓價的一檔：代號、市場、幣別，和需要價格的期間（第一次買進到今天；已經賣光是到最後一筆買賣） */
+data class PriceTarget(val symbol: String, val market: String, val currency: String, val start: Long, val end: Long, val held: Boolean)
+
+/** 依買賣記錄列出要抓價的代號（accountId 有填就只看那個帳戶）；同一個代號在不同帳戶合在一起算 */
+fun AppData.priceTargets(today: Long, accountId: Long? = null): List<PriceTarget> {
+    val list = trades.filter { accountId == null || it.accountId == accountId }.sortedWith(compareBy({ it.day }, { it.id }))
+    return list.groupBy { it.symbol }.map { (sym, ts) ->
+        // 每個帳戶分開算剩下幾股，有一個帳戶還有就算持有中
+        val held = ts.groupBy { it.accountId }.values.any { g -> g.sumOf { if (it.buy) it.qty else -it.qty } > EPS }
+        val last = ts.last()
+        PriceTarget(
+            symbol = sym, market = ts.lastOrNull { it.market.isNotBlank() }?.market ?: "", currency = last.currency,
+            start = ts.first().day, end = if (held) today else last.day, held = held,
+        )
+    }
 }
 
 /** 單位數量小於這個值就當作已經賣光（避免小數誤差留下 0.0000001 股） */

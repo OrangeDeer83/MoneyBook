@@ -197,18 +197,79 @@ class InvestTest {
     }
 
     @Test
-    fun pruneMonthlyKeepsCurrentMonthAndOneOfEachOldMonth() {
-        val today = LocalDate.of(2026, 10, 15)
-        fun snap(sym: String, m: Int, d: Int, p: Double) = PriceSnap(sym, LocalDate.of(2026, m, d).toEpochDay(), p)
-        val list = listOf(
-            snap("A", 8, 3, 1.0), snap("A", 8, 20, 2.0), snap("A", 8, 28, 3.0),   // 8 月只留最後一筆 28 日
-            snap("A", 9, 5, 4.0),                                                    // 9 月只有一筆
-            snap("A", 10, 1, 5.0), snap("A", 10, 8, 6.0), snap("A", 10, 14, 7.0),  // 這個月全留
-            snap("B", 8, 10, 9.0),
-        )
-        val out = pruneMonthly(list, today)
-        assertEquals(setOf(3.0, 4.0, 5.0, 6.0, 7.0, 9.0), out.map { it.price }.toSet())
+    fun histFromStartsAtFirstBuyThenContinuesFromTheLastClose() {
+        val today = 1000L
+        // 還沒補過：從第一次買進往前 7 天
+        assertEquals(493L, histFrom(emptyList(), 500L, today, today))
+        // 只有買進當天的成交價那種零星價格不算（這裡只傳收盤價日期）；最早一筆離開頭太遠也從頭補
+        assertEquals(493L, histFrom(listOf(600L, 700L), 500L, today, today))
+        // 開頭補過了：從最後一筆往前 7 天接著補
+        assertEquals(983L, histFrom(listOf(497L, 990L), 500L, today, today))
+        // 已經賣光（end 在過去）而且補到 end 了：不用再抓
+        assertEquals(null, histFrom(listOf(497L, 795L), 500L, 800L, today))
+        // 已經賣光但還沒補到 end：接著補
+        assertEquals(693L, histFrom(listOf(497L, 700L), 500L, 800L, today))
+    }
+
+    @Test
+    fun mergePricesKeepsOnePerSymbolAndDayNewestWins() {
+        val old = listOf(PriceSnap("0050", 10, 100.0), PriceSnap("0050", 11, 101.0), PriceSnap("2330", 11, 600.0))
+        val got = listOf(PriceSnap("0050", 11, 102.0, close = true), PriceSnap("0050", 12, 103.0, close = true))
+        val out = mergePrices(old, got)
+        assertEquals(4, out.size)
+        assertEquals(102.0, out.single { it.symbol == "0050" && it.day == 11L }.price, 1e-9)
+        assertTrue(out.single { it.symbol == "0050" && it.day == 11L }.close)
+        assertEquals(600.0, out.single { it.symbol == "2330" }.price, 1e-9)
         assertEquals(out.sortedBy { it.day }, out)
+        val rates = mergeRates(listOf(FxRate("USD", 31.0, 10)), listOf(FxRate("USD", 31.5, 10), FxRate("USD", 32.0, 11)))
+        assertEquals(listOf(31.5, 32.0), rates.map { it.rate })
+    }
+
+    @Test
+    fun priceTargetsCoverEverySymbolEverTradedUntilSoldOut() {
+        val d = data(
+            listOf(
+                buy(1, 100, 10.0, 100.0), sell(2, 300, 10.0, 120.0),                 // 0050 賣光了：到 300 日
+                buy(3, 200, 5.0, 600.0, sym = "2330"),                               // 2330 還持有：到今天
+            )
+        )
+        val t = d.priceTargets(1000L).associateBy { it.symbol }
+        assertEquals(PriceTarget("0050", "", "", 100L, 300L, false), t["0050"])
+        assertEquals(PriceTarget("2330", "", "", 200L, 1000L, true), t["2330"])
+        assertEquals(listOf("2330"), d.priceTargets(1000L, accountId = 1L).filter { it.held }.map { it.symbol })
+        assertTrue(d.priceTargets(1000L, accountId = 99L).isEmpty())
+    }
+
+    @Test
+    fun closesAreReadInTheExchangeTimeZoneSkippingNulls() {
+        // 美股 9:30 開盤：台北時間已經是隔天，日期要用紐約的
+        val ny = java.time.ZoneId.of("America/New_York")
+        fun ts(m: Int, d: Int) = java.time.LocalDateTime.of(2026, m, d, 9, 30).atZone(ny).toEpochSecond()
+        val r = org.json.JSONObject()
+            .put("meta", org.json.JSONObject().put("exchangeTimezoneName", "America/New_York"))
+            .put("timestamp", org.json.JSONArray(listOf(ts(11, 9), ts(11, 10), ts(11, 11))))
+            .put("indicators", org.json.JSONObject().put("quote", org.json.JSONArray().put(
+                org.json.JSONObject().put("close", org.json.JSONArray().put(500.5).put(org.json.JSONObject.NULL).put(502.25))
+            )))
+        val out = PriceFetcher.closesOf(r)
+        assertEquals(
+            listOf(LocalDate.of(2026, 11, 9).toEpochDay() to 500.5, LocalDate.of(2026, 11, 11).toEpochDay() to 502.25),
+            out,
+        )
+        assertTrue(PriceFetcher.closesOf(org.json.JSONObject()).isEmpty())
+    }
+
+    @Test
+    fun closesAndRateHistorySurviveSaveAndOldBackupsStillLoad() {
+        val d = data(listOf(buy(1, 100, 1.0, 100.0)), listOf(PriceSnap("0050", 99, 98.0, close = true), PriceSnap("0050", 100, 100.0)))
+            .copy(rateHist = listOf(FxRate("USD", 31.2, 99)))
+        val back = Codec.decode(Codec.encode(d))
+        assertEquals(d.prices, back.prices)
+        assertEquals(d.rateHist, back.rateHist)
+        val root = org.json.JSONObject(Codec.encode(d))
+        root.remove("rateHist")
+        val old = Codec.decode(root.toString())
+        assertTrue(old.rateHist.isEmpty())
     }
 
     @Test

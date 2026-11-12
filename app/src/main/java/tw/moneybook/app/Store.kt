@@ -105,7 +105,10 @@ object Codec {
             }
         })
         root.put("prices", JSONArray().apply {
-            d.prices.forEach { p -> put(JSONObject().put("symbol", p.symbol).put("day", p.day).put("price", p.price).put("currency", p.currency)) }
+            d.prices.forEach { p ->
+                // 收盤價很多筆：close 只有 true 才寫，檔案小一點
+                put(JSONObject().put("symbol", p.symbol).put("day", p.day).put("price", p.price).put("currency", p.currency).apply { if (p.close) put("close", true) })
+            }
         })
         root.put("settles", JSONArray().apply {
             d.settles.forEach { st ->
@@ -121,6 +124,9 @@ object Codec {
         })
         root.put("rates", JSONArray().apply {
             d.rates.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
+        })
+        root.put("rateHist", JSONArray().apply {
+            d.rateHist.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
         })
         val p = d.prefs
         root.put(
@@ -249,9 +255,12 @@ object Codec {
             )
         }
         val prices = objects(root.optJSONArray("prices")) { o ->
-            PriceSnap(o.getString("symbol"), o.getLong("day"), o.optDouble("price", 0.0), o.optString("currency", ""))
+            PriceSnap(o.getString("symbol"), o.getLong("day"), o.optDouble("price", 0.0), o.optString("currency", ""), o.optBoolean("close", false))
         }
         val rates = objects(root.optJSONArray("rates")) { o ->
+            FxRate(o.getString("code"), o.optDouble("rate", 0.0), o.optLong("day", 0L))
+        }.filter { it.rate > 0.0 }
+        val rateHist = objects(root.optJSONArray("rateHist")) { o ->
             FxRate(o.getString("code"), o.optDouble("rate", 0.0), o.optLong("day", 0L))
         }.filter { it.rate > 0.0 }
         require(books.isNotEmpty()) { "沒有帳本資料" }
@@ -297,6 +306,7 @@ object Codec {
             trades = trades,
             prices = prices,
             rates = rates,
+            rateHist = rateHist,
             settles = settles,
             subs = subs,
         )

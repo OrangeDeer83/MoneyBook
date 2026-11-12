@@ -118,6 +118,9 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
     var stack by rememberSaveable(stateSaver = RouteStackSaver) { mutableStateOf(listOf<Route>()) }
     val snackbar = remember { SnackbarHostState() }
 
+    // 打開 App：今天還沒抓過價就抓一次（有同意上網抓價才會）
+    LaunchedEffect(Unit) { vm.autoFetchOnOpen() }
+
     LaunchedEffect(Unit) {
         vm.messages.collectLatest { m ->
             // 有「復原」的訊息也只停 4 秒，避免擋住最下面的項目；新訊息會直接取代舊的
