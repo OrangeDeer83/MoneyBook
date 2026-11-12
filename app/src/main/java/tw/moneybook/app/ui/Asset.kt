@@ -112,7 +112,8 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
                             "reasons" -> ReasonsCard(d, months[picked.coerceIn(months.indices)], menu)
                             "share" -> ShareCard(span, years, labels, points, menu)
                             // 所有投資帳戶加起來（卡片自己有範圍、金額／報酬率切換）
-                            "invest" -> InvestTrendCard(vm, "asset", "投資成效", null, menuId = "invest", menu = menu)
+                            // 沒有任何買賣記錄的人不用看到這張
+                            "invest" -> if (d.trades.isNotEmpty()) InvestTrendCard(vm, "asset", "投資成效", null, menuId = "invest", menu = menu)
                         }
                     }
                 }

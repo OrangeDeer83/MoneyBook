@@ -190,7 +190,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account, onHolding: (String) -> Unit = 
         }
 
         // 投資成效折線（有買賣記錄才有）
-        if (trades.isNotEmpty()) InvestTrendCard(vm, "acc:${a.id}", "投資成效", setOf(a.id))
+        if (trades.isNotEmpty()) InvestTrendCard(vm, "acc:${a.id}", "投資成效", setOf(a.id), hideShort = true)
 
         if (pf.positions.isEmpty()) {
             Text("還沒有持股，按「買進」記錄第一筆。", style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.padding(horizontal = 4.dp))
@@ -483,7 +483,7 @@ fun HoldingScreen(vm: MoneyViewModel, accountId: Long, symbol: String, onBack: (
                     }
                 }
                 if (trades.isNotEmpty()) {
-                    item { InvestTrendCard(vm, "holding:$accountId:$sym", "這一檔的成效", setOf(accountId), sym) }
+                    item { InvestTrendCard(vm, "holding:$accountId:$sym", "這一檔的成效", setOf(accountId), sym, hideShort = true) }
                     item { Text("這一檔的買賣記錄", style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.padding(start = 4.dp, top = 8.dp)) }
                     items(trades.size, key = { trades[it].id }) { i ->
                         val t = trades[i]

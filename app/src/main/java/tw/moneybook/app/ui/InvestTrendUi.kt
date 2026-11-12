@@ -62,11 +62,12 @@ private fun pctText(p: Double): String =
  * 投資成效卡片：現值（實線＋面積）與成本（虛線），可以切換成報酬率；範圍 1 個月／3 個月／1 年／全部。
  * accountIds 是 null＝所有投資帳戶；symbol 有填就只算那一檔。key 用來記住這張卡片選的範圍、長按的圖。
  * 預設範圍：第一次買進超過 3 個月看 3 個月，不到看 1 個月；選過就記住（到關掉 App 為止）。
+ * hideShort：還畫不出折線（今天才第一次買進）時整張不顯示（投資帳戶頁、持股頁，免得多一張空卡片）。
  */
 @Composable
 fun InvestTrendCard(
     vm: MoneyViewModel, key: String, title: String, accountIds: Set<Long>?, symbol: String? = null,
-    menuId: String? = null, menu: CardMenu? = null,
+    menuId: String? = null, menu: CardMenu? = null, hideShort: Boolean = false,
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -76,6 +77,8 @@ fun InvestTrendCard(
     var pct by remember(key) { mutableStateOf(vm.investPct[key] == true) }
     val plan = remember(range, first) { first?.let { investDays(range, it, today) } }
     val pts = remember(d, plan, accountIds, symbol) { plan?.let { d.investSeries(it.first, accountIds, symbol, today) } ?: emptyList() }
+    // 只有今天一點：選「全部」也一樣畫不出來，就整張不顯示
+    if (hideShort && (first == null || first >= today)) return
     CuteCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -98,8 +101,8 @@ fun InvestTrendCard(
             Text("買進後隔天開始畫折線。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
             return@CuteCard
         }
-        if (LocalChartPick.current == null) ChartPickArea { InvestLines(key, pts, pct, plan.second, today) }
-        else InvestLines(key, pts, pct, plan.second, today)
+        if (LocalChartPick.current == null) ChartPickArea { InvestLines(key, pts, pct, plan.second, today, InvestRanges.label(range)) }
+        else InvestLines(key, pts, pct, plan.second, today, InvestRanges.label(range))
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (!pct) {
@@ -134,7 +137,7 @@ private fun DashSwatch() {
 
 /** 折線本體：金額＝現值（實線、下面淡色面積）＋成本（虛線）；報酬率＝一條線加 0% 虛線。長按拖曳看那一天 */
 @Composable
-private fun InvestLines(key: String, pts: List<InvestPoint>, pct: Boolean, step: InvestStep, today: Long) {
+private fun InvestLines(key: String, pts: List<InvestPoint>, pct: Boolean, step: InvestStep, today: Long, rangeLabel: String) {
     val cute = LocalCute.current
     val primary = MaterialTheme.colorScheme.primary
     val n = pts.size
@@ -166,7 +169,7 @@ private fun InvestLines(key: String, pts: List<InvestPoint>, pct: Boolean, step:
         Text(axis(hi), style = MaterialTheme.typography.labelSmall, color = cute.sub)
         Box(
             Modifier.chartPick(key, n).semantics {
-                contentDescription = "投資成效折線：${title(0)} 到 ${title(n - 1)}，現值 ${formatMoney(last.value)}，成本 ${formatMoney(last.cost)}"
+                contentDescription = "投資成效折線（$rangeLabel，${if (pct) "報酬率" else "金額"}，$n 點）：${title(0)} 到 ${title(n - 1)}，現值 ${formatMoney(last.value)}，成本 ${formatMoney(last.cost)}"
             },
         ) {
             Canvas(Modifier.fillMaxWidth().height(150.dp)) {
