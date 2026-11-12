@@ -142,6 +142,8 @@ fun AccountDetailScreen(
     onFxTrade: (Long, Boolean) -> Unit = { _, _ -> },
     /** 開「待請款外幣」清單 */
     onFxPending: () -> Unit = {},
+    /** 投資帳戶點一檔持股：帳戶 id、代號 */
+    onHolding: (Long, String) -> Unit = { _, _ -> },
     onBack: () -> Unit,
 ) {
     val d = vm.data
@@ -311,7 +313,7 @@ fun AccountDetailScreen(
                 item { CardBillCard(vm, a, onPayCard) }
             }
             if (a.type == AccountType.INVEST) {
-                item { InvestSection(vm, a) }
+                item { InvestSection(vm, a) { onHolding(a.id, it) } }
             }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

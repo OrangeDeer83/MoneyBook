@@ -111,6 +111,8 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
                             "change" -> ChangeCard(vm.assetRange, span, years, labels, titles, points, menu) { picked = if (it < 0) months.size - 1 else it }
                             "reasons" -> ReasonsCard(d, months[picked.coerceIn(months.indices)], menu)
                             "share" -> ShareCard(span, years, labels, points, menu)
+                            // 所有投資帳戶加起來（卡片自己有範圍、金額／報酬率切換）
+                            "invest" -> InvestTrendCard(vm, "asset", "投資成效", null, menuId = "invest", menu = menu)
                         }
                     }
                 }

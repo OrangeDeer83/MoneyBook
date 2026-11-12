@@ -224,8 +224,9 @@ object CardPages {
             CardSpec("change", "總資產變化"),
             CardSpec("reasons", "變化的原因"),
             CardSpec("share", "投資佔資產的比例"),
+            CardSpec("invest", "投資成效", after = "change"),
         ),
-        CardLayout(listOf(CardRow("compose"), CardRow("change"), CardRow("reasons")), hidden = listOf("share")),
+        CardLayout(listOf(CardRow("compose"), CardRow("change"), CardRow("invest"), CardRow("reasons")), hidden = listOf("share")),
     )
 
     val all: List<CardPage> = listOf(PERIOD, TREND, ASSET)

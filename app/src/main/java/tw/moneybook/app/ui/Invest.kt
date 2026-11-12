@@ -27,6 +27,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,16 +57,88 @@ import tw.moneybook.app.tradeAmount
 import java.time.LocalDate
 
 /** 損益文字：+1,234（+5.6%） */
-private fun gainText(gain: Long, pct: Double?): String {
+internal fun gainText(gain: Long, pct: Double?): String {
     val sign = if (gain > 0) "+" else if (gain < 0) "−" else ""
     val money = formatMoney(kotlin.math.abs(gain)).replace("-", "")
     val p = if (pct != null) "（$sign${String.format(java.util.Locale.US, "%.1f", kotlin.math.abs(pct) * 100)}%）" else ""
     return "$sign$money$p"
 }
 
-/** 投資帳戶的持股區：總覽、持股列表、買進／賣出、手動更新現價、同步市值到帳戶餘額、買賣記錄 */
+/** 持股總覽：市值、未實現損益，下面一行小字是成本與已實現損益；extra 接在卡片最下面（投資帳戶頁放買進、賣出等按鈕） */
 @Composable
-fun InvestSection(vm: MoneyViewModel, a: Account) {
+internal fun PortfolioSummary(pf: tw.moneybook.app.Portfolio, extra: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {}) {
+    val cute = LocalCute.current
+    CuteCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text("持股市值", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Text(formatMoney(pf.value), style = MaterialTheme.typography.headlineSmall)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text("未實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                Text(
+                    gainText(pf.gain, if (pf.cost > 0L) pf.gain.toDouble() / pf.cost else null),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (pf.gain >= 0L) cute.income else cute.expense,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
+        Spacer(Modifier.height(6.dp))
+        // 成本與已實現損益：次要資訊，一行小字
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("成本", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+            Spacer(Modifier.width(6.dp))
+            Text(formatMoney(pf.cost), style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.weight(1f))
+            Text("已實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                gainText(pf.realized, null), style = MaterialTheme.typography.bodyMedium,
+                color = if (pf.realized >= 0L) cute.income else cute.expense,
+            )
+        }
+        extra()
+    }
+}
+
+/** 一筆買賣記錄（投資帳戶頁、持股頁共用）：往左滑刪除，點了修改 */
+@Composable
+private fun TradeRow(vm: MoneyViewModel, t: Trade, onClick: () -> Unit) {
+    val cute = LocalCute.current
+    SwipeRow(onDelete = { vm.deleteTrade(t.id) }) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card)
+                .clickable { onClick() }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (t.buy) "買" else "賣", style = MaterialTheme.typography.labelMedium,
+                color = if (t.buy) cute.expense else cute.income,
+                modifier = Modifier.clip(CircleShape).background((if (t.buy) cute.expense else cute.income).copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(if (t.name.isNotBlank()) "${t.name} ${t.symbol}" else t.symbol, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                Text("${qtyText(t.qty)} 股 @ ${unitPrice(t.price, t.currency)}", style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1)
+                // 日期、匯率、手續費放第二行小字
+                Text(
+                    dayLabel(t.day) +
+                        (if (t.currency.isNotEmpty() && t.rate > 0.0) "・匯率 ${rateText(t.rate)}" else "") +
+                        if (t.fee > 0) "・手續費 ${formatMoney(t.fee)}" else "",
+                    style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
+                )
+            }
+            Text(formatMoney(tradeAmount(t.qty, t.price * (if (t.currency.isNotEmpty() && t.rate > 0.0) t.rate else 1.0))), fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** 投資帳戶的持股區：總覽、投資成效、持股列表（點了打開持股頁）、買進／賣出、同步市值到帳戶餘額、買賣記錄 */
+@Composable
+fun InvestSection(vm: MoneyViewModel, a: Account, onHolding: (String) -> Unit = {}) {
     val d = vm.data
     val cute = LocalCute.current
     val pf = remember(d) { d.portfolio(a.id) }
@@ -74,7 +148,6 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     var dialog by remember { mutableStateOf("") }
     var tradeBuy by remember { mutableStateOf(true) }
     var tradeSymbol by remember { mutableStateOf("") }
-    var pricePos by remember { mutableStateOf<Position?>(null) }
     // 點買賣記錄修改的那一筆
     var editTrade by remember { mutableStateOf<Trade?>(null) }
     // 從連動的轉帳「前往修改」過來：打開那一筆買賣的修改視窗
@@ -93,37 +166,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        CuteCard(Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text("持股市值", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                    Text(formatMoney(pf.value), style = MaterialTheme.typography.headlineSmall)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("未實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                    Text(
-                        gainText(pf.gain, if (pf.cost > 0L) pf.gain.toDouble() / pf.cost else null),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (pf.gain >= 0L) cute.income else cute.expense,
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
-            Spacer(Modifier.height(6.dp))
-            // 成本與已實現損益：次要資訊，一行小字
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("成本", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                Spacer(Modifier.width(6.dp))
-                Text(formatMoney(pf.cost), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.weight(1f))
-                Text("已實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    gainText(pf.realized, null), style = MaterialTheme.typography.bodyMedium,
-                    color = if (pf.realized >= 0L) cute.income else cute.expense,
-                )
-            }
+        PortfolioSummary(pf) {
             Spacer(Modifier.height(8.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CuteChip("買進", false, { tradeBuy = true; tradeSymbol = ""; dialog = "trade" })
@@ -146,6 +189,9 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
             }
         }
 
+        // 投資成效折線（有買賣記錄才有）
+        if (trades.isNotEmpty()) InvestTrendCard(vm, "acc:${a.id}", "投資成效", setOf(a.id))
+
         if (pf.positions.isEmpty()) {
             Text("還沒有持股，按「買進」記錄第一筆。", style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.padding(horizontal = 4.dp))
             // 初次使用：已經持有的股票一次填進來，不用一筆一筆記買進
@@ -162,7 +208,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
         pf.positions.forEach { p ->
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card)
-                    .clickable { pricePos = p; dialog = "price" }.padding(horizontal = 14.dp, vertical = 10.dp),
+                    .clickable { onHolding(p.symbol) }.padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
                 // 第一行：名稱、市場標籤，右邊是台幣市值
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -225,35 +271,7 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
 
         if (trades.isNotEmpty()) {
             Text("買賣記錄", style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
-            trades.take(30).forEach { t ->
-                SwipeRow(onDelete = { vm.deleteTrade(t.id) }) {
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.card)
-                            .clickable { editTrade = t; dialog = "tradeEdit" }
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            if (t.buy) "買" else "賣", style = MaterialTheme.typography.labelMedium,
-                            color = if (t.buy) cute.expense else cute.income,
-                            modifier = Modifier.clip(CircleShape).background((if (t.buy) cute.expense else cute.income).copy(alpha = 0.14f)).padding(horizontal = 8.dp, vertical = 2.dp),
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(if (t.name.isNotBlank()) "${t.name} ${t.symbol}" else t.symbol, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                            Text("${qtyText(t.qty)} 股 @ ${unitPrice(t.price, t.currency)}", style = MaterialTheme.typography.bodySmall, color = cute.sub, maxLines = 1)
-                            // 日期、匯率、手續費放第二行小字
-                            Text(
-                                dayLabel(t.day) +
-                                    (if (t.currency.isNotEmpty() && t.rate > 0.0) "・匯率 ${rateText(t.rate)}" else "") +
-                                    if (t.fee > 0) "・手續費 ${formatMoney(t.fee)}" else "",
-                                style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
-                            )
-                        }
-                        Text(formatMoney(tradeAmount(t.qty, t.price * (if (t.currency.isNotEmpty() && t.rate > 0.0) t.rate else 1.0))), fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
+            trades.take(30).forEach { t -> TradeRow(vm, t) { editTrade = t; dialog = "tradeEdit" } }
             if (trades.size > 30) Text("只顯示最近 30 筆", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp))
         }
     }
@@ -269,21 +287,6 @@ fun InvestSection(vm: MoneyViewModel, a: Account) {
         "tradeEdit" -> editTrade?.let { t ->
             TradeDialog(
                 vm = vm, a = a, held = pf.positions, initialBuy = t.buy, initialSymbol = t.symbol, edit = t,
-                onDismiss = { dialog = "" },
-            )
-        }
-        "price" -> pricePos?.let { p ->
-            PriceDialog(
-                p = p,
-                onConfirm = { price -> vm.setPrice(p.symbol, price, currency = p.currency); dialog = "" },
-                onEdit = { dialog = "holding" },
-                onDismiss = { dialog = "" },
-            )
-        }
-        "holding" -> pricePos?.let { p ->
-            EditHoldingDialog(
-                p = p, others = pf.positions.filter { it.symbol != p.symbol }, rateOf = { c -> d.rateOf(c) },
-                onSave = { sym, name, market, rate -> vm.editHolding(a.id, p.symbol, sym, name, market, rate); dialog = "" },
                 onDismiss = { dialog = "" },
             )
         }
@@ -395,6 +398,121 @@ fun FetchReportDialog(vm: MoneyViewModel) {
             },
             confirmButton = { TextButton(onClick = { vm.fetchReport = null }) { Text("關閉") } },
         )
+    }
+}
+
+/**
+ * 一檔持股的頁面（投資帳戶頁點持股進來）：總覽（市值、股數、現價、均價、損益）、這一檔的投資成效、
+ * 更新現價／編輯／買進／賣出，和這一檔的買賣記錄。已經賣光的也能看（只剩記錄和折線）。
+ */
+@Composable
+fun HoldingScreen(vm: MoneyViewModel, accountId: Long, symbol: String, onBack: () -> Unit) {
+    val d = vm.data
+    val cute = LocalCute.current
+    // 編輯改了代號就跟著換
+    var sym by rememberSaveable { mutableStateOf(symbol) }
+    val a = d.accMap[accountId]
+    if (a == null) {
+        SubPage(symbol, onBack) { EmptyHint(d.prefs.mascot, "找不到這個帳戶") }
+        return
+    }
+    val pf = remember(d) { d.portfolio(accountId) }
+    val p = pf.positions.firstOrNull { it.symbol == sym }
+    val trades = remember(d, sym) { d.trades.filter { it.accountId == accountId && it.symbol == sym }.sortedWith(compareByDescending<Trade> { it.day }.thenByDescending { it.id }) }
+    val name = p?.name ?: trades.firstOrNull()?.name ?: ""
+    var dialog by remember { mutableStateOf("") }
+    var tradeBuy by remember { mutableStateOf(true) }
+    var editTrade by remember { mutableStateOf<Trade?>(null) }
+    SubPage(if (name.isNotBlank()) "$name $sym" else sym, onBack) {
+        ChartPickArea(Modifier.fillMaxSize()) {
+            androidx.compose.foundation.lazy.LazyColumn(
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    CuteCard(Modifier.fillMaxWidth()) {
+                        if (p == null) {
+                            Text("這一檔已經賣光了", style = MaterialTheme.typography.titleMedium)
+                            Text("下面還留著買賣記錄和以前的成效。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                            return@CuteCard
+                        }
+                        Row(verticalAlignment = Alignment.Top) {
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("市值", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                    if (p.market.isNotBlank()) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            Markets.label(p.market), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.clip(CircleShape).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+                                Text(formatMoney(p.value), style = MaterialTheme.typography.headlineSmall)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("未實現損益", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                                Text(
+                                    gainText(p.gain, if (p.cost > 0L) p.gainPct else null), style = MaterialTheme.typography.titleMedium,
+                                    color = if (p.gain >= 0L) cute.income else cute.expense,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(cute.soft))
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "${qtyText(p.qty)} 股・均價 ${unitPrice(p.avgPrice, p.currency)} → 現價 ${unitPrice(p.price, p.currency)}",
+                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                        )
+                        Text(
+                            "成本 ${formatMoney(p.cost)}・價格日期 ${LocalDate.ofEpochDay(p.priceDay).let { "${it.monthValue}/${it.dayOfMonth}" }}" +
+                                if (p.currency.isNotEmpty()) "・匯率 ${rateText(p.rate)}" else "",
+                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                        )
+                        if (p.symbol in vm.priceFailed) {
+                            Text("抓不到價格，目前用的是舊價格；請確認市場與代號，或按「更新現價」手動輸入", style = MaterialTheme.typography.labelSmall, color = cute.expense)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        ChipRow {
+                            CuteChip("更新現價", false, { dialog = "price" })
+                            CuteChip("編輯", false, { dialog = "holding" })
+                            CuteChip("買進", false, { tradeBuy = true; dialog = "trade" })
+                            CuteChip("賣出", false, { tradeBuy = false; dialog = "trade" })
+                        }
+                    }
+                }
+                if (trades.isNotEmpty()) {
+                    item { InvestTrendCard(vm, "holding:$accountId:$sym", "這一檔的成效", setOf(accountId), sym) }
+                    item { Text("這一檔的買賣記錄", style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.padding(start = 4.dp, top = 8.dp)) }
+                    items(trades.size, key = { trades[it].id }) { i ->
+                        val t = trades[i]
+                        TradeRow(vm, t) { editTrade = t; dialog = "tradeEdit" }
+                    }
+                }
+            }
+        }
+    }
+    when (dialog) {
+        "price" -> p?.let {
+            PriceDialog(
+                p = it,
+                onConfirm = { price -> vm.setPrice(it.symbol, price, currency = it.currency); dialog = "" },
+                onEdit = { dialog = "holding" },
+                onDismiss = { dialog = "" },
+            )
+        }
+        "holding" -> p?.let {
+            EditHoldingDialog(
+                p = it, others = pf.positions.filter { o -> o.symbol != it.symbol }, rateOf = { c -> d.rateOf(c) },
+                onSave = { s, n, market, rate -> vm.editHolding(accountId, it.symbol, s, n, market, rate); sym = s.trim().uppercase().ifEmpty { sym }; dialog = "" },
+                onDismiss = { dialog = "" },
+            )
+        }
+        "trade" -> TradeDialog(vm = vm, a = a, held = pf.positions, initialBuy = tradeBuy, initialSymbol = sym, onDismiss = { dialog = "" })
+        "tradeEdit" -> editTrade?.let { t ->
+            TradeDialog(vm = vm, a = a, held = pf.positions, initialBuy = t.buy, initialSymbol = t.symbol, edit = t, onDismiss = { dialog = "" })
+        }
     }
 }
 

@@ -343,7 +343,7 @@ fun EmojiButton(emoji: String, onClick: () -> Unit) {
 // ───────────────────────── 帳戶 ─────────────────────────
 
 @Composable
-fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onAsset: () -> Unit) {
+fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onAsset: () -> Unit, onInvest: () -> Unit = {}) {
     val d = vm.data
     val cute = LocalCute.current
     val bal = remember(d) { d.balances() }
@@ -443,6 +443,9 @@ fun AccountsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onAsset: () -> Un
                             if (vm.fetching) "抓價中…" else "更新全部價格", false,
                             { if (!vm.fetching) { if (d.prefs.priceFetch) vm.refreshPrices() else fetchAsk = true } },
                         )
+                        Spacer(Modifier.width(6.dp))
+                        // 全部投資帳戶加起來的成效
+                        CuteChip("看成效 ›", false, onInvest)
                         Spacer(Modifier.width(8.dp))
                     }
                     if (collapsed) {

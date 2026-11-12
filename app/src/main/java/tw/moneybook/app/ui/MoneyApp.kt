@@ -230,6 +230,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "asset" -> AssetScreen(vm, onLayout = { push(Route.Page("layout:$it")) }) { pop() }
+                "invest" -> InvestAllScreen(vm, onOpen = { vm.accMonths.remove(it); push(Route.Page("account:$it")) }) { pop() }
                 else -> {
                     // 調整卡片排版：layout:<CardPage.key>
                     val cardPage = if (top.name.startsWith("layout:")) tw.moneybook.app.CardPages.of(top.name.removePrefix("layout:")) else null
@@ -251,7 +252,14 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                             onPayCard = { acc, amt -> push(Route.Edit(null, presetTo = acc, presetAmount = amt)) },
                             onFxTrade = { acc, buy -> push(if (buy) Route.Edit(null, presetTo = acc) else Route.Edit(null, presetFrom = acc)) },
                             onFxPending = { push(Route.Page("fxpending")) },
+                            onHolding = { acc, sym -> push(Route.Page("holding:$acc:$sym")) },
                         ) { pop() }
+                    }
+                    // 一檔持股：holding:<帳戶 id>:<代號>
+                    if (top.name.startsWith("holding:")) {
+                        val parts = top.name.split(":", limit = 3)
+                        val hAcc = parts.getOrNull(1)?.toLongOrNull()
+                        if (hAcc != null && parts.size == 3) HoldingScreen(vm, hAcc, parts[2]) { pop() }
                     }
                 }
             }
@@ -330,7 +338,7 @@ private fun MainTabs(
                     onFxPending = { open("fxpending") },
                     onDrill = { open("drill") },
                 )
-                1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") }, onAsset = { open("asset") })
+                1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") }, onAsset = { open("asset") }, onInvest = { open("invest") })
                 2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") }, onLayout = { open("layout:$it") }, onAsset = { open("asset") }, onDay = { open("day:$it") })
                 else -> MeScreen(vm, open)
             }

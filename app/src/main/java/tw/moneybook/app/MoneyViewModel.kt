@@ -684,6 +684,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 投資成效卡片選的範圍、是不是看報酬率（key 是卡片，到關掉 App 為止） */
+    val investRanges = HashMap<String, Int>()
+    val investPct = HashMap<String, Boolean>()
+
     /** 這次開 App 已經自動抓過價的投資帳戶（不用每次進去都抓） */
     val autoFetched = HashSet<Long>()
 
