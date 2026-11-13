@@ -494,6 +494,7 @@ def t_invest_fetch_fail():
     ns = d.shot("抓價結果")
     d.check("結果裡列出沒抓到的代號 ZZZZ9999", d.has(ns, "ZZZZ9999"))
     d.check("有「沒抓到」的分類與處理建議（確認市場、代號，或手動輸入）", d.has(ns, "沒抓到") and d.has(ns, "手動輸入"))
+    d.check("寫出原因：Yahoo 找不到這個代號", d.has(ns, "原因：Yahoo 找不到這個代號", True), [n.text for n in ns if "原因" in n.text])
     d.tap_text("關閉", exact=True)
     d.time.sleep(1)
     ns = d.shot("關閉之後")

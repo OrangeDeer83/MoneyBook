@@ -721,6 +721,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 val p = positions.firstOrNull { it.symbol == t.symbol }
                 val from = histFrom(closeDays[t.symbol to t.currency].orEmpty(), t.start, t.end, fetchDay)
                 if (p == null && from == null) continue
+                // 一檔一檔抓，中間稍微停一下，免得一次太多被 Yahoo 擋
+                if (t !== targets.first()) kotlinx.coroutines.delay(150L)
+                PriceFetcher.lastError = null
                 val h = try { PriceFetcher.history(t.symbol, t.market, from ?: (fetchDay - 7)) } catch (_: Exception) { null }
                 // 幣別要對得上（台股是 TWD；美股是 USD），舊的台幣價格不能當美金用
                 val match = h != null && (if (t.currency.isEmpty()) h.currency == "TWD" || h.currency.isEmpty() else h.currency.equals(t.currency, ignoreCase = true))
@@ -729,13 +732,24 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     // 今天的收盤還沒定：今天用最新價格，收盤價只收到昨天
                     h!!.closes.filter { it.first < fetchDay }.forEach { (day, c) -> got.add(PriceSnap(t.symbol, day, c, t.currency, close = true)) }
                     latest = h.price
-                } else if (p != null && t.currency.isEmpty()) {
-                    // 舊資料：沒選市場、Yahoo 用外幣報價的，照舊換成台幣，只抓最新價格
-                    latest = try { PriceFetcher.fetch(t.symbol, t.market)?.price } catch (_: Exception) { null }
+                } else if (h != null && t.currency.isNotEmpty()) {
+                    PriceFetcher.lastError = "幣別對不上（Yahoo 是 ${h.currency.ifEmpty { "未知" }}，持股是 ${t.currency}），請確認市場"
+                }
+                if (latest == null && p != null && (h == null || t.currency.isEmpty())) {
+                    // 歷史抓不到（或舊資料：沒選市場、Yahoo 用外幣報價的）：照以前的方式只抓最新價格
+                    latest = try {
+                        if (t.currency.isEmpty()) PriceFetcher.fetch(t.symbol, t.market)?.price
+                        else PriceFetcher.fetchNative(t.symbol, t.market)?.takeIf { it.currency.equals(t.currency, ignoreCase = true) }?.price
+                    } catch (_: Exception) { null }
                 }
                 if (p != null) {
                     if (latest != null) got.add(PriceSnap(t.symbol, fetchDay, latest, t.currency))
-                    results.add(FetchResult(p.symbol, p.name, p.market, latest, p.currency, prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p, latest)))
+                    results.add(
+                        FetchResult(
+                            p.symbol, p.name, p.market, latest, p.currency, prevOf(p)?.price, prevOf(p)?.day ?: 0L, valueOf(p, latest),
+                            reason = if (latest == null) PriceFetcher.lastError.orEmpty() else "",
+                        )
+                    )
                 }
             }
             // 外幣：持有中的順便更新目前匯率（市值才跟得上），也補歷史匯率

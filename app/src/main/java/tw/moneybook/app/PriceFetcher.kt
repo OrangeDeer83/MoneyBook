@@ -20,23 +20,54 @@ object PriceFetcher {
     /** 回傳 meta 區塊（價格、幣別、時間都在裡面）；任何錯誤都回 null */
     private fun meta(symbol: String): JSONObject? = result(symbol, "range=5d&interval=1d")?.optJSONObject("meta")
 
-    /** 回傳 chart.result[0]（meta、每天的時間與收盤價都在裡面）；任何錯誤都回 null */
+    /**
+     * 最近一次抓不到的原因（給抓價結果顯示，例如「Yahoo 暫時拒絕」「連不上網路」）。
+     * 抓價是一檔一檔依序抓的，每次失敗都會蓋掉；呼叫的人在開始抓一檔前先清掉。
+     */
+    @Volatile
+    var lastError: String? = null
+
+    /** 回傳 chart.result[0]（meta、每天的時間與收盤價都在裡面）；任何錯誤都回 null（原因記在 lastError）。
+     * Yahoo 回「請求太頻繁」（429）時等一下、換另一台主機再試一次 */
     private fun result(symbol: String, query: String): JSONObject? {
-        var c: HttpURLConnection? = null
-        return try {
-            c = URL("https://query1.finance.yahoo.com/v8/finance/chart/$symbol?$query").openConnection() as HttpURLConnection
-            c.connectTimeout = 10_000
-            c.readTimeout = 10_000
-            c.setRequestProperty("User-Agent", "Mozilla/5.0")
-            if (c.responseCode != 200) return null
-            val text = c.inputStream.bufferedReader().use { it.readText() }
-            val res = JSONObject(text).getJSONObject("chart").optJSONArray("result")
-            if (res == null || res.length() == 0) null else res.getJSONObject(0)
-        } catch (_: Exception) {
-            null
-        } finally {
-            c?.disconnect()
+        for ((i, host) in listOf("query1", "query2").withIndex()) {
+            if (i > 0) Thread.sleep(1_500L)
+            var c: HttpURLConnection? = null
+            try {
+                c = URL("https://$host.finance.yahoo.com/v8/finance/chart/$symbol?$query").openConnection() as HttpURLConnection
+                c.connectTimeout = 10_000
+                c.readTimeout = 15_000
+                c.setRequestProperty("User-Agent", "Mozilla/5.0")
+                val code = c.responseCode
+                if (code == 429 || code >= 500) {
+                    lastError = if (code == 429) "Yahoo 暫時拒絕（請求太頻繁，過幾分鐘再試）" else "Yahoo 伺服器出錯（$code）"
+                    continue
+                }
+                if (code != 200) {
+                    lastError = if (code == 404) "Yahoo 找不到這個代號" else "Yahoo 回應錯誤（$code）"
+                    return null
+                }
+                val text = c.inputStream.bufferedReader().use { it.readText() }
+                val res = JSONObject(text).getJSONObject("chart").optJSONArray("result")
+                if (res == null || res.length() == 0) {
+                    lastError = "Yahoo 沒有這個代號的資料"
+                    return null
+                }
+                return res.getJSONObject(0)
+            } catch (e: java.net.UnknownHostException) {
+                lastError = "連不上網路（找不到 Yahoo 的伺服器）"
+                return null
+            } catch (e: java.io.IOException) {
+                lastError = "連不上網路（${e.javaClass.simpleName}）"
+                return null
+            } catch (e: Exception) {
+                lastError = "看不懂 Yahoo 回傳的資料（${e.javaClass.simpleName}）"
+                return null
+            } finally {
+                c?.disconnect()
+            }
         }
+        return null
     }
 
     /** 原幣價格（不換算成台幣）：價格、日期，和 Yahoo 回報的幣別 */

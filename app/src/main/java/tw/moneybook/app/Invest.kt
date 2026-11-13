@@ -323,6 +323,8 @@ const val PRICE_JUMP = 0.30
 data class FetchResult(
     val symbol: String, val name: String, val market: String, val price: Double?, val currency: String = "",
     val prev: Double? = null, val prevDay: Long = 0L, val value: Long = 0L,
+    /** 沒抓到的原因（見 PriceFetcher.lastError）；空白是不知道 */
+    val reason: String = "",
 ) {
     val ok: Boolean get() = price != null
 

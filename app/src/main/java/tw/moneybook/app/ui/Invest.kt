@@ -345,8 +345,13 @@ fun FetchReportDialog(vm: MoneyViewModel) {
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text("沒抓到 ${failed.size} 檔", style = MaterialTheme.typography.titleSmall, color = cute.expense)
+                            // 原因：大家都一樣（例如網路不通、Yahoo 擋了）就寫在最上面一次；不一樣的寫在各檔下面
+                            val reasons = failed.map { it.reason }.distinct()
+                            val common = reasons.singleOrNull()?.takeIf { it.isNotBlank() }
+                            if (common != null) Text("原因：$common", style = MaterialTheme.typography.bodyMedium, color = cute.ink)
                             failed.forEach { r ->
                                 Text(label(r) + if (r.market.isNotBlank()) "（${Markets.label(r.market)}）" else "", style = MaterialTheme.typography.bodyMedium, color = cute.expense)
+                                if (common == null && r.reason.isNotBlank()) Text(r.reason, style = MaterialTheme.typography.bodySmall, color = cute.sub)
                             }
                             Text(
                                 "請確認市場和代號對不對（例如韓股要選「韓股」、日股代號不用加 .T），或點持股那一列手動輸入現價。也可能是網路不通。",
