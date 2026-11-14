@@ -232,7 +232,7 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
         offset = Offset(offset.x.coerceIn(fl + f - w, fl), offset.y.coerceIn(ft + f - h, ft))
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(Color(0xFF2B2421)).statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF2B2421)).statusBarsPadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 40.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("調整圖示範圍", style = MaterialTheme.typography.titleMedium, color = Color.White, modifier = Modifier.weight(1f))
                 TextButton(onClick = onDismiss) { Text("取消", color = Color(0xFFD8CFC8)) }
@@ -385,7 +385,7 @@ fun PicCutoutDialog(source: Bitmap, initialKeep: BooleanArray?, onDone: (Bitmap)
     }
     val modes = listOf("點背景", "擦掉", "補回")
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(Color(0xFF2B2421)).statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF2B2421)).statusBarsPadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 40.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("去背", style = MaterialTheme.typography.titleMedium, color = Color.White, modifier = Modifier.weight(1f))
                 TextButton(onClick = {
