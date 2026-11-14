@@ -5476,3 +5476,76 @@ def t_own_pictures():
     d.tap_text("儲存", exact=True)
     d.time.sleep(1.5)
     d.shot("分類管理")
+
+
+def push_tall_picture():
+    """放一張很長的橘色圖（120×1000）到相簿：調整畫面一打開，圖的上下就會超出中間那塊範圍"""
+    import zlib, struct, os
+    w, h = 120, 1000
+    row = b"\x00" + bytes((240, 140, 60)) * w
+    raw = row * h
+    def chunk(t, data):
+        return struct.pack(">I", len(data)) + t + data + struct.pack(">I", zlib.crc32(t + data) & 0xffffffff)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    path = os.path.join(d.OUT, "_tall.png")
+    with open(path, "wb") as f_:
+        f_.write(png)
+    d.adb("push", path, "/sdcard/Pictures/moneybook_test_tall.png")
+    d.sh("am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Pictures/moneybook_test_tall.png")
+    d.sh("content call --uri content://media --method scan_volume --arg external_primary")
+    d.time.sleep(2)
+
+
+def orange_ratio(png_path, n):
+    """截圖裡某個元件範圍內，橘色（測試圖的顏色）佔多少"""
+    from PIL import Image
+    im = Image.open(png_path).convert("RGB")
+    crop = im.crop((max(n.x1, 0), max(n.y1, 0), min(n.x2, im.width), min(n.y2, im.height)))
+    px = list(crop.getdata())
+    if not px:
+        return 0.0
+    return sum(1 for r, g, b in px if r > 215 and 115 < g < 165 and b < 90) / len(px)
+
+
+@case(D, "調整圖示範圍：很長的圖超出範圍時，不會蓋到上面的「格線」「取消」和下面的按鈕", visual=True)
+def t_crop_clip():
+    import os
+    d.fresh(f.base_seed())
+    push_tall_picture()
+    open_account("測試銀行")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    d.tap_text("圖片", exact=True)
+    d.time.sleep(3)
+    d.check("選了那張很長的圖", pick_first_picture("選相片"))
+    try:
+        d.wait_text("調整圖示範圍", timeout=10)
+    except TimeoutError:
+        d.check("跳出調整位置", False)
+        return
+    d.time.sleep(1)
+    ns = d.shot("很長的圖剛打開")
+    png = os.path.join(d.CURRENT.dir, f"{d.CURRENT._n:02d}.png")
+    for label in ("取消", "重來", "完成"):
+        n = d.first(ns, label, True)
+        r = orange_ratio(png, n) if n else 1.0
+        d.check(f"「{label}」沒有被圖蓋住", n is not None and r < 0.05, f"橘色 {r:.0%}")
+    g = next((n for n in ns if n.desc.startswith("格線")), None)
+    r = orange_ratio(png, g) if g else 1.0
+    d.check("「格線」按鈕沒有被圖蓋住", g is not None and r < 0.05, f"橘色 {r:.0%}")
+    area = next((n for n in ns if n.desc == "調整圖示範圍"), None)
+    r = orange_ratio(png, area) if area else 0.0
+    d.check("中間那塊範圍裡看得到圖", r > 0.15, f"橘色 {r:.0%}")
+    if area:
+        # 往下拖到底：圖的上面露出來，還是不能蓋到上面的按鈕
+        d.swipe(area.cx, area.y1 + 80, area.cx, area.y2 - 40, ms=600)
+        d.time.sleep(1)
+    ns = d.shot("往下拖之後")
+    png = os.path.join(d.CURRENT.dir, f"{d.CURRENT._n:02d}.png")
+    n = d.first(ns, "取消", True)
+    r = orange_ratio(png, n) if n else 1.0
+    d.check("拖動之後「取消」還是沒有被蓋住", n is not None and r < 0.05, f"橘色 {r:.0%}")
+    d.tap_text("完成", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("回到編輯帳戶")
+    d.check("按「完成」回到編輯帳戶", d.has(ns, "調整位置", True))

@@ -276,10 +276,13 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
             ) {
                 Canvas(Modifier.fillMaxSize()) {
                     if (scale <= 0f) return@Canvas
-                    drawImage(
-                        img, dstOffset = IntOffset(offset.x.roundToInt(), offset.y.roundToInt()),
-                        dstSize = IntSize((source.width * scale).roundToInt(), (source.height * scale).roundToInt()),
-                    )
+                    // 只畫在這塊範圍裡：放大或很長的圖超出去時，不會蓋到上面的「格線」「取消」和下面的按鈕
+                    clipRect {
+                        drawImage(
+                            img, dstOffset = IntOffset(offset.x.roundToInt(), offset.y.roundToInt()),
+                            dstSize = IntSize((source.width * scale).roundToInt(), (source.height * scale).roundToInt()),
+                        )
+                    }
                     val f = frame()
                     val l = (size.width - f) / 2f
                     val t = (size.height - f) / 2f
