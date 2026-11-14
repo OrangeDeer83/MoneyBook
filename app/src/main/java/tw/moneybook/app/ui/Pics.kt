@@ -53,6 +53,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
@@ -250,7 +251,8 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
                                 val zoom = ev.calculateZoom()
                                 val pan = ev.calculatePan()
                                 val c = ev.calculateCentroid()
-                                if (scale > 0f && frame() > 0f) {
+                                // 手指放開的那一次沒有中心點（Unspecified），拿來算會閃退：只在還有手指按著時移動、縮放
+                                if (scale > 0f && frame() > 0f && c.isSpecified && ev.changes.any { it.pressed }) {
                                     val lo = minScale()
                                     val ns = (scale * zoom).coerceIn(lo, lo * 8f)
                                     val k = ns / scale
@@ -438,6 +440,7 @@ fun PicCutoutDialog(source: Bitmap, initialKeep: BooleanArray?, onDone: (Bitmap)
                                         val z = ev.calculateZoom()
                                         val p = ev.calculatePan()
                                         val c = ev.calculateCentroid()
+                                        if (!c.isSpecified) continue
                                         val nz = (zoom * z).coerceIn(1f, 6f)
                                         val k = nz / zoom
                                         pan = Offset(c.x - (c.x - pan.x) * k, c.y - (c.y - pan.y) * k) + p
