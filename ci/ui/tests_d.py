@@ -5420,6 +5420,15 @@ def t_own_pictures():
             d.time.sleep(0.8)
         ns = d.shot("拖動之後")
         d.check("拖動之後沒有閃退，還在調整位置", d.has(ns, "調整圖示範圍", True), [n.text for n in ns if n.text][:10])
+        d.check("九宮格預設開著", any(n.desc == "格線：開" for n in ns), [n.desc for n in ns if n.desc][:10])
+        g = next((n for n in ns if n.desc == "格線：開"), None)
+        if g:
+            d.tap(g)
+            d.time.sleep(0.6)
+            ns = d.shot("關掉格線")
+            d.check("按「格線」關掉，再按打開", any(n.desc == "格線：關" for n in ns))
+            d.tap(next(n for n in ns if n.desc == "格線：關"))
+            d.time.sleep(0.6)
         d.tap_text("完成", exact=True)
         d.time.sleep(1.5)
     except TimeoutError:

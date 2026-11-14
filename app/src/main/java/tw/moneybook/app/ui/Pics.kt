@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
@@ -215,6 +216,8 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
     var scale by remember { mutableFloatStateOf(0f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var box by remember { mutableStateOf(IntSize.Zero) }
+    // 九宮格輔助線：每次打開都先顯示，右上角「格線」可以關掉看圖示的樣子
+    var grid by remember { mutableStateOf(true) }
     val density = LocalDensity.current
     val margin = with(density) { 28.dp.toPx() }
     fun frame(): Float = min(box.width, box.height) - margin * 2
@@ -238,6 +241,11 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
         Column(Modifier.fillMaxSize().background(Color(0xFF2B2421)).statusBarsPadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 40.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("調整圖示範圍", style = MaterialTheme.typography.titleMedium, color = Color.White, modifier = Modifier.weight(1f))
+                Box(
+                    Modifier.clip(RoundedCornerShape(50)).background(if (grid) MaterialTheme.colorScheme.primary else Color(0xFF4A403C))
+                        .clickable { grid = !grid }.padding(horizontal = 12.dp, vertical = 4.dp)
+                        .semantics { contentDescription = if (grid) "格線：開" else "格線：關" },
+                ) { Text("格線", style = MaterialTheme.typography.labelLarge, color = if (grid) Color.White else Color(0xFFB9ADA6)) }
                 TextButton(onClick = onDismiss) { Text("取消", color = Color(0xFFD8CFC8)) }
             }
             Box(
@@ -282,6 +290,17 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
                         addRoundRect(rr)
                     }
                     drawPath(p, Color.Black.copy(alpha = 0.55f))
+                    // 九宮格：框的三等分，線延伸到整個圖片畫面
+                    if (grid) {
+                        val gc = Color.White.copy(alpha = 0.55f)
+                        val gw = 1.dp.toPx()
+                        for (k in 1..2) {
+                            val gx = l + f * k / 3f
+                            val gy = t + f * k / 3f
+                            drawLine(gc, Offset(gx, 0f), Offset(gx, size.height), strokeWidth = gw)
+                            drawLine(gc, Offset(0f, gy), Offset(size.width, gy), strokeWidth = gw)
+                        }
+                    }
                     drawPath(Path().apply { addRoundRect(rr) }, Color.White, style = Stroke(width = 2.dp.toPx()))
                 }
             }
