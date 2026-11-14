@@ -229,7 +229,9 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
         val ft = (box.height - f) / 2f
         val w = source.width * scale
         val h = source.height * scale
-        offset = Offset(offset.x.coerceIn(fl + f - w, fl), offset.y.coerceIn(ft + f - h, ft))
+        // 圖片剛好跟框一樣大時，小數誤差可能讓下限比上限大一點點：取兩者的大小關係再限制，不然會閃退
+        fun fit(v: Float, a: Float, b: Float) = v.coerceIn(min(a, b), max(a, b))
+        offset = Offset(fit(offset.x, fl + f - w, fl), fit(offset.y, ft + f - h, ft))
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(Color(0xFF2B2421)).statusBarsPadding().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 40.dp)) {
@@ -248,8 +250,9 @@ fun PicCropDialog(source: Bitmap, corner: Float, onDone: (Bitmap) -> Unit, onDis
                                 val zoom = ev.calculateZoom()
                                 val pan = ev.calculatePan()
                                 val c = ev.calculateCentroid()
-                                if (scale > 0f) {
-                                    val ns = (scale * zoom).coerceIn(minScale(), minScale() * 8f)
+                                if (scale > 0f && frame() > 0f) {
+                                    val lo = minScale()
+                                    val ns = (scale * zoom).coerceIn(lo, lo * 8f)
                                     val k = ns / scale
                                     offset = Offset(c.x - (c.x - offset.x) * k, c.y - (c.y - offset.y) * k) + pan
                                     scale = ns

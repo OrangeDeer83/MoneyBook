@@ -5411,6 +5411,15 @@ def t_own_pictures():
         d.wait_text("調整圖示範圍", timeout=10)
         ns = d.shot("調整位置")
         d.check("跳出調整位置：有「重來」「完成」", d.has(ns, "重來", True) and d.has(ns, "完成", True))
+        # 拖動圖片（會跑到限制圖片範圍的地方；圖片剛好跟框一樣大時曾經閃退）
+        area = next((n for n in ns if n.desc == "調整圖示範圍"), None)
+        if area:
+            d.swipe(area.cx, area.cy, area.cx + 200, area.cy + 150, 400)
+            d.time.sleep(0.6)
+            d.swipe(area.cx, area.cy, area.cx - 300, area.cy - 300, 400)
+            d.time.sleep(0.8)
+        ns = d.shot("拖動之後")
+        d.check("拖動之後沒有閃退，還在調整位置", d.has(ns, "調整圖示範圍", True), [n.text for n in ns if n.text][:10])
         d.tap_text("完成", exact=True)
         d.time.sleep(1.5)
     except TimeoutError:
