@@ -228,6 +228,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         live = java.lang.ref.WeakReference(this)
+        // 自己的圖片：沒有帳戶、分類用到的（換掉或刪掉的）在打開 App 時清掉；刪除後按「復原」還找得回來
+        val used = (data.accounts.map { it.emoji } + data.categories.map { it.emoji } + data.books.map { it.emoji })
+            .filter { tw.moneybook.app.ui.UserPics.isPic(it) }.map { tw.moneybook.app.ui.UserPics.idOf(it) }.toSet()
+        if (data.pics.keys.any { it !in used }) data = data.copy(pics = data.pics.filterKeys { it in used })
+        tw.moneybook.app.ui.UserPics.sync(data.pics)
         // 訂閱到期通知：每次打開 App 重排一次定時檢查（換時區、改時間後也對得上）
         try {
             tw.moneybook.app.notify.SubNotifier.schedule(appContext, data.prefs)
@@ -242,6 +247,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun commit(d: AppData) {
         Money.sync(d)
+        tw.moneybook.app.ui.UserPics.sync(d.pics)
         data = d
         try {
             store.save(d)
@@ -1169,6 +1175,17 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             left.size == 1 -> recordSub(left[0].first, left[0].second)
             else -> recordAllSubs(left)
         }
+    }
+
+    /**
+     * 存一張自己的圖片（帳戶、分類圖示用），回傳圖示字串「pic:<id>」。src 是去背前的原圖（沒有就不存）。
+     * 先存進資料裡，帳戶、分類按儲存時才用到；最後沒用到的下次打開 App 清掉。
+     */
+    fun addPic(png: android.graphics.Bitmap, src: android.graphics.Bitmap? = null): String {
+        val id = "p" + System.currentTimeMillis().toString(36) + (0..999).random()
+        val pic = UserPic(tw.moneybook.app.ui.encodePic(png), src?.let { tw.moneybook.app.ui.encodePic(it, allowJpeg = true) } ?: "")
+        update { d -> d.copy(pics = d.pics + (id to pic)) }
+        return tw.moneybook.app.ui.UserPics.PREFIX + id
     }
 
     /** 刷卡通知：勾選要讀的 App（套件名稱, 名稱）；原本就有的 App 保留它對應的卡 */

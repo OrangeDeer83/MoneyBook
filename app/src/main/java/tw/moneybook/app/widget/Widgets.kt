@@ -74,7 +74,7 @@ import java.time.temporal.ChronoUnit
 // ───────────────────────── 共用 ─────────────────────────
 
 /** 小工具直接讀手機上的存檔（跟 App 同一份，沒有網路） */
-private fun loadData(context: Context): AppData = Store(context.filesDir).load().also { Money.sync(it) }
+private fun loadData(context: Context): AppData = Store(context.filesDir).load().also { Money.sync(it); tw.moneybook.app.ui.UserPics.sync(it.pics) }
 
 /** 小工具用的配色：跟著 App 選的配色，深色模式跟著系統 */
 private class WTheme(p: Pal) {
@@ -360,7 +360,10 @@ private fun TplIcon(emoji: String, color: Int, box: Int) {
         GlanceModifier.size(box.dp).background(androidx.glance.unit.ColorProvider(catColor(color).copy(alpha = 0.35f))).cornerRadius((box / 3).dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (AppLines.isLine(emoji) || AppImages.isImg(emoji)) {
+        val pic = if (tw.moneybook.app.ui.UserPics.isPic(emoji)) tw.moneybook.app.ui.UserPics.bitmap(tw.moneybook.app.ui.UserPics.idOf(emoji)) else null
+        if (pic != null) {
+            Image(ImageProvider(pic), contentDescription = null, modifier = GlanceModifier.size(img.dp).cornerRadius((img / 3).dp))
+        } else if (AppLines.isLine(emoji) || AppImages.isImg(emoji)) {
             Image(ImageProvider(AppImages.all[emoji] ?: R.drawable.img_cat_box), contentDescription = null, modifier = GlanceModifier.size(img.dp))
         } else {
             Text(emoji, style = TextStyle(fontSize = (img * 0.75f).sp))

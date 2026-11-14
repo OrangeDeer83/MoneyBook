@@ -352,16 +352,30 @@ fun AmountText(amount: Long, color: Color, modifier: Modifier = Modifier, big: B
 
 /** 圖示挑選對話框：表情符號或內建圖片 */
 @Composable
-fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -> Unit, onOwnPic: (() -> Unit)? = null) {
     var custom by remember { mutableStateOf("") }
-    var tab by remember { mutableStateOf(if (AppImages.isImg(current)) 1 else 0) }
+    var tab by remember { mutableStateOf(if (UserPics.isPic(current) && onOwnPic != null) 2 else if (AppImages.isImg(current)) 1 else 0) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("選一個圖示") },
         text = {
             Column {
-                PillSegment(listOf("表情符號", "圖片"), tab, { tab = it }, Modifier.fillMaxWidth(), equal = true)
+                PillSegment(listOf("表情符號", "圖片") + (if (onOwnPic != null) listOf("自己的") else emptyList()), tab, { tab = it }, Modifier.fillMaxWidth(), equal = true)
                 Spacer(Modifier.height(10.dp))
+                if (tab == 2 && onOwnPic != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "用手機裡的圖片當圖示，例如照片、截圖。選好之後可以調整位置、去背（點背景把顏色相近的整片去掉，再用手指擦掉或補回）。",
+                            style = MaterialTheme.typography.bodySmall, color = LocalCute.current.sub,
+                        )
+                        Text(
+                            "小技巧：Samsung 相簿長按圖片裡的東西 →「另存為圖片」，存成去好背的圖片再選，最省事。",
+                            style = MaterialTheme.typography.bodySmall, color = LocalCute.current.sub,
+                        )
+                        SoftButton("從相簿選一張", onOwnPic, Modifier.fillMaxWidth())
+                    }
+                    return@Column
+                }
                 val list = if (tab == 0) Defaults.emojis else AppImages.all.keys.toList()
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(6),

@@ -89,6 +89,11 @@ import java.time.temporal.ChronoUnit
 /** 帳戶圖示：文字徽章或表情符號 */
 @Composable
 fun AccountIcon(a: Account, size: Dp = 40.dp) {
+    // 自己的圖片：填滿整個圓角方形
+    if (a.badge.isBlank() && UserPics.isPic(a.emoji)) {
+        PicIcon(a.emoji, size, 0.32f)
+        return
+    }
     if (a.badge.isNotBlank()) {
         // 有雙色漸層就用漸層（左上到右下），沒有就用單色
         val grad = a.badgeFrom != 0L && a.badgeTo != 0L

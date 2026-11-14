@@ -154,7 +154,8 @@ object AppImages {
         "img:acc_voucher" to R.drawable.img_acc_voucher,
     )
 
-    fun isImg(s: String): Boolean = s.startsWith(PREFIX)
+    /** 圖片圖示（內建的 img:，或使用者自己的 pic:） */
+    fun isImg(s: String): Boolean = s.startsWith(PREFIX) || s.startsWith(UserPics.PREFIX)
 }
 
 /** 單色線條圖示：key 形如 `vec:calendar`，顏色跟著文字顏色（LocalContentColor） */
@@ -225,6 +226,10 @@ fun IconGlyph(e: String, fontSize: TextUnit) {
         AppLines.all[e]?.let { Icon(it, null, Modifier.size((fontSize.value * 1.1f).dp)) }
         return
     }
+    if (UserPics.isPic(e)) {
+        PicIcon(e, (fontSize.value * 1.15f).dp, 0.3f)
+        return
+    }
     if (AppImages.isImg(e)) {
         val res = imgRes(e)
         if (res != null) {
@@ -240,6 +245,10 @@ fun IconGlyph(e: String, fontSize: TextUnit) {
 /** 圖片圖示，給 CatBubble 這類已知外框大小的地方用 */
 @Composable
 fun IconImage(e: String, size: Dp) {
+    if (UserPics.isPic(e)) {
+        PicIcon(e, size, 0.3f)
+        return
+    }
     val res = imgRes(e)
     if (res != null) Image(painterResource(res), null, Modifier.size(size), contentScale = ContentScale.Fit)
     else Image(painterResource(R.drawable.img_cat_box), null, Modifier.size(size), contentScale = ContentScale.Fit)

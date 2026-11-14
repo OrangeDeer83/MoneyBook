@@ -95,6 +95,7 @@ object Codec {
         })
         root.put("subs", SubCodec.toJson(d.subs))
         root.put("notiApps", NotiAppCodec.toJson(d.notiApps))
+        root.put("pics", JSONObject().apply { d.pics.forEach { (id, p) -> put(id, JSONObject().put("png", p.png).put("src", p.src)) } })
         root.put("trades", JSONArray().apply {
             d.trades.forEach { t ->
                 put(
@@ -315,6 +316,11 @@ object Codec {
             rates = rates,
             rateHist = rateHist,
             notiApps = NotiAppCodec.fromJson(root.optJSONArray("notiApps")),
+            pics = root.optJSONObject("pics")?.let { o ->
+                o.keys().asSequence().mapNotNull { k ->
+                    o.optJSONObject(k)?.let { p -> p.optString("png", "").takeIf { it.isNotEmpty() }?.let { k to UserPic(it, p.optString("src", "")) } }
+                }.toMap()
+            } ?: emptyMap(),
             settles = settles,
             subs = subs,
         )

@@ -576,6 +576,11 @@ fun AccountDialog(
     var type by remember { mutableStateOf(acc?.type ?: AccountType.BANK) }
     var emoji by remember { mutableStateOf(acc?.emoji ?: AccountType.BANK.emoji) }
     var useBadge by remember { mutableStateOf((acc?.badge ?: "").isNotBlank()) }
+    // 自己的圖片（「圖片」）：選好、調整位置後存成 pic:<id>
+    var usePic by remember { mutableStateOf((acc?.badge ?: "").isBlank() && UserPics.isPic(acc?.emoji ?: "")) }
+    var cropSrc by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var cropping by remember { mutableStateOf(false) }
+    val pickPic = rememberPicPicker { b -> if (b != null) { cropSrc = b; cropping = true } else vm?.toast("讀不到這張圖片") }
     var badge by remember { mutableStateOf(acc?.badge ?: "") }
     var badgeCol by remember { mutableStateOf(acc?.badgeColor ?: 0) }
     // 雙色漸層的起點／終點（0 = 沒有漸層，用 badgeCol 的單色）
@@ -672,7 +677,7 @@ fun AccountDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.clickable { if (!useBadge) pick = true }) { AccountIcon(build(), 52.dp) }
+                    Box(Modifier.clickable { if (usePic) pickPic() else if (!useBadge) pick = true }) { AccountIcon(build(), 52.dp) }
                     Spacer(Modifier.width(10.dp))
                     OutlinedTextField(
                         name,
@@ -690,10 +695,20 @@ fun AccountDialog(
                     Switch(checked = favorite, onCheckedChange = { favorite = it })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    CuteChip("表情符號", !useBadge, { useBadge = false })
+                    CuteChip("表情符號", !useBadge && !usePic, {
+                        useBadge = false
+                        usePic = false
+                        if (UserPics.isPic(emoji)) emoji = type.emoji
+                    })
                     CuteChip("文字徽章", useBadge, {
                         useBadge = true
+                        usePic = false
                         if (badge.isBlank()) badge = name.take(2)
+                    })
+                    if (vm != null) CuteChip("圖片", usePic, {
+                        useBadge = false
+                        usePic = true
+                        if (!UserPics.isPic(emoji)) pickPic()
                     })
                 }
                 if (useBadge) {
@@ -730,6 +745,15 @@ fun AccountDialog(
                     }
                     Text(
                         "可以點上面的銀行或行動支付，也可以自己打字（例如「悠遊」）再選顏色；開「雙色漸層」會用你選的顏色自動配漸層。",
+                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                    )
+                } else if (usePic) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SoftButton(if (UserPics.isPic(emoji)) "換一張圖片" else "選一張圖片", { pickPic() }, Modifier.weight(1f))
+                        if (cropSrc != null && UserPics.isPic(emoji)) SoftButton("調整位置", { cropping = true }, Modifier.weight(1f))
+                    }
+                    Text(
+                        "用手機裡的圖片當圖示（例如卡片的照片、喜歡的圖案），只存在記帳本的資料裡、會跟著備份。",
                         style = MaterialTheme.typography.labelSmall, color = cute.sub,
                     )
                 } else {
@@ -920,6 +944,9 @@ fun AccountDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
     if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false })
+    cropSrc?.let { src ->
+        if (cropping && vm != null) PicCropDialog(src, 0.32f, { out -> emoji = vm.addPic(out); cropping = false }, { cropping = false })
+    }
     if (confirmDel && onDelete != null) {
         ConfirmDialog(
             "刪除帳戶？", "如果這個帳戶還有記錄，會改成隱藏，不會真的刪掉。", "刪除",
@@ -992,6 +1019,7 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             },
             onDelete = if (e.cat != null) ({ if (vm.deleteCategory(e.cat.id)) edit = null }) else null,
             onDismiss = { edit = null },
+            addPic = { b, src -> vm.addPic(b, src) },
         )
     }
 }
@@ -1025,6 +1053,8 @@ private fun CategoryDialog(
     onSave: (String, String, Int, Int) -> Unit,
     onDelete: (() -> Unit)?,
     onDismiss: () -> Unit,
+    /** 存一張自己的圖片（去背後的圖, 去背前的原圖），回傳 pic:<id> */
+    addPic: (android.graphics.Bitmap, android.graphics.Bitmap?) -> String,
 ) {
     var name by remember { mutableStateOf(cat?.name ?: "") }
     var emoji by remember { mutableStateOf(cat?.emoji ?: parent?.emoji ?: "img:cat_box") }
@@ -1032,6 +1062,16 @@ private fun CategoryDialog(
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(cat?.budgetMode ?: 0) }
+    // 自己的圖片：crop＝調整位置、cut＝去背
+    var stage by remember { mutableStateOf("") }
+    var cropSrc by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var cutSrc by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var cutKeep by remember { mutableStateOf<BooleanArray?>(null) }
+    val ctxToast = androidx.compose.ui.platform.LocalContext.current
+    val pickPic = rememberPicPicker { b ->
+        if (b != null) { cropSrc = b; stage = "crop" }
+        else android.widget.Toast.makeText(ctxToast, "讀不到這張圖片", android.widget.Toast.LENGTH_SHORT).show()
+    }
     val tries = rememberNeedTries()
     val need = firstNeed(if (name.isBlank()) Need("name", "請輸入分類名稱") else null)
     val nv = NeedView(need, tries.count)
@@ -1059,6 +1099,27 @@ private fun CategoryDialog(
                         isError = nv.on("name"), supportingText = nv.supporting("name"), modifier = Modifier.weight(1f),
                     )
                 }
+                if (UserPics.isPic(emoji)) {
+                    // 自己的圖片：再去背、換一張、調整位置（調整位置要剛選的那張原圖，所以只有這次選的才有）
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SoftButton("去背", {
+                            val id = UserPics.idOf(emoji)
+                            val src = UserPics.source(id)
+                            val cur = UserPics.bitmap(id)
+                            if (src != null) {
+                                cutSrc = src
+                                cutKeep = cur?.let { c ->
+                                    val pxs = IntArray(c.width * c.height)
+                                    c.getPixels(pxs, 0, c.width, 0, 0, c.width, c.height)
+                                    if (c.width == src.width && c.height == src.height) BooleanArray(pxs.size) { (pxs[it] ushr 24) > 16 } else null
+                                } ?: BooleanArray(src.width * src.height) { true }
+                                stage = "cut"
+                            }
+                        }, Modifier.weight(1f), compact = true)
+                        SoftButton("換一張", { pickPic() }, Modifier.weight(1f), compact = true)
+                        if (cropSrc != null) SoftButton("調整位置", { stage = "crop" }, Modifier.weight(1f), compact = true)
+                    }
+                }
                 if (parent == null) {
                     Text("顏色", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1080,7 +1141,20 @@ private fun CategoryDialog(
         confirmButton = { TextButton(onClick = { if (need != null) tries.count++ else onSave(name.trim(), emoji, color, mode) }) { Text("儲存") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
-    if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false })
+    if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false }, onOwnPic = { pick = false; pickPic() })
+    // 自己的圖片：選好 → 調整位置 → 去背（可以不去背）→ 存成 pic:<id>
+    when (stage) {
+        "crop" -> cropSrc?.let { src -> PicCropDialog(src, 0.36f, { out -> cutSrc = out; cutKeep = null; stage = "cut" }, { stage = "" }) }
+        "cut" -> cutSrc?.let { src ->
+            val fresh = cutKeep == null
+            PicCutoutDialog(
+                src, cutKeep,
+                { fin -> emoji = addPic(fin, src); stage = "" },
+                { if (fresh) emoji = addPic(src, null); stage = "" },
+                dismissLabel = if (fresh) "不去背" else "取消",
+            )
+        }
+    }
     if (confirmDel && onDelete != null) {
         ConfirmDialog(
             "刪除「${cat?.name ?: ""}」？",

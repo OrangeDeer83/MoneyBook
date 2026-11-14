@@ -5353,3 +5353,108 @@ def t_card_noti():
     d.time.sleep(3)
     ns = d.shot("收到一則")
     d.check("勾選的 App 跳的通知出現在「收到的通知」：標題和內文都在", d.has(ns, "國泰世華銀行", True) and d.has(ns, "統一超商刷卡"), [n.text for n in ns if n.text][-12:])
+
+
+def push_test_picture():
+    """放一張測試用的圖片到手機相簿：淺灰底、中間一個橘色圓（給選相片、去背用），用純 Python 產生 PNG"""
+    import zlib, struct, os
+    n = 300
+    rows = []
+    for y in range(n):
+        row = bytearray([0])
+        for x in range(n):
+            inside = (x - 150) ** 2 + (y - 150) ** 2 < 90 ** 2
+            row += bytes((240, 140, 60) if inside else (232, 232, 228))
+        rows.append(bytes(row))
+    raw = b"".join(rows)
+    def chunk(t, data):
+        return struct.pack(">I", len(data)) + t + data + struct.pack(">I", zlib.crc32(t + data) & 0xffffffff)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", n, n, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    path = os.path.join(d.OUT, "_pic.png")
+    with open(path, "wb") as f_:
+        f_.write(png)
+    d.adb("push", path, "/sdcard/Pictures/moneybook_test_icon.png")
+    d.sh("am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Pictures/moneybook_test_icon.png")
+    d.sh("content call --uri content://media --method scan_volume --arg external_primary")
+    d.time.sleep(2)
+
+
+def pick_first_picture(label):
+    """在手機內建的選相片畫面點第一張圖"""
+    for _ in range(10):
+        ns = d.nodes()
+        cands = [n for n in ns if ("Photo" in n.desc or "相片" in n.desc or "圖片" in n.desc) and n.clickable and n.cy > 300]
+        if cands:
+            d.shot(label)
+            d.tap(sorted(cands, key=lambda n: (n.cy, n.cx))[0])
+            d.time.sleep(2.5)
+            return True
+        d.time.sleep(1)
+    d.shot(label + "（找不到圖片）")
+    return False
+
+
+@case(D, "帳戶、分類可以用自己的圖片：選相片、調整位置；分類還可以點背景去背", visual=True)
+def t_own_pictures():
+    d.fresh(f.base_seed())
+    push_test_picture()
+    open_account("測試銀行")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    ns = d.shot("編輯帳戶")
+    d.check("圖示方式多了「圖片」", d.has(ns, "圖片", True) and d.has(ns, "文字徽章", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("圖片", exact=True)
+    d.time.sleep(3)
+    ok = pick_first_picture("選相片（帳戶）")
+    d.check("打開手機內建的選相片、點了第一張", ok)
+    try:
+        d.wait_text("調整圖示範圍", timeout=10)
+        ns = d.shot("調整位置")
+        d.check("跳出調整位置：有「重來」「完成」", d.has(ns, "重來", True) and d.has(ns, "完成", True))
+        d.tap_text("完成", exact=True)
+        d.time.sleep(1.5)
+    except TimeoutError:
+        d.check("跳出調整位置", False)
+    ns = d.shot("帳戶用了圖片")
+    d.check("回到編輯帳戶：有「換一張圖片」「調整位置」", d.has(ns, "換一張圖片", True) and d.has(ns, "調整位置", True), [n.text for n in ns if n.text][:25])
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    d.shot("存好的帳戶")
+    # 分類
+    to_main()
+    f.me_page("分類管理")
+    find_scroll("餐飲")
+    d.tap_text("餐飲", exact=True)
+    d.wait_text("編輯分類", timeout=8)
+    ns = d.nodes()
+    icon = next((n for n in ns if n.clickable and n.cy < (d.first(ns, "名稱", True) or ns[-1]).cy + 80 and n.x2 - n.x1 < 260 and n.cx < 400), None)
+    if icon:
+        d.tap(icon)
+        d.time.sleep(1)
+    ns = d.shot("選圖示")
+    d.check("圖示挑選多了「自己的」", d.has(ns, "自己的", True), [n.text for n in ns if n.text][:15])
+    d.tap_text("自己的", exact=True)
+    d.time.sleep(0.8)
+    d.tap_text("從相簿選一張", exact=True)
+    d.time.sleep(3)
+    pick_first_picture("選相片（分類）")
+    try:
+        d.wait_text("調整圖示範圍", timeout=10)
+        d.tap_text("完成", exact=True)
+        d.wait_text("去背", timeout=8)
+        ns = d.shot("去背")
+        d.check("調整位置之後到去背：有點背景、擦掉、補回、不去背", all(d.has(ns, t, True) for t in ("點背景", "擦掉", "補回", "不去背")), [n.text for n in ns if n.text][:20])
+        area = next((n for n in ns if n.desc == "去背的圖"), None)
+        if area:
+            d.tap_xy(area.x1 + 20, area.y1 + 20)          # 點左上角的淺灰背景
+            d.time.sleep(1)
+        d.shot("點了背景")
+        d.tap_text("完成", exact=True)
+        d.time.sleep(1.5)
+    except TimeoutError:
+        d.check("跳出調整位置、去背", False)
+    ns = d.shot("分類用了圖片")
+    d.check("回到編輯分類：有「去背」「換一張」", d.has(ns, "去背", True) and d.has(ns, "換一張", True), [n.text for n in ns if n.text][:25])
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    d.shot("分類管理")

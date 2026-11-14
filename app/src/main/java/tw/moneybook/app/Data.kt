@@ -58,6 +58,12 @@ data class Account(
     val currency: String = "",
 )
 
+/**
+ * 使用者自己選的圖示圖片（PNG 的 Base64，256×256，可以有透明）。
+ * src：去背前的原圖（再去背、把擦掉的補回來用；沒去背過是空的）。
+ */
+data class UserPic(val png: String, val src: String = "")
+
 data class Category(
     val id: Long,
     val name: String,
@@ -288,6 +294,8 @@ data class AppData(
     val rateHist: List<FxRate> = emptyList(),
     /** 刷卡通知要讀的 App 與對應的信用卡（見 CardNotiData.kt）；舊資料沒有這個欄位 */
     val notiApps: List<NotiApp> = emptyList(),
+    /** 使用者自己的圖片（帳戶、分類圖示「pic:<id>」用）：id → 圖片；跟著備份。舊資料沒有這個欄位 */
+    val pics: Map<String, UserPic> = emptyMap(),
 ) {
     val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }
