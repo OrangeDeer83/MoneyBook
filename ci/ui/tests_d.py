@@ -5262,3 +5262,51 @@ def t_invest_all():
         d.scroll_down(1)
     ns = d.shot("總資產頁")
     d.check("總資產頁有「投資成效」卡片", d.has(ns, "投資成效", True) and trend_desc(ns).startswith("投資成效折線"), [n.text for n in ns if n.text][:30])
+
+
+@case(D, "訂閱到期通知：打開開關要通知權限，到期那天由吉祥物發通知，按「記好了」就記一筆", visual=True)
+def t_sub_notify():
+    s = S.Seed(f.today())
+    s.sub("Netflix", 390, [f.today().day], done_off=-1)
+    d.fresh(s.json())
+    sub_list()
+    ns = d.shot("訂閱頁")
+    sw = next((n for n in ns if n.desc == "到期通知" and n.checkable), None)
+    d.check("最上面有「到期通知」開關，預設關著", sw is not None and not sw.checked, [n.desc for n in ns if n.checkable])
+    if sw:
+        d.tap(sw)
+        d.time.sleep(2)
+        allow = next((n for n in d.nodes() if n.text in ("Allow", "允許", "ALLOW")), None)
+        if allow:
+            d.shot("系統問通知權限")
+            d.tap(allow)
+            d.time.sleep(1.5)
+    ns = d.shot("打開到期通知")
+    d.check("打開後有幾點提醒（早上 9:00）、沒記的話再提醒（預設 2 天）、提前提醒",
+            d.has(ns, "早上 9:00 ›", True) and d.has(ns, "每天", True) and d.has(ns, "前 1 天", True) and d.has(ns, "之後 2 天同一時間再提醒"),
+            [n.text for n in ns if n.text][:30])
+    d.tap_text("每天", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("改成每天")
+    d.check("選「每天」：說明變成每天再提醒直到記了或略過", d.has(ns, "每天同一時間再提醒，直到記了或略過"), [n.text for n in ns if "提醒" in n.text])
+    # 模擬到了提醒時間（App 每天定時做的檢查）
+    d.sh(f"am broadcast -n {d.PKG}/tw.moneybook.app.notify.SubBootReceiver -a tw.moneybook.app.SUB_CHECK")
+    d.time.sleep(2)
+    d.sh("cmd statusbar expand-notifications")
+    d.time.sleep(2)
+    ns = d.shot("通知欄")
+    d.check("吉祥物發的通知：小鹿：Netflix 今天扣款喔", d.has(ns, "小鹿：Netflix 今天扣款喔"), [n.text for n in ns if n.text][:25])
+    btn = d.first(ns, "記好了", True)
+    d.check("通知上有「記好了」「略過這次」", btn is not None and d.has(ns, "略過這次", True))
+    if btn:
+        d.tap(btn)
+        d.time.sleep(2.5)
+    ns = d.shot("按了記好了")
+    d.check("按了之後通知收掉", not d.has(ns, "小鹿：Netflix 今天扣款喔"), [n.text for n in ns if n.text][:25])
+    d.sh("cmd statusbar collapse")
+    d.time.sleep(1)
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("首頁")
+    d.check("首頁的到期提醒卡不見了，多了一筆 $390", not d.has(ns, "固定扣款到期了") and d.has(ns, "$390"), [n.text for n in ns if n.text][:25])

@@ -98,6 +98,11 @@ internal fun capReimbItems(cap: Long, items: List<ReimbItem>): List<ReimbItem> {
 }
 
 class MoneyViewModel(app: Application) : AndroidViewModel(app) {
+    companion object {
+        /** 目前開著的畫面（通知上的按鈕、定時檢查要用同一份資料，免得兩邊各存一份互相蓋掉） */
+        @Volatile
+        var live: java.lang.ref.WeakReference<MoneyViewModel>? = null
+    }
 
     private val store = Store(app.filesDir)
 
@@ -221,11 +226,30 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     private val appContext = app.applicationContext
 
+    init {
+        live = java.lang.ref.WeakReference(this)
+        // 訂閱到期通知：每次打開 App 重排一次定時檢查（換時區、改時間後也對得上）
+        try {
+            tw.moneybook.app.notify.SubNotifier.schedule(appContext, data.prefs)
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onCleared() {
+        if (live?.get() === this) live = null
+        super.onCleared()
+    }
+
     private fun commit(d: AppData) {
         Money.sync(d)
         data = d
         try {
             store.save(d)
+            // 訂閱到期通知還掛在手機上：記了、略過了就跟著更新或收掉
+            try {
+                tw.moneybook.app.notify.SubNotifier.refreshShown(appContext, d)
+            } catch (_: Exception) {
+            }
             // 讓桌面上的小工具跟著更新
             viewModelScope.launch {
                 try {
@@ -1134,6 +1158,31 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val shown = if (s.isForeign) formatFx(s.amount, s.cur) else formatMoney(s.amount)
         _messages.tryEmit(UiMsg("已記 ${s.name} $shown", "復原") { undoSub(id, orig, t.id) })
         return true
+    }
+
+    /** 通知上按了「記好了」「略過這次」「全部記好」（App 開著時由這裡處理，才有「復原」）；已經處理過的跳過 */
+    fun handleSubNotice(items: List<Pair<Long, Long>>, skip: Boolean) {
+        val left = items.filter { (id, day) -> data.subs.firstOrNull { it.id == id }?.isDone(day) == false }
+        when {
+            left.isEmpty() -> tw.moneybook.app.notify.SubNotifier.refreshShown(appContext, data)
+            skip -> left.forEach { (id, day) -> skipSub(id, day) }
+            left.size == 1 -> recordSub(left[0].first, left[0].second)
+            else -> recordAllSubs(left)
+        }
+    }
+
+    /** 到期通知的設定（null＝不改）；開關關掉時收掉通知、取消定時檢查 */
+    fun setSubNotify(on: Boolean? = null, time: Int? = null, repeat: Int? = null, ahead: Int? = null) {
+        update { d ->
+            d.copy(prefs = d.prefs.copy(
+                subNotify = on ?: d.prefs.subNotify,
+                subNotifyTime = time ?: d.prefs.subNotifyTime,
+                subNotifyRepeat = repeat ?: d.prefs.subNotifyRepeat,
+                subNotifyAhead = ahead ?: d.prefs.subNotifyAhead,
+            ))
+        }
+        tw.moneybook.app.notify.SubNotifier.schedule(appContext, data.prefs)
+        if (!data.prefs.subNotify) tw.moneybook.app.notify.SubNotifier.cancel(appContext)
     }
 
     /** 這一次不記（例如這個月退訂了），可以復原 */

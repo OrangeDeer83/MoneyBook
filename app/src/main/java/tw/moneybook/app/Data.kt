@@ -260,6 +260,11 @@ data class Prefs(
     val cardLayouts: Map<String, List<String>> = emptyMap(),
     /** 趨勢頁「分類走勢」挑的分類（最多 3 個）；空的＝用預設（最近 12 個月花最多的 3 個大分類） */
     val trendCats: List<Long> = emptyList(),
+    /** 訂閱到期的手機通知（見 SubNotice.kt）：開關、幾點（一天中的第幾分鐘）、沒記再提醒幾天（SUB_REPEAT_DAILY＝每天）、提前幾天 */
+    val subNotify: Boolean = false,
+    val subNotifyTime: Int = 9 * 60,
+    val subNotifyRepeat: Int = 2,
+    val subNotifyAhead: Int = 0,
 )
 
 data class AppData(

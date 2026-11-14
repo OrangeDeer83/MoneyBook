@@ -137,6 +137,8 @@ object Codec {
                 .put("collapsedAccTypes", JSONArray(p.collapsedAccTypes))
                 .put("cardLayouts", JSONObject().apply { p.cardLayouts.forEach { (k, v) -> put(k, JSONArray(v)) } })
                 .put("trendCats", JSONArray(p.trendCats))
+                .put("subNotify", p.subNotify).put("subNotifyTime", p.subNotifyTime)
+                .put("subNotifyRepeat", p.subNotifyRepeat).put("subNotifyAhead", p.subNotifyAhead)
         )
         return root.toString()
     }
@@ -278,6 +280,10 @@ object Codec {
             collapsedAccTypes = strings(po.optJSONArray("collapsedAccTypes")),
             cardLayouts = po.optJSONObject("cardLayouts")?.let { o -> o.keys().asSequence().associateWith { k -> strings(o.optJSONArray(k)) } } ?: emptyMap(),
             trendCats = po.optJSONArray("trendCats")?.let { a -> (0 until a.length()).mapNotNull { i -> a.optLong(i, 0L).takeIf { it > 0L } } } ?: emptyList(),
+            subNotify = po.optBoolean("subNotify", false),
+            subNotifyTime = po.optInt("subNotifyTime", 9 * 60).coerceIn(0, 24 * 60 - 1),
+            subNotifyRepeat = po.optInt("subNotifyRepeat", 2),
+            subNotifyAhead = po.optInt("subNotifyAhead", 0),
         )
         val settles = objects(root.optJSONArray("settles")) { o ->
             Settle(

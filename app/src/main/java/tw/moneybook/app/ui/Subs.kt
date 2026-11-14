@@ -70,6 +70,7 @@ import tw.moneybook.app.parseFx
 import tw.moneybook.app.ruleText
 import tw.moneybook.app.subTwd
 import tw.moneybook.app.subsMonthly
+import tw.moneybook.app.mascotTitle
 
 /** 訂閱一次扣多少：台幣「$149」、外幣「US$15.49」 */
 fun subAmountText(s: Sub): String = if (s.isForeign) formatFx(s.amount, s.cur) else formatMoney(s.amount)
@@ -98,6 +99,7 @@ fun SubsScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> Unit) 
     val list = all.sortedWith(compareBy({ it.paused || nexts[it.id] == null }, { nexts[it.id] ?: Long.MAX_VALUE }, { it.id }))
     SubPage("訂閱／固定扣款", onBack) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { SubNotifyCard(vm) }
             item {
                 CuteCard(Modifier.fillMaxWidth()) {
                     Text("每月固定扣款", style = MaterialTheme.typography.labelLarge, color = cute.sub)
@@ -125,6 +127,131 @@ fun SubsScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> Unit) 
             }
         }
     }
+}
+
+/** 通知設定的時間文字：早上 9:00、下午 1:30、晚上 9:30 */
+private fun noticeTimeText(m: Int): String {
+    val h = m / 60
+    val mm = (m % 60).toString().padStart(2, '0')
+    return when {
+        h < 5 -> "凌晨 $h:$mm"
+        h < 12 -> "早上 $h:$mm"
+        h == 12 -> "中午 12:$mm"
+        h < 18 -> "下午 ${h - 12}:$mm"
+        else -> "晚上 ${h - 12}:$mm"
+    }
+}
+
+/**
+ * 到期通知的設定（訂閱頁最上面）：開關、幾點提醒、沒記的話再提醒幾天、提前提醒。
+ * 打開開關時，Android 13 以上先要「傳送通知」的權限；手機把通知關掉了就提示去設定打開。
+ */
+@Composable
+private fun SubNotifyCard(vm: MoneyViewModel) {
+    val p = vm.data.prefs
+    val cute = LocalCute.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // 從系統設定回來時重新看一次通知權限
+    var tick by remember { mutableIntStateOf(0) }
+    @Suppress("DEPRECATION")
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) tick++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    val allowed = remember(tick, p.subNotify) { tw.moneybook.app.notify.SubNotifier.allowed(ctx) }
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.setSubNotify(on = true) else vm.toast("沒有通知權限：到手機設定允許記帳本傳送通知，才收得到提醒")
+    }
+    var pickTime by remember { mutableStateOf(false) }
+    val name = p.mascotTitle(::mascotDefaultName)
+    fun openSettings() {
+        try {
+            ctx.startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) {
+        }
+    }
+    CuteCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("到期通知", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Switch(
+                checked = p.subNotify,
+                onCheckedChange = { on ->
+                    val need = android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(
+                        ctx, android.Manifest.permission.POST_NOTIFICATIONS,
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    when {
+                        !on -> vm.setSubNotify(on = false)
+                        need -> ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        else -> vm.setSubNotify(on = true)
+                    }
+                },
+                modifier = Modifier.semantics { contentDescription = "到期通知" },
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (p.mascot != "none") {
+                Mascot(p.mascot, Mood.HAPPY, Modifier.size(40.dp), animate = false)
+                Spacer(Modifier.width(10.dp))
+            }
+            Text(
+                if (p.subNotify) "$name 會在扣款那天提醒你（沒開 App 也會跳通知）" else "打開後，$name 會在扣款那天用手機通知提醒你記一筆",
+                style = MaterialTheme.typography.bodySmall, color = cute.sub,
+            )
+        }
+        if (p.subNotify && !allowed) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "手機的通知被關掉了，收不到提醒。點這裡打開",
+                style = MaterialTheme.typography.bodySmall, color = cute.expense,
+                modifier = Modifier.clickable { openSettings() }.padding(vertical = 4.dp),
+            )
+        }
+        if (p.subNotify) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { pickTime = true }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("幾點提醒", style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.weight(1f))
+                Text(noticeTimeText(p.subNotifyTime) + " ›", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            Text("沒記的話再提醒", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+            Spacer(Modifier.height(4.dp))
+            ChipRow {
+                listOf(0 to "不用", 1 to "1 天", 2 to "2 天", 3 to "3 天", tw.moneybook.app.SUB_REPEAT_DAILY to "每天").forEach { (v, l) ->
+                    CuteChip(l, p.subNotifyRepeat == v, { vm.setSubNotify(repeat = v) })
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("提前提醒", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+            Spacer(Modifier.height(4.dp))
+            ChipRow {
+                listOf(0 to "不用", 1 to "前 1 天", 3 to "前 3 天").forEach { (v, l) ->
+                    CuteChip(l, p.subNotifyAhead == v, { vm.setSubNotify(ahead = v) })
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "扣款那天" + noticeTimeText(p.subNotifyTime) + " 提醒；" +
+                    when (p.subNotifyRepeat) {
+                        0 -> "沒記也只提醒那一天。"
+                        tw.moneybook.app.SUB_REPEAT_DAILY -> "沒記也沒略過的話，每天同一時間再提醒，直到記了或略過。"
+                        else -> "沒記也沒略過的話，之後 ${p.subNotifyRepeat} 天同一時間再提醒。"
+                    } +
+                    (if (p.subNotifyAhead > 0) "扣款前 ${p.subNotifyAhead} 天也會先提醒一次。" else "") +
+                    "通知上可以直接按「記好了」或「略過這次」；外幣要確認匯率的會打開 App。",
+                style = MaterialTheme.typography.bodySmall, color = cute.sub,
+            )
+        }
+    }
+    if (pickTime) TimePickerDialog(p.subNotifyTime, { vm.setSubNotify(time = it); pickTime = false }, { pickTime = false })
 }
 
 @Composable

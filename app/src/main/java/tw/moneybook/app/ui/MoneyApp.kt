@@ -144,6 +144,8 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
     LaunchedEffect(openRequest) {
         when (openRequest) {
             "add" -> { stack = emptyList(); push(Route.Edit(null)) }
+            // 訂閱到期通知：回到首頁（最上面是到期提醒卡）
+            "home" -> { stack = emptyList(); tab = 0 }
             "reimb" -> { stack = emptyList(); push(Route.Page("reimb")) }
             "templates" -> { stack = emptyList(); push(Route.Page("templates")) }
             else -> {

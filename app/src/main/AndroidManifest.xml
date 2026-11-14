@@ -3,6 +3,9 @@
 
     <!-- 只用來抓持股價格（預設關閉，使用者在持股頁同意才會連線），不會送出任何記帳資料 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 訂閱到期提醒（使用者在訂閱頁打開「到期通知」才會要求）；開機後重排每天的檢查時間 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
@@ -75,6 +78,20 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_reimb" />
+        </receiver>
+        <!-- 訂閱到期通知：每天定時檢查與通知上的按鈕（不對外） -->
+        <receiver
+            android:name=".notify.SubNotifyReceiver"
+            android:exported="false" />
+        <!-- 開機、App 更新後重排檢查時間 -->
+        <receiver
+            android:name=".notify.SubBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="tw.moneybook.app.SUB_CHECK" />
+            </intent-filter>
         </receiver>
     </application>
 </manifest>
