@@ -7,6 +7,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- 刷卡通知選 App：列出手機上可以開啟的 App（只拿名稱與圖示） -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -79,6 +87,16 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_reimb" />
         </receiver>
+        <!-- 刷卡通知：使用者在系統設定打開「通知存取權」後，系統把通知交給它（只看勾選的 App，不連網） -->
+        <service
+            android:name=".notify.CardNotiListener"
+            android:exported="true"
+            android:label="記帳本刷卡通知"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <!-- 訂閱到期通知：每天定時檢查與通知上的按鈕（不對外） -->
         <receiver
             android:name=".notify.SubNotifyReceiver"

@@ -286,6 +286,8 @@ data class AppData(
     val subs: List<Sub> = emptyList(),
     /** 外幣每天的歷史匯率（抓價時從 Yahoo 補抓的收盤匯率），投資成效的折線換台幣用；舊資料沒有這個欄位 */
     val rateHist: List<FxRate> = emptyList(),
+    /** 刷卡通知要讀的 App 與對應的信用卡（見 CardNotiData.kt）；舊資料沒有這個欄位 */
+    val notiApps: List<NotiApp> = emptyList(),
 ) {
     val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }

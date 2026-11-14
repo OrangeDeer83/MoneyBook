@@ -94,6 +94,7 @@ object Codec {
             }
         })
         root.put("subs", SubCodec.toJson(d.subs))
+        root.put("notiApps", NotiAppCodec.toJson(d.notiApps))
         root.put("trades", JSONArray().apply {
             d.trades.forEach { t ->
                 put(
@@ -313,6 +314,7 @@ object Codec {
             prices = prices,
             rates = rates,
             rateHist = rateHist,
+            notiApps = NotiAppCodec.fromJson(root.optJSONArray("notiApps")),
             settles = settles,
             subs = subs,
         )

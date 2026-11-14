@@ -1171,6 +1171,19 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 刷卡通知：勾選要讀的 App（套件名稱, 名稱）；原本就有的 App 保留它對應的卡 */
+    fun setNotiApps(apps: List<Pair<String, String>>) {
+        update { d ->
+            val old = d.notiApps.associateBy { it.pkg }
+            d.copy(notiApps = apps.distinctBy { it.first }.map { (p, l) -> old[p]?.copy(label = l) ?: NotiApp(p, l) })
+        }
+    }
+
+    /** 刷卡通知：這個 App 的通知是哪幾張卡、沒寫末四碼時記到哪張（null＝每次問） */
+    fun setNotiAppCards(pkg: String, cardIds: List<Long>, defaultCard: Long?) {
+        update { d -> d.copy(notiApps = d.notiApps.map { if (it.pkg == pkg) it.copy(cardIds = cardIds.distinct(), defaultCard = defaultCard) else it }) }
+    }
+
     /** 到期通知的設定（null＝不改）；開關關掉時收掉通知、取消定時檢查 */
     fun setSubNotify(on: Boolean? = null, time: Int? = null, repeat: Int? = null, ahead: Int? = null) {
         update { d ->

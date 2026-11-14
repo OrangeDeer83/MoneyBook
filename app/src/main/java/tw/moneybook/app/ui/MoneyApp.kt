@@ -228,6 +228,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "data" -> DataScreen(vm) { pop() }
                 "reimb" -> ReimbScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "fxpending" -> FxPendingScreen(vm) { pop() }
+                "cardnoti" -> CardNotifyScreen(vm) { pop() }
                 "subs" -> SubsScreen(vm, onOpen = { push(Route.Page(if (it == null) "sub:new" else "sub:$it")) }) { pop() }
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
