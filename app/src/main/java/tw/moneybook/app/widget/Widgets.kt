@@ -378,7 +378,7 @@ private fun TplIcon(emoji: String, color: Int, box: Int) {
 @Composable
 private fun TplCell(context: Context, d: AppData, tp: Template, t: WTheme, tall: Boolean, maxEm: Float) {
     val cat = tp.categoryId?.let { d.catMap[it] }
-    val emoji = cat?.emoji ?: if (tp.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box"
+    val emoji = tp.icon.ifEmpty { cat?.emoji ?: if (tp.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box" }
     val name = splitName(tp.name, maxEm)
     val base = GlanceModifier.fillMaxSize().background(t.soft).cornerRadius(android.R.dimen.system_app_widget_inner_radius)
         .clickable(openApp(context, "tpl:${tp.id}"))

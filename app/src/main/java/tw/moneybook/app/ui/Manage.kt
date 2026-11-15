@@ -1226,7 +1226,7 @@ private fun TemplateCard(d: tw.moneybook.app.AppData, t: tw.moneybook.app.Templa
         padding = PaddingValues(start = 16.dp, end = if (handle != null) 4.dp else 16.dp, top = 12.dp, bottom = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CatBubble(c?.emoji ?: "img:ui_transfer", c?.color ?: 5, 40.dp)
+            CatBubble(t.icon.ifEmpty { c?.emoji ?: "img:ui_transfer" }, c?.color ?: 5, 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.name, style = MaterialTheme.typography.titleMedium)

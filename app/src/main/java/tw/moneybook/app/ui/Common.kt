@@ -352,7 +352,13 @@ fun AmountText(amount: Long, color: Color, modifier: Modifier = Modifier, big: B
 
 /** 圖示挑選對話框：表情符號或內建圖片 */
 @Composable
-fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -> Unit, onOwnPic: (() -> Unit)? = null) {
+fun EmojiPickerDialog(
+    current: String, onPick: (String) -> Unit, onDismiss: () -> Unit, onOwnPic: (() -> Unit)? = null,
+    /** 「自己的」分頁在「從相簿選一張」下面多放的東西（例如之前存過的圖片） */
+    ownExtra: (@Composable () -> Unit)? = null,
+    /** 每個分頁最下面都有的東西（例如「用分類的圖示」） */
+    footer: (@Composable () -> Unit)? = null,
+) {
     var custom by remember { mutableStateOf("") }
     var tab by remember { mutableStateOf(if (UserPics.isPic(current) && onOwnPic != null) 2 else if (AppImages.isImg(current)) 1 else 0) }
     AlertDialog(
@@ -373,7 +379,9 @@ fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -
                             style = MaterialTheme.typography.bodySmall, color = LocalCute.current.sub,
                         )
                         SoftButton("從相簿選一張", onOwnPic, Modifier.fillMaxWidth())
+                        ownExtra?.invoke()
                     }
+                    if (footer != null) { Spacer(Modifier.height(10.dp)); footer() }
                     return@Column
                 }
                 val list = if (tab == 0) Defaults.emojis else AppImages.all.keys.toList()
@@ -404,6 +412,7 @@ fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                if (footer != null) { Spacer(Modifier.height(10.dp)); footer() }
             }
         },
         confirmButton = {

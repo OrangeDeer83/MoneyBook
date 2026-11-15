@@ -616,3 +616,50 @@ fun OwnPicFlowDialogs(flow: OwnPicFlow, vm: MoneyViewModel, current: String, onR
         }
     }
 }
+
+/**
+ * 常用記帳、訂閱自己換的圖示：表情符號、內建圖片、自己的圖片都可以選（自己的圖片一樣可以調整位置、加貼紙）。
+ * icon 空白＝用分類的圖示（fallback），換過的話最下面有「用分類的圖示」可以還原。
+ * open 時跳出選圖示；調整位置、加貼紙的畫面也在這裡，所以要一直放著
+ */
+@Composable
+fun ItemIconPicker(vm: MoneyViewModel, icon: String, fallback: String, open: Boolean, onClose: () -> Unit, onIcon: (String) -> Unit) {
+    val flow = rememberOwnPicFlow(0.3f, cutout = false)
+    val cute = LocalCute.current
+    if (open) EmojiPickerDialog(
+        icon.ifEmpty { fallback }, { onIcon(it); onClose() }, onClose,
+        onOwnPic = { onClose(); flow.pick() },
+        ownExtra = {
+            if (UserPics.isPic(icon)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SoftButton("加貼紙", { onClose(); flow.redecorate() }, Modifier.weight(1f), compact = true)
+                    if (flow.canRecrop) SoftButton("調整位置", { onClose(); flow.recrop(icon) }, Modifier.weight(1f), compact = true)
+                }
+            }
+            val saved = remember { vm.ownPicChoices() }
+            if (saved.isNotEmpty()) {
+                Text("之前存過的", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(5),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(saved) { p ->
+                        Box(
+                            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
+                                .background(if (p == icon) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                .clickable { onIcon(p); onClose() }
+                                .semantics { contentDescription = "存過的圖片" },
+                            contentAlignment = Alignment.Center,
+                        ) { IconImage(p, 36.dp) }
+                    }
+                }
+            }
+        },
+        footer = if (icon.isNotEmpty()) ({
+            androidx.compose.material3.OutlinedButton(onClick = { onIcon(""); onClose() }, modifier = Modifier.fillMaxWidth()) { Text("用分類的圖示") }
+        }) else null,
+    )
+    OwnPicFlowDialogs(flow, vm, icon, onIcon)
+}

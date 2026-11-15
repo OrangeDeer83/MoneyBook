@@ -145,6 +145,8 @@ fun EditScreen(
     val accs = d.visibleAccounts.filter { !tplMode || !it.isForeign }
     val tpl = remember(tplId) { tplId?.let { id -> d.templates.firstOrNull { it.id == id } } }
     var tplName by rememberSaveable { mutableStateOf(tpl?.name ?: "") }
+    // 常用記帳自己換的圖示；空白＝用分類的圖示
+    var tplIcon by rememberSaveable { mutableStateOf(tpl?.icon ?: "") }
     var showTpl by remember { mutableStateOf(false) }
 
     var type by rememberSaveable {
@@ -395,7 +397,8 @@ fun EditScreen(
 
     val initialDraft = remember { draft() }
     val initialName = remember { tplName }
-    val dirty = draft() != initialDraft || (tplMode && tplName != initialName)
+    val initialIcon = remember { tplIcon }
+    val dirty = draft() != initialDraft || (tplMode && (tplName != initialName || tplIcon != initialIcon))
     // 前往紀錄時算不算有沒存的修改：欠款鎖住時金額本來就存不進去，改了也不算
     // （一人・全額的報銷金額跟著金額走，也不算；存檔時會照原本的金額封頂）
     fun lockedNorm(x: TxnDraft) = if (debtLocked && type == TxType.EXPENSE) {
@@ -436,7 +439,7 @@ fun EditScreen(
                 return false
             }
             saved = true
-            vm.saveTemplate(tplId, tplName.trim(), draft())
+            vm.saveTemplate(tplId, tplName.trim(), draft(), tplIcon)
             vm.toast("常用記帳已儲存")
         } else {
             saved = true
@@ -600,7 +603,7 @@ fun EditScreen(
                                     Modifier.clip(RoundedCornerShape(16.dp)).clickable { applyTemplate(tp) }.padding(vertical = 6.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
-                                    CatBubble(tc?.emoji ?: "img:ui_favorite", tc?.color ?: 1, 46.dp)
+                                    CatBubble(tp.icon.ifEmpty { tc?.emoji ?: "img:ui_favorite" }, tc?.color ?: 1, 46.dp)
                                     Text(tp.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
                                     if (tp.amount > 0) Text(formatMoney(tp.amount), style = MaterialTheme.typography.labelSmall, color = cute.sub)
                                 }
@@ -651,6 +654,10 @@ fun EditScreen(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (tplMode) CuteChip("名稱：" + tplName.ifBlank { "未命名" }, tplName.isNotBlank(), { dialog = "tplname" }, icon = "vec:pencil")
+            if (tplMode) CuteChip(
+                when { tplIcon.isEmpty() -> "圖示：跟分類一樣"; UserPics.isPic(tplIcon) -> "圖示：自己的"; else -> "圖示：換過了" },
+                false, { dialog = "tplicon" }, icon = tplIcon.ifEmpty { cat?.emoji ?: "vec:star" },
+            )
             if (!tplMode) CuteChip(dayLabel(day), false, { dialog = "date" }, icon = "vec:calendar")
             if (!tplMode) CuteChip(if (timeMin >= 0) tw.moneybook.app.formatTime(timeMin) else "未設定時間", false, { dialog = "time" }, icon = "vec:clock")
             if (type != TxType.TRANSFER && accs.isNotEmpty()) {
@@ -851,6 +858,7 @@ fun EditScreen(
             dismissButton = { TextButton(onClick = { goWho = null; saved = true; onGoRecords(w) }) { Text("不儲存", color = cute.expense) } },
         )
     }
+    if (tplMode) ItemIconPicker(vm, tplIcon, cat?.emoji ?: "img:ui_favorite", dialog == "tplicon", { if (dialog == "tplicon") dialog = "" }) { tplIcon = it }
     when (dialog) {
         "reimb" -> ReimbEditPage(
             title = "${cat?.name ?: "未分類"}・${shortDate(day)}",
