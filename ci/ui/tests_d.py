@@ -5549,3 +5549,300 @@ def t_crop_clip():
     d.time.sleep(1.5)
     ns = d.shot("回到編輯帳戶")
     d.check("按「完成」回到編輯帳戶", d.has(ns, "調整位置", True))
+
+
+def deco_area():
+    ns = d.nodes()
+    return next((n for n in ns if n.desc.startswith("加貼紙的圖")), None), ns
+
+
+def deco_count(area):
+    import re
+    m = re.search(r"(\d+) 個", area.desc if area else "")
+    return int(m.group(1)) if m else -1
+
+
+def deco_pos(area):
+    import re
+    m = re.search(r"位置 (\d+),(\d+)", area.desc if area else "")
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def deco_point(area, fx, fy):
+    """加貼紙畫面上，圖片的 (fx, fy)（0～1）在螢幕上的位置（圖片四周留了 24dp 給「×」）"""
+    import re
+    out = d.sh("wm density")
+    nums = [int(x) for x in re.findall(r"(\d+)", out or "")]
+    dens = (nums[-1] if nums else 420) / 160
+    m = 24 * dens
+    side = (area.x2 - area.x1) - 2 * m
+    return int(area.x1 + m + fx * side), int(area.y1 + m + fy * side)
+
+
+def deco_add_sticker(tab=None):
+    d.tap_text("＋ 貼紙", exact=True)
+    d.wait_text("選一個貼紙", timeout=8)
+    if tab:
+        d.tap_text(tab, exact=True)
+        d.time.sleep(0.8)
+    ns = d.shot("選貼紙" + (f"（{tab}）" if tab else ""))
+    first = next((n for n in ns if n.desc.startswith("貼紙 ")), None)
+    if first:
+        d.tap(first)
+        d.time.sleep(1)
+    return first
+
+
+def deco_add_text(t):
+    d.tap_text("＋ 文字", exact=True)
+    d.wait_text("加文字", timeout=8)
+    e = d.edits()
+    if e:
+        d.fill(e[0], t)
+    d.hide_ime()
+    d.tap_text("放上去", exact=True)
+    d.time.sleep(1)
+
+
+@case(D, "自己的圖片加貼紙、文字：選貼紙、拖動、加文字、刪掉、復原，存好後再打開還能改", visual=True)
+def t_pic_stickers():
+    d.fresh(f.base_seed())
+    push_test_picture()
+    open_account("測試銀行")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    d.tap_text("圖片", exact=True)
+    d.time.sleep(3)
+    d.check("選了圖片", pick_first_picture("選相片"))
+    d.wait_text("調整圖示範圍", timeout=10)
+    d.tap_text("完成", exact=True)
+    try:
+        d.wait_text("加貼紙、文字", timeout=8)
+    except TimeoutError:
+        d.check("調整位置之後到「加貼紙、文字」", False)
+        return
+    area, ns = deco_area()
+    d.shot("加貼紙、文字")
+    d.check("有「＋ 貼紙」「＋ 文字」「復原」「略過」「完成」「實際大小」",
+            all(d.has(ns, t, True) for t in ("＋ 貼紙", "＋ 文字", "復原", "略過", "完成", "實際大小")), [n.text for n in ns if n.text][:20])
+    d.check("一開始沒有貼紙", deco_count(area) == 0, area.desc if area else "找不到圖")
+    # 選貼紙：四個分頁
+    d.tap_text("＋ 貼紙", exact=True)
+    d.wait_text("選一個貼紙", timeout=8)
+    ns = d.shot("選貼紙")
+    d.check("貼紙有圖案、表情、吉祥物、自己的四個分頁", all(d.has(ns, t, True) for t in ("圖案", "表情", "吉祥物", "自己的")))
+    d.tap_text("吉祥物", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("吉祥物分頁")
+    d.check("吉祥物分頁有吉祥物貼紙", any(n.desc.startswith("貼紙 mascot:") for n in ns))
+    d.tap_text("圖案", exact=True)
+    d.time.sleep(0.8)
+    ns = d.nodes()
+    first = next((n for n in ns if n.desc.startswith("貼紙 img:")), None)
+    d.check("圖案分頁有內建圖案", first is not None)
+    if first:
+        d.tap(first)
+        d.time.sleep(1)
+    area, ns = deco_area()
+    d.shot("放了一個貼紙")
+    d.check("放上去 1 個、自動選取", deco_count(area) == 1 and "選取 貼紙" in area.desc, area.desc if area else "")
+    d.check("選取時左上角有「×」", any(n.desc == "刪掉這個" for n in ns))
+    # 拖動
+    before = deco_pos(area)
+    if before and area:
+        x, y = deco_point(area, before[0] / 100, before[1] / 100)
+        d.swipe(x, y, x + 180, y + 120, ms=700)
+        d.time.sleep(1)
+    area, ns = deco_area()
+    after = deco_pos(area)
+    d.shot("拖動之後")
+    d.check("拖動後位置往右下移", before and after and after[0] > before[0] + 5 and after[1] > before[1] + 5, f"{before} → {after}")
+    # 點空白處取消選取
+    if area:
+        x, y = deco_point(area, 0.95, 0.05)
+        d.tap_xy(x, y)
+        d.time.sleep(0.8)
+    area, ns = deco_area()
+    d.check("點空白的地方取消選取（「×」不見）", area and "選取" not in area.desc and not any(n.desc == "刪掉這個" for n in ns), area.desc if area else "")
+    # 文字：沒打字按「放上去」會提示
+    d.tap_text("＋ 文字", exact=True)
+    d.wait_text("加文字", timeout=8)
+    ns = d.shot("加文字")
+    d.check("加文字有顏色、白色外框", any(n.desc.startswith("文字顏色") for n in ns) and d.has(ns, "白色外框", True))
+    d.tap_text("放上去", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("沒打字就按放上去")
+    d.check("沒打字會提示「請輸入文字」", d.has(ns, "請輸入文字", True))
+    e = d.edits()
+    if e:
+        d.fill(e[0], "AB")
+    d.hide_ime()
+    col = next((n for n in d.nodes() if n.desc.startswith("文字顏色 5")), None)
+    if col:
+        d.tap(col)
+    d.tap_text("放上去", exact=True)
+    d.time.sleep(1)
+    area, ns = deco_area()
+    d.shot("加了文字")
+    d.check("加了文字：2 個、選取文字「AB」", deco_count(area) == 2 and "文字「AB」" in area.desc, area.desc if area else "")
+    # 再點一下選取中的文字：可以改
+    pos = deco_pos(area)
+    if pos and area:
+        x, y = deco_point(area, pos[0] / 100, pos[1] / 100)
+        d.tap_xy(x, y)
+        d.time.sleep(1)
+    ns = d.shot("點選取中的文字")
+    d.check("點選取中的文字跳出「改文字」", d.has(ns, "改文字", True))
+    if d.has(ns, "改文字", True):
+        e = d.edits()
+        if e:
+            d.fill(e[0], "CD")
+        d.hide_ime()
+        d.tap_text("好", exact=True)
+        d.time.sleep(1)
+    area, ns = deco_area()
+    d.check("文字改成「CD」", area and "文字「CD」" in area.desc, area.desc if area else "")
+    # 刪掉、復原
+    x_btn = next((n for n in ns if n.desc == "刪掉這個"), None)
+    if x_btn:
+        d.tap(x_btn)
+        d.time.sleep(1)
+    area, ns = deco_area()
+    d.check("按「×」刪掉：剩 1 個", deco_count(area) == 1, area.desc if area else "")
+    d.tap_text("復原", exact=True)
+    d.time.sleep(1)
+    area, ns = deco_area()
+    d.shot("復原之後")
+    d.check("按「復原」回來：2 個", deco_count(area) == 2, area.desc if area else "")
+    d.tap_text("完成", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("回到編輯帳戶")
+    d.check("回到編輯帳戶：有「加貼紙」「換一張圖片」「調整位置」", all(d.has(ns, t, True) for t in ("加貼紙", "換一張圖片", "調整位置")), [n.text for n in ns if n.text][:25])
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    d.shot("存好的帳戶")
+    # 重開 App 再打開：貼紙、文字還在，可以再改
+    d.restart()
+    open_account("測試銀行")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    ns = d.nodes()
+    d.check("重開後編輯帳戶還有「加貼紙」（沒有這次選的原圖，所以沒有「調整位置」）", d.has(ns, "加貼紙", True) and not d.has(ns, "調整位置", True))
+    d.tap_text("加貼紙", exact=True)
+    try:
+        d.wait_text("加貼紙、文字", timeout=8)
+        area, ns = deco_area()
+        d.shot("重開後再加貼紙")
+        d.check("貼紙、文字都還在（2 個），可以再改", deco_count(area) == 2, area.desc if area else "")
+        d.check("已經存好的圖，左下是「取消」", d.has(ns, "取消", True))
+        d.tap_text("取消", exact=True)
+        d.time.sleep(1)
+    except TimeoutError:
+        d.check("重開後按「加貼紙」打開加貼紙畫面", False)
+    d.tap_text("取消", exact=True)
+
+
+@case(D, "分類、帳本的自己的圖片也能加貼紙；再去背後貼紙還在", visual=True)
+def t_pic_stickers_cat_book():
+    d.fresh(f.base_seed())
+    push_test_picture()
+    to_main()
+    f.me_page("分類管理")
+    find_scroll("餐飲")
+    d.tap_text("餐飲", exact=True)
+    d.wait_text("編輯分類", timeout=8)
+    ns = d.nodes()
+    icon = next((n for n in ns if n.clickable and n.cy < (d.first(ns, "名稱", True) or ns[-1]).cy + 80 and n.x2 - n.x1 < 260 and n.cx < 400), None)
+    if icon:
+        d.tap(icon)
+        d.time.sleep(1)
+    d.tap_text("自己的", exact=True)
+    d.time.sleep(0.8)
+    d.tap_text("從相簿選一張", exact=True)
+    d.time.sleep(3)
+    pick_first_picture("選相片（分類）")
+    try:
+        d.wait_text("調整圖示範圍", timeout=10)
+        d.tap_text("完成", exact=True)
+        d.wait_text("不去背", timeout=8)
+        d.tap_text("不去背", exact=True)
+        d.wait_text("加貼紙、文字", timeout=8)
+        d.shot("分類：不去背之後到加貼紙")
+        d.check("分類：調整位置 → 去背（不去背）→ 加貼紙", True)
+        d.tap_text("略過", exact=True)
+        d.time.sleep(1.2)
+    except TimeoutError:
+        d.check("分類：調整位置 → 去背 → 加貼紙", False)
+        return
+    ns = d.shot("分類用了圖片")
+    d.check("編輯分類有「去背」「加貼紙」「換一張」「調整位置」", all(d.has(ns, t, True) for t in ("去背", "加貼紙", "換一張", "調整位置")), [n.text for n in ns if n.text][:25])
+    d.tap_text("加貼紙", exact=True)
+    d.wait_text("加貼紙、文字", timeout=8)
+    deco_add_sticker("吉祥物")
+    area, ns = deco_area()
+    d.check("分類的圖加了一個吉祥物貼紙", deco_count(area) == 1 and "mascot:" in area.desc, area.desc if area else "")
+    d.tap_text("完成", exact=True)
+    d.time.sleep(1.2)
+    # 再去背：點背景後貼紙還在
+    d.tap_text("去背", exact=True)
+    try:
+        d.wait_text("點背景", timeout=8)
+        ns = d.nodes()
+        a = next((n for n in ns if n.desc == "去背的圖"), None)
+        if a:
+            d.tap_xy(a.x1 + 20, a.y1 + 20)
+            d.time.sleep(1)
+        d.shot("再去背")
+        d.tap_text("完成", exact=True)
+        d.time.sleep(1.2)
+    except TimeoutError:
+        d.check("按「去背」打開去背畫面", False)
+    d.tap_text("加貼紙", exact=True)
+    try:
+        d.wait_text("加貼紙、文字", timeout=8)
+        area, ns = deco_area()
+        d.shot("去背後再看貼紙")
+        d.check("去背之後貼紙還在（1 個）", deco_count(area) == 1, area.desc if area else "")
+        d.tap_text("取消", exact=True)
+        d.time.sleep(1)
+    except TimeoutError:
+        d.check("去背後還能加貼紙", False)
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    d.shot("分類管理")
+    # 帳本
+    to_main()
+    f.me_page("帳本管理")
+    d.tap_text("我的帳本", exact=True)
+    d.wait_text("編輯帳本", timeout=8)
+    ns = d.nodes()
+    name = d.first(ns, "名稱", True)
+    icon = next((n for n in ns if n.clickable and name and abs(n.cy - name.cy) < 120 and n.cx < name.x1 and n.x2 - n.x1 < 260), None)
+    d.check("帳本的圖示點得到", icon is not None)
+    if icon:
+        d.tap(icon)
+        d.time.sleep(1)
+    ns = d.shot("帳本選圖示")
+    d.check("帳本的圖示挑選多了「自己的」", d.has(ns, "自己的", True))
+    d.tap_text("自己的", exact=True)
+    d.time.sleep(0.8)
+    d.tap_text("從相簿選一張", exact=True)
+    d.time.sleep(3)
+    pick_first_picture("選相片（帳本）")
+    try:
+        d.wait_text("調整圖示範圍", timeout=10)
+        d.tap_text("完成", exact=True)
+        d.wait_text("加貼紙、文字", timeout=8)
+        deco_add_text("GO")
+        area, ns = deco_area()
+        d.shot("帳本加文字")
+        d.check("帳本的圖加了文字", deco_count(area) == 1 and "文字「GO」" in area.desc, area.desc if area else "")
+        d.tap_text("完成", exact=True)
+        d.time.sleep(1.2)
+    except TimeoutError:
+        d.check("帳本：調整位置 → 加貼紙", False)
+    ns = d.shot("帳本用了圖片")
+    d.check("編輯帳本有「加貼紙」「換一張」「調整位置」", all(d.has(ns, t, True) for t in ("加貼紙", "換一張", "調整位置")), [n.text for n in ns if n.text][:20])
+    d.tap_text("儲存", exact=True)
+    d.time.sleep(1.5)
+    d.shot("帳本管理")

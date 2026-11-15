@@ -365,7 +365,7 @@ fun EmojiPickerDialog(current: String, onPick: (String) -> Unit, onDismiss: () -
                 if (tab == 2 && onOwnPic != null) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "用手機裡的圖片當圖示，例如照片、截圖。選好之後可以調整位置、去背（點背景把顏色相近的整片去掉，再用手指擦掉或補回）。",
+                            "用手機裡的圖片當圖示，例如照片、截圖。選好之後可以調整位置、加貼紙和文字；分類還可以去背（點背景把顏色相近的整片去掉，再用手指擦掉或補回）。",
                             style = MaterialTheme.typography.bodySmall, color = LocalCute.current.sub,
                         )
                         Text(
