@@ -262,7 +262,7 @@ private fun SubLine(d: AppData, s: Sub, next: Long?, today: Long, onClick: () ->
     val off = s.paused || next == null
     CuteCard(Modifier.fillMaxWidth(), color = if (off) cute.soft.copy(alpha = 0.5f) else cute.card, onClick = onClick, padding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CatBubble(c?.emoji ?: "img:cat_box", c?.color ?: 8, 40.dp)
+            CatBubble(s.icon.ifEmpty { c?.emoji ?: "img:cat_box" }, c?.color ?: 8, 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(s.name, style = MaterialTheme.typography.titleMedium, color = if (off) cute.sub else cute.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -344,6 +344,8 @@ fun SubEditScreen(vm: MoneyViewModel, id: Long?, fromTxn: Long?, onClose: () -> 
     var endCount by rememberSaveable { mutableIntStateOf(orig?.endCount ?: 12) }
     var endDay by rememberSaveable { mutableLongStateOf(orig?.endDay?.takeIf { it > 0L } ?: startDate.plusYears(1).toEpochDay()) }
     var paused by rememberSaveable { mutableStateOf(orig?.paused ?: false) }
+    // 自己換的圖示；空白＝用分類的圖示
+    var icon by rememberSaveable { mutableStateOf(orig?.icon ?: "") }
     var dialog by remember { mutableStateOf("") }
 
     val acc = accId?.let { d.accMap[it] }
@@ -362,7 +364,7 @@ fun SubEditScreen(vm: MoneyViewModel, id: Long?, fromTxn: Long?, onClose: () -> 
         categoryId = catId, accountId = accId, note = note.trim(), tags = tags,
         freq = freq, every = every, days = days, start = start,
         endMode = endMode, endCount = endCount, endDay = endDay, paused = paused,
-        doneUntil = orig?.doneUntil ?: 0L, doneDays = orig?.doneDays ?: emptyList(),
+        doneUntil = orig?.doneUntil ?: 0L, doneDays = orig?.doneDays ?: emptyList(), icon = icon,
     )
     val initial = remember { draft() }
     val dirty = draft() != initial
@@ -397,10 +399,23 @@ fun SubEditScreen(vm: MoneyViewModel, id: Long?, fromTxn: Long?, onClose: () -> 
                 Text("用這筆記錄的內容新增，之後到了扣款日首頁會提醒你記。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
             }
             Field("名稱") {
-                OutlinedTextField(
-                    name, { name = it.take(30) }, placeholder = { Text("例如 Netflix、手機月租") }, singleLine = true,
-                    isError = nv.on("name"), supportingText = nv.supporting("name"), shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth().needInView(nv, "name"),
+                val ic = catId?.let { d.catMap[it] }
+                Row {
+                    // 名稱左邊的圖示：點一下換；沒換就用分類的圖示
+                    Box(
+                        Modifier.padding(top = 2.dp).clip(RoundedCornerShape(18.dp)).clickable { dialog = "icon" }
+                            .semantics { contentDescription = "換圖示" },
+                    ) { CatBubble(icon.ifEmpty { ic?.emoji ?: "img:cat_box" }, ic?.color ?: 8, 52.dp) }
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedTextField(
+                        name, { name = it.take(30) }, placeholder = { Text("例如 Netflix、手機月租") }, singleLine = true,
+                        isError = nv.on("name"), supportingText = nv.supporting("name"), shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f).needInView(nv, "name"),
+                    )
+                }
+                Text(
+                    if (icon.isEmpty()) "點圖示可以換；沒換就用分類的圖示" else "點圖示可以再換或改回分類的圖示",
+                    style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp),
                 )
             }
             Field("帳戶") {
@@ -524,6 +539,7 @@ fun SubEditScreen(vm: MoneyViewModel, id: Long?, fromTxn: Long?, onClose: () -> 
         }
     }
 
+    ItemIconPicker(vm, icon, catId?.let { d.catMap[it]?.emoji } ?: "img:cat_box", dialog == "icon", { if (dialog == "icon") dialog = "" }) { icon = it }
     when (dialog) {
         "acc" -> AccountPickDialog(vm, accs, accId, { a ->
             accId = a.id
@@ -681,7 +697,7 @@ fun SubDueCard(vm: MoneyViewModel, due: List<Pair<Sub, Long>>) {
             val c = s.categoryId?.let { d.catMap[it] }
             val a = s.accountId?.let { d.accMap[it] }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                CatBubble(c?.emoji ?: "img:cat_box", c?.color ?: 8, 34.dp)
+                CatBubble(s.icon.ifEmpty { c?.emoji ?: "img:cat_box" }, c?.color ?: 8, 34.dp)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(s.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
