@@ -686,7 +686,7 @@ fun AccountDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.clickable { if (usePic) pickPic() else if (!useBadge) pick = true }) { AccountIcon(build(), 52.dp) }
+                    Box(Modifier.clickable { if (usePic) picFlow.pick() else if (!useBadge) pick = true }) { AccountIcon(build(), 52.dp) }
                     Spacer(Modifier.width(10.dp))
                     OutlinedTextField(
                         name,
