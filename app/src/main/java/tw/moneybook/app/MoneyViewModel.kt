@@ -1300,14 +1300,14 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** id = null 代表新增 */
-    fun saveTemplate(id: Long?, name: String, dr: TxnDraft) {
+    fun saveTemplate(id: Long?, name: String, dr: TxnDraft, icon: String = "") {
         update { d ->
             if (id == null) {
-                val t = Template(d.nextId, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags)
+                val t = Template(d.nextId, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags, icon)
                 d.copy(templates = d.templates + t, nextId = d.nextId + 1)
             } else {
                 d.copy(templates = d.templates.map {
-                    if (it.id == id) Template(id, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags) else it
+                    if (it.id == id) Template(id, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags, icon) else it
                 })
             }
         }

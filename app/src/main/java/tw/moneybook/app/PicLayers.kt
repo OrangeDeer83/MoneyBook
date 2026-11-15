@@ -142,7 +142,7 @@ private const val PIC_PREFIX = "pic:"
 fun AppData.usedPicIds(): Set<String> {
     val used = HashSet<String>()
     val queue = ArrayDeque<String>()
-    (accounts.map { it.emoji } + categories.map { it.emoji } + books.map { it.emoji })
+    (accounts.map { it.emoji } + categories.map { it.emoji } + books.map { it.emoji } + templates.map { it.icon } + subs.map { it.icon })
         .filter { it.startsWith(PIC_PREFIX) }.forEach { queue.add(it.removePrefix(PIC_PREFIX)) }
     while (queue.isNotEmpty()) {
         val id = queue.removeFirst()

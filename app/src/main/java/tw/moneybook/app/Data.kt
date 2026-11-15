@@ -247,6 +247,8 @@ data class Template(
     val accountId: Long?,
     val note: String,
     val tags: List<String>,
+    /** 自己換的圖示；空白＝用分類的圖示 */
+    val icon: String = "",
 )
 
 data class Prefs(

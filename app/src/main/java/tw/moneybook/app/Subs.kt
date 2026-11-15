@@ -37,6 +37,8 @@ data class Sub(
     val paused: Boolean = false,
     val doneUntil: Long,
     val doneDays: List<Long> = emptyList(),
+    /** 自己換的圖示；空白＝用分類的圖示 */
+    val icon: String = "",
 ) {
     val isForeign: Boolean get() = cur.isNotEmpty()
 
@@ -199,6 +201,7 @@ object SubCodec {
                     .put("freq", s.freq).put("every", s.every).put("days", JSONArray(s.days)).put("start", s.start)
                     .put("endMode", s.endMode).put("endCount", s.endCount).put("endDay", s.endDay)
                     .put("paused", s.paused).put("doneUntil", s.doneUntil).put("doneDays", JSONArray(s.doneDays))
+                    .apply { if (s.icon.isNotEmpty()) put("icon", s.icon) }
             )
         }
     }
@@ -228,6 +231,7 @@ object SubCodec {
                     endCount = o.optInt("endCount", 12),
                     endDay = o.optLong("endDay", 0L),
                     paused = o.optBoolean("paused", false),
+                    icon = o.optString("icon", ""),
                     doneUntil = o.optLong("doneUntil", start - 1),
                     doneDays = o.optJSONArray("doneDays")?.let { d -> (0 until d.length()).map { d.optLong(it) } } ?: emptyList(),
                 )

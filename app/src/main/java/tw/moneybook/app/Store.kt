@@ -90,6 +90,7 @@ object Codec {
                         .put("amount", t.amount).put("categoryId", nullable(t.categoryId))
                         .put("accountId", nullable(t.accountId)).put("note", t.note)
                         .put("tags", JSONArray(t.tags))
+                        .apply { if (t.icon.isNotEmpty()) put("icon", t.icon) }
                 )
             }
         })
@@ -245,6 +246,7 @@ object Codec {
                 accountId = o.optLongOrNull("accountId"),
                 note = o.optString("note", ""),
                 tags = strings(o.optJSONArray("tags")),
+                icon = o.optString("icon", ""),
             )
         }
         val trades = objects(root.optJSONArray("trades")) { o ->
