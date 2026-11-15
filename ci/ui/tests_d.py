@@ -5855,3 +5855,216 @@ def t_pic_stickers_cat_book():
     d.tap_text("儲存", exact=True)
     d.time.sleep(1.5)
     d.shot("帳本管理")
+
+
+class _Box:
+    """截圖裡的一塊範圍（給 orange_ratio 用）"""
+    def __init__(self, x1, y1, x2, y2):
+        self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
+
+
+def last_png():
+    import os
+    return os.path.join(d.CURRENT.dir, f"{d.CURRENT._n:02d}.png")
+
+
+def bubble_left_of(ns, png, text):
+    """清單裡某個名稱左邊那一塊（同一列的圖示）有多少橘色（測試圖的顏色）；找不到名稱回傳 -1"""
+    n = next((x for x in ns if x.text == text), None)
+    if not n:
+        return -1.0
+    return orange_ratio(png, _Box(0, n.y1 - 40, n.x1, n.y2 + 40))
+
+
+def tpl_icon_chip(ns=None):
+    ns = ns or d.nodes()
+    return next((n for n in ns if n.text.startswith("圖示：")), None)
+
+
+def tap_lowest(label):
+    ns = d.nodes()
+    b = [n for n in ns if n.text == label]
+    d.tap(max(b, key=lambda n: n.cy))
+
+
+@case(D, "常用記帳可以換圖示：表情符號、自己的圖片（可以加貼紙）、改回分類的圖示；清單和記一筆的常用都顯示", visual=True)
+def t_tpl_icon():
+    d.fresh(tpl_seed().json())
+    push_test_picture()
+    to_main()
+    f.me_page("常用記帳")
+    d.tap_text("早餐", exact=True)
+    d.wait_text("名稱：早餐", timeout=8)
+    d.time.sleep(0.8)
+    c = tpl_icon_chip()
+    d.check("編輯常用記帳有「圖示：跟分類一樣」", c is not None and c.text == "圖示：跟分類一樣", c.text if c else "")
+    if not c:
+        return
+    d.tap(c)
+    d.wait_text("選一個圖示", timeout=8)
+    ns = d.shot("選圖示（還沒換過）")
+    d.check("三個分頁都有，還沒換過時沒有「用分類的圖示」",
+            all(d.has(ns, t, True) for t in ("表情符號", "圖片", "自己的")) and not d.has(ns, "用分類的圖示", True))
+    d.tap_text("表情符號", exact=True)
+    d.time.sleep(0.6)
+    d.tap_text("🍜", exact=True)
+    d.time.sleep(0.8)
+    c = tpl_icon_chip()
+    d.check("選了表情符號：「圖示：換過了」", c is not None and c.text == "圖示：換過了", c.text if c else "")
+    if not c:
+        return
+    # 換成自己的圖片
+    d.tap(c)
+    d.wait_text("選一個圖示", timeout=8)
+    d.check("換過之後有「用分類的圖示」", d.has(d.nodes(), "用分類的圖示", True))
+    d.tap_text("自己的", exact=True)
+    d.time.sleep(0.6)
+    d.tap_text("從相簿選一張", exact=True)
+    d.time.sleep(3)
+    pick_first_picture("選相片（常用記帳）")
+    try:
+        d.wait_text("調整圖示範圍", timeout=10)
+        d.tap_text("完成", exact=True)
+        d.wait_text("加貼紙、文字", timeout=8)
+        d.check("自己的圖片：調整位置 → 加貼紙（不去背）", True)
+        deco_add_text("AM")
+        d.tap_text("完成", exact=True)
+        d.time.sleep(1.2)
+    except TimeoutError:
+        d.check("自己的圖片：調整位置 → 加貼紙", False)
+        return
+    c = tpl_icon_chip()
+    d.check("「圖示：自己的」", c is not None and c.text == "圖示：自己的", c.text if c else "")
+    if not c:
+        return
+    d.tap(c)
+    d.wait_text("選一個圖示", timeout=8)
+    ns = d.shot("自己的分頁")
+    d.check("自己的分頁：有「加貼紙」「調整位置」", d.has(ns, "加貼紙", True) and d.has(ns, "調整位置", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("加貼紙", exact=True)
+    try:
+        d.wait_text("加貼紙、文字", timeout=8)
+        area, _ = deco_area()
+        d.check("再打開加貼紙：剛加的文字還在", deco_count(area) == 1 and "AM" in area.desc, area.desc if area else "")
+        d.tap_text("取消", exact=True)
+        d.time.sleep(1)
+    except TimeoutError:
+        d.check("從選圖示打開加貼紙", False)
+    tap_lowest("完成")
+    d.wait_text("＋ 新增常用記帳", timeout=10)
+    d.time.sleep(1)
+    ns = d.shot("常用記帳清單")
+    r1, r2 = bubble_left_of(ns, last_png(), "早餐"), bubble_left_of(ns, last_png(), "捷運")
+    d.check("清單：早餐用自己的圖（橘色），捷運還是分類的圖示", r1 > 0.02 and 0 <= r2 < 0.005, f"早餐 {r1:.1%}、捷運 {r2:.1%}")
+    # 記一筆的常用
+    to_main()
+    f.open_add()
+    d.time.sleep(1)
+    d.tap_text("常用", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("記一筆的常用")
+    b = next((n for n in ns if n.text == "早餐"), None)
+    ratio = orange_ratio(last_png(), _Box(b.x1 - 40, b.y1 - 180, b.x2 + 40, b.y1)) if b else -1
+    d.check("記一筆的常用：早餐上面是自己的圖", ratio > 0.02, f"{ratio:.1%}")
+    d.tap_back()
+    d.time.sleep(1)
+    # 重開 App 還在，改回分類的圖示
+    d.restart()
+    f.me_page("常用記帳")
+    d.tap_text("早餐", exact=True)
+    d.wait_text("名稱：早餐", timeout=8)
+    d.time.sleep(0.8)
+    c = tpl_icon_chip()
+    d.check("重開後還是「圖示：自己的」", c is not None and c.text == "圖示：自己的", c.text if c else "")
+    if not c:
+        return
+    d.tap(c)
+    d.wait_text("選一個圖示", timeout=8)
+    ns = d.shot("重開後選圖示")
+    d.check("自己的分頁有「之前存過的」圖片", d.has(ns, "之前存過的", True) and any(n.desc == "存過的圖片" for n in ns))
+    d.tap_text("用分類的圖示", exact=True)
+    d.time.sleep(0.8)
+    c = tpl_icon_chip()
+    d.check("按「用分類的圖示」：變回「圖示：跟分類一樣」", c is not None and c.text == "圖示：跟分類一樣", c.text if c else "")
+    tap_lowest("完成")
+    d.wait_text("＋ 新增常用記帳", timeout=10)
+    d.time.sleep(1)
+    ns = d.shot("改回分類的圖示")
+    r1 = bubble_left_of(ns, last_png(), "早餐")
+    d.check("清單：早餐變回分類的圖示（沒有橘色）", 0 <= r1 < 0.005, f"{r1:.1%}")
+
+
+@case(D, "訂閱可以換圖示：名稱左邊點一下換成自己的圖片，清單和首頁到期提醒都顯示；可以改回分類的圖示", visual=True)
+def t_sub_icon():
+    s = S.Seed(f.today())
+    s.sub("影音平台", 390, [f.today().day], done_off=-1)
+    s.sub("音樂", 149, [f.today().day], done_off=-1)
+    d.fresh(s.json())
+    push_test_picture()
+    to_main()
+    sub_list()
+    d.tap_text("影音平台", exact=True)
+    d.wait_text("修改訂閱", timeout=8)
+    d.time.sleep(0.8)
+    ns = d.shot("修改訂閱")
+    ic = next((n for n in ns if n.desc == "換圖示"), None)
+    nm = next((e for e in d.edits() if e.text == "影音平台"), None)
+    d.check("名稱左邊有圖示、下面寫「點圖示可以換；沒換就用分類的圖示」",
+            ic is not None and nm is not None and ic.cx < nm.x1 and d.has(ns, "點圖示可以換；沒換就用分類的圖示", True),
+            [n.text for n in ns if n.text][:15])
+    if not ic:
+        return
+    d.tap(ic)
+    d.wait_text("選一個圖示", timeout=8)
+    d.tap_text("自己的", exact=True)
+    d.time.sleep(0.6)
+    d.tap_text("從相簿選一張", exact=True)
+    d.time.sleep(3)
+    pick_first_picture("選相片（訂閱）")
+    try:
+        d.wait_text("調整圖示範圍", timeout=10)
+        d.tap_text("完成", exact=True)
+        d.wait_text("加貼紙、文字", timeout=8)
+        d.tap_text("略過", exact=True)
+        d.time.sleep(1.2)
+    except TimeoutError:
+        d.check("自己的圖片：調整位置 → 加貼紙", False)
+        return
+    ns = d.shot("換好圖示")
+    ic = next((n for n in ns if n.desc == "換圖示"), None)
+    r = orange_ratio(last_png(), ic) if ic else 0
+    d.check("名稱左邊變成自己的圖、提示改成「點圖示可以再換或改回分類的圖示」",
+            r > 0.05 and d.has(ns, "點圖示可以再換或改回分類的圖示", True), f"橘色 {r:.0%}")
+    sub_save()
+    d.wait_text("每月固定扣款", timeout=8)
+    ns = d.shot("訂閱清單")
+    r1, r2 = bubble_left_of(ns, last_png(), "影音平台"), bubble_left_of(ns, last_png(), "音樂")
+    d.check("清單：影音平台用自己的圖，音樂還是分類的圖示", r1 > 0.02 and 0 <= r2 < 0.005, f"影音平台 {r1:.1%}、音樂 {r2:.1%}")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("首頁到期提醒")
+    r1, r2 = bubble_left_of(ns, last_png(), "影音平台"), bubble_left_of(ns, last_png(), "音樂")
+    d.check("首頁到期提醒：影音平台用自己的圖", r1 > 0.02 and 0 <= r2 < 0.005, f"影音平台 {r1:.1%}、音樂 {r2:.1%}")
+    # 重開後改回分類的圖示
+    d.restart()
+    sub_list()
+    d.tap_text("影音平台", exact=True)
+    d.wait_text("修改訂閱", timeout=8)
+    d.time.sleep(0.8)
+    ic = next((n for n in d.nodes() if n.desc == "換圖示"), None)
+    if not ic:
+        d.check("重開後名稱左邊還有圖示", False)
+        return
+    d.tap(ic)
+    d.wait_text("選一個圖示", timeout=8)
+    ns = d.shot("重開後選圖示")
+    d.check("重開後還是自己的圖：打開在「自己的」、有「用分類的圖示」", d.has(ns, "從相簿選一張", True) and d.has(ns, "用分類的圖示", True))
+    d.tap_text("用分類的圖示", exact=True)
+    d.time.sleep(0.8)
+    d.check("改回後提示變回「點圖示可以換；沒換就用分類的圖示」", d.has(d.nodes(), "點圖示可以換；沒換就用分類的圖示", True))
+    sub_save()
+    d.wait_text("每月固定扣款", timeout=8)
+    ns = d.shot("改回分類的圖示")
+    r1 = bubble_left_of(ns, last_png(), "影音平台")
+    d.check("清單：影音平台變回分類的圖示", 0 <= r1 < 0.005, f"{r1:.1%}")
