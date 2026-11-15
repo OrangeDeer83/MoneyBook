@@ -5945,6 +5945,11 @@ def t_tpl_icon():
     try:
         d.wait_text("加貼紙、文字", timeout=8)
         area, _ = deco_area()
+        if area:
+            # 沒選取時描述只寫幾個，點一下文字（第一個放在 40%,40%）選取才看得到內容
+            d.tap_xy(*deco_point(area, 0.4, 0.4))
+            d.time.sleep(0.8)
+            area, _ = deco_area()
         d.check("再打開加貼紙：剛加的文字還在", deco_count(area) == 1 and "AM" in area.desc, area.desc if area else "")
         d.tap_text("取消", exact=True)
         d.time.sleep(1)
