@@ -119,8 +119,14 @@ object UserPics {
         return img
     }
 
-    /** 去背前的原圖（再去背、補回用）；沒有就用存好的那張 */
-    fun source(id: String): Bitmap? = data[id]?.src?.takeIf { it.isNotEmpty() }?.let { decodeB64(it) } ?: bitmap(id)
+    /** 去背前的原圖（再去背、補回用）；沒有就用還沒貼東西的底圖 */
+    fun source(id: String): Bitmap? = data[id]?.src?.takeIf { it.isNotEmpty() }?.let { decodeB64(it) } ?: base(id)
+
+    /** 還沒貼貼紙、文字的底圖；沒加過貼紙的就是存好的那張 */
+    fun base(id: String): Bitmap? = data[id]?.base?.takeIf { it.isNotEmpty() }?.let { decodeB64(it) } ?: bitmap(id)
+
+    /** 這張圖上的貼紙、文字 */
+    fun layers(id: String): List<tw.moneybook.app.PicLayer> = data[id]?.layers ?: emptyList()
 }
 
 private fun decodeB64(s: String): Bitmap? = try {
@@ -188,7 +194,7 @@ fun PicIcon(e: String, size: Dp, corner: Float = 0.32f) {
 }
 
 /** 灰白格子：已經變透明的地方 */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.checker(cell: Float) {
+internal fun androidx.compose.ui.graphics.drawscope.DrawScope.checker(cell: Float) {
     val a = Color(0xFFFFFFFF)
     val b = Color(0xFFE2E2E2)
     var y = 0f

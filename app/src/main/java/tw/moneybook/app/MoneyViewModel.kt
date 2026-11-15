@@ -228,9 +228,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         live = java.lang.ref.WeakReference(this)
-        // 自己的圖片：沒有帳戶、分類用到的（換掉或刪掉的）在打開 App 時清掉；刪除後按「復原」還找得回來
-        val used = (data.accounts.map { it.emoji } + data.categories.map { it.emoji } + data.books.map { it.emoji })
-            .filter { tw.moneybook.app.ui.UserPics.isPic(it) }.map { tw.moneybook.app.ui.UserPics.idOf(it) }.toSet()
+        // 自己的圖片：沒有帳本、帳戶、分類用到的（換掉或刪掉的）在打開 App 時清掉；刪除後按「復原」還找得回來。
+        // 當作貼紙貼在別張圖上的也算有用到（下次還要能修改）
+        val used = data.usedPicIds()
         if (data.pics.keys.any { it !in used }) data = data.copy(pics = data.pics.filterKeys { it in used })
         tw.moneybook.app.ui.UserPics.sync(data.pics)
         // 訂閱到期通知：每次打開 App 重排一次定時檢查（換時區、改時間後也對得上）
@@ -1181,12 +1181,43 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
      * 存一張自己的圖片（帳戶、分類圖示用），回傳圖示字串「pic:<id>」。src 是去背前的原圖（沒有就不存）。
      * 先存進資料裡，帳戶、分類按儲存時才用到；最後沒用到的下次打開 App 清掉。
      */
-    fun addPic(png: android.graphics.Bitmap, src: android.graphics.Bitmap? = null): String {
-        val id = "p" + System.currentTimeMillis().toString(36) + (0..999).random()
-        val pic = UserPic(tw.moneybook.app.ui.encodePic(png), src?.let { tw.moneybook.app.ui.encodePic(it, allowJpeg = true) } ?: "")
+    fun addPic(
+        png: android.graphics.Bitmap,
+        src: android.graphics.Bitmap? = null,
+        /** 有貼紙、文字時：還沒貼東西的底圖和貼紙、文字（下次還能再改） */
+        base: android.graphics.Bitmap? = null,
+        layers: List<PicLayer> = emptyList(),
+    ): String {
+        val id = newPicId()
+        val deco = base != null && layers.isNotEmpty()
+        val pic = UserPic(
+            tw.moneybook.app.ui.encodePic(png),
+            src?.let { tw.moneybook.app.ui.encodePic(it, allowJpeg = true) } ?: "",
+            if (deco) tw.moneybook.app.ui.encodePic(base!!, allowJpeg = true) else "",
+            if (deco) layers else emptyList(),
+        )
         update { d -> d.copy(pics = d.pics + (id to pic)) }
         return tw.moneybook.app.ui.UserPics.PREFIX + id
     }
+
+    /**
+     * 已經存好的圖片重新加貼紙、文字：底圖、去背前的原圖照用（不重新壓縮），回傳新的 pic:<id>；
+     * 貼紙、文字都刪光了就變回底圖。存成新的一張，帳戶、分類按「取消」時原本那張還在。
+     */
+    fun redecoratePic(oldId: String, out: android.graphics.Bitmap?, layers: List<PicLayer>): String? {
+        val old = data.pics[oldId] ?: return null
+        val base = old.base.ifEmpty { old.png }
+        val pic = if (layers.isEmpty() || out == null) UserPic(base, old.src)
+        else UserPic(tw.moneybook.app.ui.encodePic(out), old.src, base, layers)
+        val id = newPicId()
+        update { d -> d.copy(pics = d.pics + (id to pic)) }
+        return tw.moneybook.app.ui.UserPics.PREFIX + id
+    }
+
+    /** 可以當貼紙的自己的圖片（有用到的那些） */
+    fun ownPicChoices(): List<String> = data.usedPicIds().filter { it in data.pics }.sorted().map { tw.moneybook.app.ui.UserPics.PREFIX + it }
+
+    private fun newPicId(): String = "p" + System.currentTimeMillis().toString(36) + (0..999).random()
 
     /** 刷卡通知：勾選要讀的 App（套件名稱, 名稱）；原本就有的 App 保留它對應的卡 */
     fun setNotiApps(apps: List<Pair<String, String>>) {

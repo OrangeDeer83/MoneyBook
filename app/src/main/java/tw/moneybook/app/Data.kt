@@ -61,8 +61,10 @@ data class Account(
 /**
  * 使用者自己選的圖示圖片（PNG 的 Base64，256×256，可以有透明）。
  * src：去背前的原圖（再去背、把擦掉的補回來用；沒去背過是空的）。
+ * base、layers：加了貼紙、文字時，還沒貼東西的底圖和每個貼紙、文字（下次還能再拖動、修改）；png 是合成好的圖。
+ * 沒加過的 base 是空的、layers 沒有東西，png 就是底圖。
  */
-data class UserPic(val png: String, val src: String = "")
+data class UserPic(val png: String, val src: String = "", val base: String = "", val layers: List<PicLayer> = emptyList())
 
 data class Category(
     val id: Long,

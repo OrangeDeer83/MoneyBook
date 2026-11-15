@@ -95,7 +95,13 @@ object Codec {
         })
         root.put("subs", SubCodec.toJson(d.subs))
         root.put("notiApps", NotiAppCodec.toJson(d.notiApps))
-        root.put("pics", JSONObject().apply { d.pics.forEach { (id, p) -> put(id, JSONObject().put("png", p.png).put("src", p.src)) } })
+        root.put("pics", JSONObject().apply {
+            d.pics.forEach { (id, p) ->
+                val o = JSONObject().put("png", p.png).put("src", p.src)
+                if (p.layers.isNotEmpty()) o.put("base", p.base).put("layers", PicLayerCodec.toJson(p.layers))
+                put(id, o)
+            }
+        })
         root.put("trades", JSONArray().apply {
             d.trades.forEach { t ->
                 put(
@@ -318,7 +324,12 @@ object Codec {
             notiApps = NotiAppCodec.fromJson(root.optJSONArray("notiApps")),
             pics = root.optJSONObject("pics")?.let { o ->
                 o.keys().asSequence().mapNotNull { k ->
-                    o.optJSONObject(k)?.let { p -> p.optString("png", "").takeIf { it.isNotEmpty() }?.let { k to UserPic(it, p.optString("src", "")) } }
+                    o.optJSONObject(k)?.let { p ->
+                        p.optString("png", "").takeIf { it.isNotEmpty() }?.let {
+                            val base = p.optString("base", "")
+                            k to UserPic(it, p.optString("src", ""), base, if (base.isEmpty()) emptyList() else PicLayerCodec.fromJson(p.optJSONArray("layers")))
+                        }
+                    }
                 }.toMap()
             } ?: emptyMap(),
             settles = settles,
