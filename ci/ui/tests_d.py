@@ -5550,9 +5550,14 @@ def t_crop_clip():
     r = orange_ratio(png, n) if n else 1.0
     d.check("拖動之後「取消」還是沒有被蓋住", n is not None and r < 0.05, f"橘色 {r:.0%}")
     d.tap_text("完成", exact=True)
+    try:
+        d.wait_text("加貼紙、文字", timeout=8)     # 調整位置之後多一步加貼紙（這裡略過）
+        d.tap_text("略過", exact=True)
+    except TimeoutError:
+        pass
     d.time.sleep(1.5)
     ns = d.shot("回到編輯帳戶")
-    d.check("按「完成」回到編輯帳戶", d.has(ns, "調整位置", True))
+    d.check("按「完成」、略過加貼紙，回到編輯帳戶", d.has(ns, "調整位置", True))
 
 
 def deco_area():
