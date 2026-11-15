@@ -5430,9 +5430,11 @@ def t_own_pictures():
             d.tap(next(n for n in ns if n.desc == "格線：關"))
             d.time.sleep(0.6)
         d.tap_text("完成", exact=True)
+        d.wait_text("加貼紙、文字", timeout=8)     # 調整位置之後多一步加貼紙（這裡略過）
+        d.tap_text("略過", exact=True)
         d.time.sleep(1.5)
     except TimeoutError:
-        d.check("跳出調整位置", False)
+        d.check("跳出調整位置、加貼紙", False)
     ns = d.shot("帳戶用了圖片")
     d.check("回到編輯帳戶：有「換一張圖片」「調整位置」", d.has(ns, "換一張圖片", True) and d.has(ns, "調整位置", True), [n.text for n in ns if n.text][:25])
     d.tap_text("儲存", exact=True)
@@ -5468,9 +5470,11 @@ def t_own_pictures():
             d.time.sleep(1)
         d.shot("點了背景")
         d.tap_text("完成", exact=True)
+        d.wait_text("加貼紙、文字", timeout=8)
+        d.tap_text("略過", exact=True)
         d.time.sleep(1.5)
     except TimeoutError:
-        d.check("跳出調整位置、去背", False)
+        d.check("跳出調整位置、去背、加貼紙", False)
     ns = d.shot("分類用了圖片")
     d.check("回到編輯分類：有「去背」「換一張」", d.has(ns, "去背", True) and d.has(ns, "換一張", True), [n.text for n in ns if n.text][:25])
     d.tap_text("儲存", exact=True)
