@@ -280,6 +280,7 @@ fun BooksScreen(vm: MoneyViewModel, onBack: () -> Unit) {
     if (adding || target != null) {
         BookDialog(
             book = target,
+            vm = vm,
             onSave = { name, emoji, budget ->
                 vm.saveBook(target?.id, name, emoji, budget)
                 adding = false; editing = null
@@ -291,9 +292,11 @@ fun BooksScreen(vm: MoneyViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDelete: (() -> Unit)?, onDismiss: () -> Unit) {
+private fun BookDialog(book: Book?, vm: MoneyViewModel, onSave: (String, String, Long) -> Unit, onDelete: (() -> Unit)?, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(book?.name ?: "") }
     var emoji by remember { mutableStateOf(book?.emoji ?: "img:extra_passport") }
+    // 自己的圖片：選好 → 調整位置 → 加貼紙、文字（可以略過）
+    val picFlow = rememberOwnPicFlow(0.3f, cutout = false)
     var budget by remember { mutableStateOf(if ((book?.budget ?: 0L) > 0) book?.budget.toString() else "") }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
@@ -313,6 +316,13 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
                         isError = nv.on("name"), supportingText = nv.supporting("name"), modifier = Modifier.weight(1f),
                     )
                 }
+                if (UserPics.isPic(emoji)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SoftButton("加貼紙", { picFlow.redecorate() }, Modifier.weight(1f), compact = true)
+                        SoftButton("換一張", { picFlow.pick() }, Modifier.weight(1f), compact = true)
+                        if (picFlow.canRecrop) SoftButton("調整位置", { picFlow.recrop(emoji) }, Modifier.weight(1f), compact = true)
+                    }
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("每月預算（選填）", style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub)
                     AmountField(budget, { budget = it.filter { c -> c.isDigit() }.take(10) }, "不設定", "每月預算", Modifier.fillMaxWidth(), maxDigits = 10)
@@ -327,7 +337,8 @@ private fun BookDialog(book: Book?, onSave: (String, String, Long) -> Unit, onDe
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
-    if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false })
+    if (pick) EmojiPickerDialog(emoji, { emoji = it; pick = false }, { pick = false }, onOwnPic = { pick = false; picFlow.pick() })
+    OwnPicFlowDialogs(picFlow, vm, emoji) { emoji = it }
     if (confirmDel && onDelete != null) {
         ConfirmDialog("刪除帳本？", "帳本裡的所有記錄都會一起刪除，無法復原。", "刪除", { confirmDel = false; onDelete() }, { confirmDel = false })
     }
