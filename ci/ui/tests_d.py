@@ -6523,6 +6523,9 @@ def t_card_tpl():
     card_noti_on()
     t1 = "交易提醒 卡片1234 店家 COSTCO 已扣款 NTD 2,350"
     bank_post("t1", t1)
+    # 除錯：通知有沒有發出去、記帳本有沒有收到
+    d.note("posted: " + str(d.sh("dumpsys notification --noredact | grep -c COSTCO")))
+    d.note("captured: " + str(d.sh(f"run-as {d.PKG} cat files/card_notis.json"))[:600])
     to_main()
     f.tab("明細")
     d.time.sleep(1.5)
