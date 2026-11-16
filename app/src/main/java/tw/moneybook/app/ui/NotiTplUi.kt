@@ -170,10 +170,11 @@ fun TplTeachScreen(vm: MoneyViewModel, teach: TplTeach, onDone: () -> Unit) {
                                 .clickable {
                                     val f0 = first
                                     when {
-                                        f0 != null -> { marks = setMark(marks, field, f0, i); first = null }
-                                        // 再點一次已經標好的那段：取消
-                                        m != null -> marks = marks - m
-                                        else -> first = i
+                                        // 第一下：開始標（在已經標好的那段裡也一樣，才能縮小範圍重標）
+                                        f0 == null -> first = i
+                                        // 選那段的欄位、同一個字點兩下：取消那段
+                                        f0 == i && m != null && m.field == field -> { marks = marks - m; first = null }
+                                        else -> { marks = setMark(marks, field, f0, i); first = null }
                                     }
                                 }
                                 .semantics { contentDescription = "字$i" },
@@ -217,7 +218,7 @@ fun TplTeachScreen(vm: MoneyViewModel, teach: TplTeach, onDone: () -> Unit) {
             Text(
                 "・一開始已經照通用規則標好顏色，只要改錯的那格\n" +
                     "・選欄位 → 點第一個字 → 點最後一個字，中間整段變成那個顏色\n" +
-                    "・再點一次已經標好的那段＝取消\n" +
+                    "・要取消一段：選那段的欄位，在那段裡同一個字點兩下\n" +
                     "・空白（底線）也是一格，可以包在裡面\n" +
                     "・金額、商店一定要標；末四碼、時間沒有可以不標",
                 style = MaterialTheme.typography.labelSmall, color = cute.sub,
