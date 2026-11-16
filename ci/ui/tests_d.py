@@ -6499,3 +6499,76 @@ def t_card_relearn():
     d.time.sleep(1.5)
     ns = d.shot("只改這一筆")
     d.check("只改這一筆：待確認的全聯還是第二張卡", d.has(ns, "第二張卡・今天 12:31", False) and not d.has(ns, "以後 1234 記到測試信用卡"), pend_texts(ns))
+
+
+def to_noti(text):
+    """我的 → 刷卡通知，捲到收到的那則通知"""
+    f.me_page("刷卡通知")
+    d.time.sleep(1)
+    for _ in range(4):
+        ns = d.nodes()
+        if d.has(ns, text, True):
+            return d.first(ns, text, True)
+        d.scroll_down(1)
+    raise TimeoutError(f"收到的通知裡找不到「{text}」")
+
+
+@case(D, "刷卡通知教範本：點讀錯的通知標出商店、看讀出來的結果、確認頁試讀、存好後待確認重讀，下一則同格式的用範本讀", visual=True)
+def t_card_tpl():
+    s = S.Seed(f.today())
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    t1 = "交易提醒 卡片1234 店家 COSTCO 已扣款 NTD 2,350"
+    bank_post("t1", t1)
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("通用規則讀錯商店")
+    d.check("通用規則讀成一筆 $2,350，但商店不是 COSTCO", d.has(ns, "$2,350", True) and not d.has(ns, "COSTCO", True), pend_texts(ns))
+    try:
+        d.tap(to_noti(t1))
+        d.wait_text("教它讀這種通知", timeout=8)
+    except TimeoutError as e:
+        d.check("點收到的通知打開教範本", False, str(e))
+        return
+    d.time.sleep(1)
+    ns = d.shot("教範本")
+    d.check("教範本：有 1.選欄位 2.點字 3.讀出來的結果，一開始照通用規則標好金額",
+            d.has(ns, "1. 選要標的欄位", True) and d.has(ns, "3. 讀出來的結果", True) and d.has(ns, "$2,350", True), pend_texts(ns))
+    sample = "交易提醒卡片1234店家COSTCO已扣款NTD 2,350"
+    a = sample.index("COSTCO")
+    d.tap(d.wait(lambda n: n.desc == "標商店", 8, "標商店"))
+    d.tap(d.wait(lambda n: n.desc == f"字{a}", 8, f"字{a}"))
+    d.tap(d.wait(lambda n: n.desc == f"字{a + 5}", 8, f"字{a + 5}"))
+    d.time.sleep(1)
+    ns = d.shot("標好商店")
+    d.check("標好商店：讀出來的結果商店是 COSTCO", d.has(ns, "COSTCO", True), pend_texts(ns))
+    d.tap_text("存成 X 銀行 的範本", exact=True)
+    try:
+        d.wait_text("確認範本", timeout=8)
+    except TimeoutError:
+        d.check("打開確認範本", False, pend_texts(d.nodes()))
+        return
+    d.time.sleep(1)
+    ns = d.shot("確認範本")
+    d.check("確認範本：最近 7 天 1 則，對得上 1 則，列出 COSTCO $2,350",
+            d.has(ns, "X 銀行 最近 7 天 1 則，對得上 1 則", True) and d.has(ns, "COSTCO", True), pend_texts(ns))
+    d.tap_text("存好", exact=True)
+    try:
+        d.wait_text("範本存好了，重讀了 1 則通知", timeout=6)
+        d.check("存好：提示「範本存好了，重讀了 1 則通知」", True)
+    except TimeoutError:
+        d.check("存好：提示「範本存好了，重讀了 1 則通知」", False, pend_texts(d.nodes()))
+    d.time.sleep(1.5)
+    ns = d.shot("範本清單")
+    d.check("設定頁有範本清單「X 銀行・交易」", d.has(ns, "X 銀行・交易", True) and d.has(ns, "最近 7 天對上 1 則", False), pend_texts(ns))
+    bank_post("t2", "交易提醒 卡片1234 店家 UNIQLO 已扣款 NTD 990")
+    d.time.sleep(1)
+    ns = d.shot("用範本")
+    d.check("下一則同格式的通知標「用範本」", d.has(ns, "用範本", True), pend_texts(ns))
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("待確認重讀")
+    d.check("首頁待確認：COSTCO $2,350（重讀）、UNIQLO $990（用範本讀）", d.has(ns, "COSTCO", True) and d.has(ns, "UNIQLO", True)
+            and d.has(ns, "有 2 筆刷卡等你確認", True), pend_texts(ns))
