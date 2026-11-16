@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharedFlow
 import kotlin.math.roundToLong
 import java.time.LocalDate
@@ -248,6 +249,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 0
             }
             if (n > 0) {
+                // 等畫面開始接提示再送（沒人接的提示會被丟掉；手機慢的時候畫面還沒好）
+                kotlinx.coroutines.withTimeoutOrNull(15_000) { _messages.subscriptionCount.first { it > 0 } }
                 kotlinx.coroutines.delay(1500)
                 toast("之前收到的 $n 筆刷卡放進待確認了")
             }
