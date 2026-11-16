@@ -6547,6 +6547,15 @@ def t_card_tpl():
     d.time.sleep(1)
     ns = d.shot("標好商店")
     d.check("標好商店：讀出來的結果商店是 COSTCO", d.has(ns, "COSTCO", True), pend_texts(ns))
+    # 同一個字點兩下：取消那段，再標回來
+    d.tap(d.wait(lambda n: n.desc == f"字{a + 2}", 8, "字"))
+    d.tap(d.wait(lambda n: n.desc == f"字{a + 2}", 8, "字"))
+    d.time.sleep(0.8)
+    ns = d.nodes()
+    d.check("商店那段裡同一個字點兩下：取消，商店變成沒標", not d.has(ns, "COSTCO", True) and d.has(ns, "沒標", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == f"字{a}", 8, "字"))
+    d.tap(d.wait(lambda n: n.desc == f"字{a + 5}", 8, "字"))
+    d.time.sleep(0.8)
     d.tap_text("存成 X 銀行 的範本", exact=True)
     try:
         d.wait_text("確認範本", timeout=8)
