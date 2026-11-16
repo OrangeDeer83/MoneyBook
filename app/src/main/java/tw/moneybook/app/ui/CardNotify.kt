@@ -420,7 +420,29 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
             }
         }
         item {
-            // 有待確認時吉祥物發手機通知
+            // 有待確認時吉祥物發手機通知；手機沒允許記帳本發通知時，點一下要權限（拒絕過就打開系統設定）
+            var tick by remember { mutableIntStateOf(0) }
+            @Suppress("DEPRECATION")
+            val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+            androidx.compose.runtime.DisposableEffect(owner) {
+                val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) tick++ }
+                owner.lifecycle.addObserver(obs)
+                onDispose { owner.lifecycle.removeObserver(obs) }
+            }
+            val allowed = remember(tick, d.prefs.cardNotify) { tw.moneybook.app.notify.SubNotifier.allowed(ctx) }
+            fun openSettings() {
+                try {
+                    ctx.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (_: Exception) {
+                }
+            }
+            val askPerm = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+                tick++
+                if (!ok) openSettings()
+            }
             CuteCard(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -436,18 +458,15 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
                         modifier = Modifier.semantics { contentDescription = "待確認時發通知" },
                     )
                 }
-                if (d.prefs.cardNotify && !tw.moneybook.app.notify.SubNotifier.allowed(ctx)) {
+                if (d.prefs.cardNotify && !allowed) {
                     Text(
-                        "手機的通知被關掉了，收不到提醒。點這裡打開",
+                        "手機還沒允許記帳本發通知，收不到提醒。點這裡允許",
                         style = MaterialTheme.typography.bodySmall, color = cute.expense,
                         modifier = Modifier.padding(top = 6.dp).clickable {
-                            try {
-                                ctx.startActivity(
-                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
-                            } catch (_: Exception) {
-                            }
+                            val need = android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(
+                                ctx, android.Manifest.permission.POST_NOTIFICATIONS,
+                            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            if (need) askPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS) else openSettings()
                         }.padding(vertical = 4.dp),
                     )
                 }
