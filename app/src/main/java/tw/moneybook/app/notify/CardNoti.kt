@@ -15,7 +15,7 @@ import tw.moneybook.app.CardPendCodec
 import tw.moneybook.app.AppData
 import tw.moneybook.app.addPend
 import tw.moneybook.app.backfillPends
-import tw.moneybook.app.parseCardNoti
+import tw.moneybook.app.readNoti
 import tw.moneybook.app.pendOf
 import tw.moneybook.app.prunePend
 import tw.moneybook.app.MoneyViewModel
@@ -122,9 +122,9 @@ object CardPendLog {
 /** 收到一則勾選的 App 的通知：存原文；讀得出消費就放進待確認 */
 fun onCardNoti(ctx: Context, n: CapturedNoti) {
     if (!CardNotiLog.add(ctx, n)) return
-    val r = parseCardNoti(n.title, n.text, n.time)
-    val p = pendOf(n, r) ?: return
     val d = SubNotifier.current(ctx)
+    // 先試這個 App 的範本，都對不上才用通用規則
+    val p = pendOf(n, d.readNoti(n)) ?: return
     CardPendLog.update(ctx) { addPend(it, p, d, System.currentTimeMillis()) }
     // 1 分鐘後由吉祥物發手機通知（同一筆的第二則通知趕得上合併）
     CardPendNotifier.later(ctx)

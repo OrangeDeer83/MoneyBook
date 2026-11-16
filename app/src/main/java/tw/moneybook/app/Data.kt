@@ -306,6 +306,8 @@ data class AppData(
     val notiApps: List<NotiApp> = emptyList(),
     /** 使用者自己的圖片（帳戶、分類圖示「pic:<id>」用）：id → 圖片；跟著備份。舊資料沒有這個欄位 */
     val pics: Map<String, UserPic> = emptyMap(),
+    /** 刷卡通知自己教的範本（見 CardTpl.kt）；跟著備份。舊資料沒有這個欄位 */
+    val notiTpls: List<NotiTpl> = emptyList(),
 ) {
     val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }

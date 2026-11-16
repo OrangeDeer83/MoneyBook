@@ -341,8 +341,8 @@ fun AppData.pendSubTxn(p: CardPend, m: SubMatch, id: Long, twd: Long? = null, pe
 
 // ───────── 「收到的通知」旁邊的標籤 ─────────
 
-/** 收到的通知讀得怎麼樣：GOOD＝讀對了／已記（綠）、PART＝少了商店（橘）、OFF＝不是消費、還不會讀、已經記過（灰） */
-enum class NotiTagKind { GOOD, PART, OFF }
+/** 收到的通知讀得怎麼樣：GOOD＝讀對了／已記（綠）、TPL＝用範本讀的（紫）、PART＝少了商店（橘）、OFF＝不是消費、還不會讀、已經記過（灰） */
+enum class NotiTagKind { GOOD, TPL, PART, OFF }
 
 /** 收到的一則通知旁邊的標籤：有放進待確認的看那筆的狀態，沒有的看讀出來的結果 */
 fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, String> {
@@ -353,9 +353,11 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
             PendState.HAD -> NotiTagKind.OFF to "已經記過"
             PendState.NOT -> NotiTagKind.OFF to "不是消費"
             else -> pendSubDone(p)?.let { NotiTagKind.GOOD to "已記（訂閱：${it.sub.name}）" }
-                ?: if (p.merchant.isEmpty()) NotiTagKind.PART to "少了商店" else NotiTagKind.GOOD to "讀對了"
+                ?: if (p.merchant.isEmpty()) NotiTagKind.PART to "少了商店"
+                else if (tplFor(n) != null) NotiTagKind.TPL to "用範本" else NotiTagKind.GOOD to "讀對了"
         }
     }
+    if (tplFor(n) != null) return NotiTagKind.TPL to "用範本"
     val r = parseCardNoti(n.title, n.text, n.time)
     return when (r.kind) {
         NotiKind.SPEND -> if (r.merchant.isEmpty()) NotiTagKind.PART to "少了商店" else NotiTagKind.GOOD to "讀對了"
@@ -419,7 +421,7 @@ fun backfillPends(pends: List<CardPend>, captured: List<CapturedNoti>, d: AppDat
     var out = pends
     var n = 0
     for (c in captured.filter { it.id !in seen }.sortedBy { it.time }) {
-        val p = pendOf(c, parseCardNoti(c.title, c.text, c.time)) ?: continue
+        val p = pendOf(c, d.readNoti(c)) ?: continue
         val before = out.size
         out = addPend(out, p, d, now)
         if (out.size > before) n++

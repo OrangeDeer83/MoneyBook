@@ -98,6 +98,7 @@ object Codec {
         })
         root.put("subs", SubCodec.toJson(d.subs))
         root.put("notiApps", NotiAppCodec.toJson(d.notiApps))
+        if (d.notiTpls.isNotEmpty()) root.put("notiTpls", NotiTplCodec.toJson(d.notiTpls))
         root.put("pics", JSONObject().apply {
             d.pics.forEach { (id, p) ->
                 val o = JSONObject().put("png", p.png).put("src", p.src)
@@ -330,6 +331,7 @@ object Codec {
             rates = rates,
             rateHist = rateHist,
             notiApps = NotiAppCodec.fromJson(root.optJSONArray("notiApps")),
+            notiTpls = NotiTplCodec.fromJson(root.optJSONArray("notiTpls")),
             pics = root.optJSONObject("pics")?.let { o ->
                 o.keys().asSequence().mapNotNull { k ->
                     o.optJSONObject(k)?.let { p ->

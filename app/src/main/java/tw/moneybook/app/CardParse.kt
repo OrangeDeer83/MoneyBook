@@ -34,9 +34,11 @@ data class NotiRead(
     val minute: Int = -1,
     /** 商店是用句型或括號讀到的（比較可靠；兩則通知合併時優先用） */
     val merchantSure: Boolean = false,
+    /** 每個欄位在內文（normalizeNoti 過的）裡的位置：教範本時先照這個標好；標題裡的不算 */
+    val spans: Map<TplField, IntRange> = emptyMap(),
 )
 
-private val WALLETS = listOf(
+internal val WALLETS = listOf(
     "OP錢包" to "OP錢包", "OPEN錢包" to "OP錢包", "LINE Pay" to "LINE Pay", "LINEPay" to "LINE Pay", "街口支付" to "街口支付", "街口" to "街口支付",
     "全支付" to "全支付", "Apple Pay" to "Apple Pay", "Google Pay" to "Google Pay", "Samsung Pay" to "Samsung Pay", "悠遊付" to "悠遊付",
     "icash Pay" to "icash Pay", "全盈+PAY" to "全盈+PAY", "Pi錢包" to "Pi錢包", "Pi 拍錢包" to "Pi錢包", "台灣Pay" to "台灣Pay",
@@ -55,11 +57,11 @@ private val NOISE = listOf(
 )
 
 /** 金額前面可能的幣別（長的在前）→ 幣別代碼（空白＝台幣） */
-private val CUR_PREFIX = listOf(
+internal val CUR_PREFIX = listOf(
     "NT$" to "", "NTD" to "", "TWD" to "", "新台幣" to "", "台幣" to "", "US$" to "USD", "USD" to "USD", "HK$" to "HKD", "HKD" to "HKD",
     "JPY" to "JPY", "EUR" to "EUR", "GBP" to "GBP", "KRW" to "KRW", "CNY" to "CNY", "RMB" to "CNY", "¥" to "JPY", "€" to "EUR", "$" to "",
 )
-private val CUR_SUFFIX = listOf("美元" to "USD", "美金" to "USD", "日圓" to "JPY", "日幣" to "JPY", "日元" to "JPY", "円" to "JPY", "元" to "")
+internal val CUR_SUFFIX = listOf("美元" to "USD", "美金" to "USD", "日圓" to "JPY", "日幣" to "JPY", "日元" to "JPY", "円" to "JPY", "元" to "")
 
 /** 數字後面接這些的不是金額（點數、百分比、期數…） */
 private val NOT_AMOUNT_AFTER = listOf("點", "%", "次", "期", "個", "分", "天", "月", "年", "折", "倍", "筆", "張", "歲", "秒")
@@ -102,15 +104,18 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
 
     // 末四碼：遮起來的卡號（****1234）優先，再看「末四碼／卡號」後面
     var last4 = ""
-    Regex("""[*xX•●]{2,}[ -]?(\d{4})(?!\d)""").find(all)?.let { last4 = it.groupValues[1]; used.add(it.range) }
+    var last4Span: IntRange? = null
+    Regex("""[*xX•●]{2,}[ -]?(\d{4})(?!\d)""").find(all)?.let { last4 = it.groupValues[1]; last4Span = it.groups[1]?.range; used.add(it.range) }
     if (last4.isEmpty()) {
-        Regex("""(?:末四碼|末4碼|末四位|末4位|卡號末|尾數|末碼|卡號|卡末)[^0-9]{0,6}(\d{4})(?!\d)""").find(all)?.let { last4 = it.groupValues[1]; used.add(it.range) }
+        Regex("""(?:末四碼|末4碼|末四位|末4位|卡號末|尾數|末碼|卡號|卡末)[^0-9]{0,6}(\d{4})(?!\d)""").find(all)?.let { last4 = it.groupValues[1]; last4Span = it.groups[1]?.range; used.add(it.range) }
     }
 
     // 日期、時間
     val post = Instant.ofEpochMilli(postTime).atZone(zone)
     val postDay = post.toLocalDate()
     var date: LocalDate? = null
+    var dateSpan: IntRange? = null
+    var timeSpan: IntRange? = null
     fun tryDate(y: Int?, m: Int, d: Int): LocalDate? {
         if (m !in 1..12 || d !in 1..31) return null
         val year = y ?: postDay.year
@@ -132,15 +137,15 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
             1 -> tryDate(g[1].toInt() + 1911, g[2].toInt(), g[3].toInt())
             else -> tryDate(null, g[1].toInt(), g[2].toInt())
         }
-        if (date != null) used.add(m.range)
+        if (date != null) { used.add(m.range); dateSpan = m.range }
     }
     var minute = -1
     Regex("""(?<![\d:])(\d{1,2}):(\d{2})(?::\d{2})?(?![\d:])""").find(all)?.let { m ->
         val h = m.groupValues[1].toInt(); val mi = m.groupValues[2].toInt()
-        if (h in 0..23 && mi in 0..59) { minute = h * 60 + mi; used.add(m.range) }
+        if (h in 0..23 && mi in 0..59) { minute = h * 60 + mi; used.add(m.range); timeSpan = m.range }
     }
     // 讀到的日期離收到的時間太遠（例如有效期限），不用
-    if (date != null && kotlin.math.abs(date.toEpochDay() - postDay.toEpochDay()) > 31) date = null
+    if (date != null && kotlin.math.abs(date.toEpochDay() - postDay.toEpochDay()) > 31) { date = null; dateSpan = null }
     val postMinute = post.hour * 60 + post.minute
     // 沒寫日期：用收到的那天；沒寫時間：是收到的那天就用收到的時間，不然不知道
     val day = (date ?: postDay).toEpochDay()
@@ -179,24 +184,25 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
         val cur = pre?.second?.takeIf { it.isNotEmpty() } ?: suf?.second ?: ""
         val digits = intPart.replace(",", "")
         val frac = parts.getOrNull(1) ?: ""
-        val value = if (cur.isEmpty()) {
-            // 台幣：小數四捨五入（30.00 → 30）
-            val whole = digits.toLongOrNull() ?: continue
-            whole + if ((frac.firstOrNull() ?: '0') >= '5') 1 else 0
-        } else {
-            val dec = Currencies.of(cur).decimals
-            val f = (frac + "0".repeat(dec)).take(dec)
-            ((digits + f).toLongOrNull() ?: continue)
-        }
+        val value = amountValue(raw, cur) ?: continue
         if (value <= 0L) continue
-        cands.add(Cand(r, value, cur, score))
+        cands.add(Cand(r.first until r.first + raw.length, value, cur, score))
     }
     // 分數最高的；同分取前面那個
     val topScore = cands.maxOfOrNull { it.score }
     val best = cands.filter { it.score == topScore }.minByOrNull { it.range.first }
 
-    if (OTHER_WORDS.any { it in all }) return NotiRead(NotiKind.OTHER, best?.value ?: 0L, best?.cur ?: "", last4 = last4, day = day, minute = minute)
-    if (best == null) return NotiRead(NotiKind.NO_AMOUNT, last4 = last4, day = day, minute = minute)
+    // 內文裡的位置（教範本用）：日期和時間連在一起的當成一段
+    fun inBody(r: IntRange?) = r?.takeIf { it.first >= off }?.let { (it.first - off)..(it.last - off) }
+    val spans = HashMap<TplField, IntRange>()
+    inBody(best?.range)?.let { spans[TplField.AMOUNT] = it }
+    inBody(last4Span)?.let { spans[TplField.LAST4] = it }
+    val ds = inBody(dateSpan)
+    val ts = inBody(timeSpan)
+    (if (ds != null && ts != null && ts.first - ds.last in 1..3) ds.first..ts.last else ds ?: ts)?.let { spans[TplField.TIME] = it }
+
+    if (OTHER_WORDS.any { it in all }) return NotiRead(NotiKind.OTHER, best?.value ?: 0L, best?.cur ?: "", last4 = last4, day = day, minute = minute, spans = spans)
+    if (best == null) return NotiRead(NotiKind.NO_AMOUNT, last4 = last4, day = day, minute = minute, spans = spans)
 
     // 商店（只看內文：Samsung Wallet 的標題是卡片名稱）
     // 內文裡的金額、日期、時間、末四碼的位置
@@ -245,16 +251,31 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
             .filter { s -> s.length >= 2 && s.any { it.isLetter() } && !s.all { it.isDigit() } }
             .maxByOrNull { it.length } ?: ""
     }
-    // 錢包字樣拆出來
-    var wallet = ""
+    if (merchant.isNotEmpty()) body.indexOf(merchant).takeIf { it >= 0 }?.let { spans[TplField.MERCHANT] = it until it + merchant.length }
+    val (shop, wallet) = splitWallet(merchant, all)
+    return NotiRead(NotiKind.SPEND, best.value, best.cur, shop.take(30), wallet, last4, day, minute, sure && shop.isNotEmpty(), spans)
+}
+
+/** 金額的數字（「1,288」「30.00」）換成記帳的金額：台幣小數四捨五入（30.00 → 30），外幣是最小單位；讀不出來回傳 null */
+internal fun amountValue(raw: String, cur: String): Long? {
+    val parts = raw.trim().trimEnd(',').split('.')
+    val digits = parts[0].replace(",", "")
+    if (digits.isEmpty() || !digits.all { it.isDigit() }) return null
+    val frac = parts.getOrNull(1) ?: ""
+    return if (cur.isEmpty()) {
+        val whole = digits.toLongOrNull() ?: return null
+        whole + if ((frac.firstOrNull() ?: '0') >= '5') 1 else 0
+    } else {
+        val dec = Currencies.of(cur).decimals
+        (digits + (frac + "0".repeat(dec)).take(dec)).toLongOrNull()
+    }
+}
+
+/** 商店裡的錢包字樣拆出來（「OP錢包統一超商」→ 統一超商、OP錢包）；商店裡沒有就看整則通知有沒有寫 */
+internal fun splitWallet(merchant: String, all: String): Pair<String, String> {
     for ((w, name) in WALLETS) {
         val i = merchant.indexOf(w, ignoreCase = true)
-        if (i >= 0) {
-            wallet = name
-            merchant = (merchant.substring(0, i) + merchant.substring(i + w.length)).trim().trim('-', '_', '/', ' ')
-            break
-        }
+        if (i >= 0) return (merchant.substring(0, i) + merchant.substring(i + w.length)).trim().trim('-', '_', '/', ' ') to name
     }
-    if (wallet.isEmpty()) WALLETS.firstOrNull { (w, _) -> all.contains(w, ignoreCase = true) }?.let { wallet = it.second }
-    return NotiRead(NotiKind.SPEND, best.value, best.cur, merchant.take(30), wallet, last4, day, minute, sure && merchant.isNotEmpty())
+    return merchant to (WALLETS.firstOrNull { (w, _) -> all.contains(w, ignoreCase = true) }?.second ?: "")
 }

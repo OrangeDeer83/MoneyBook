@@ -145,12 +145,18 @@ fun CardNotifyScreen(vm: MoneyViewModel, onBack: () -> Unit) {
     val enabled = remember(tick) { cardNotiEnabled(ctx) }
     // 1＝選 App、2＝對應卡片、3＝總覽（還沒選過 App 就從選 App 開始）
     var step by rememberSaveable { mutableIntStateOf(if (d.notiApps.isEmpty()) 1 else 3) }
+    // 教範本（點收到的一則通知、或範本清單的一個範本）
+    var teach by remember { mutableStateOf<TplTeach?>(null) }
+    teach?.let { t ->
+        TplTeachScreen(vm, t) { teach = null }
+        return
+    }
     SubPage("刷卡通知", onBack) {
         when {
             !enabled -> PermissionStep(tick)
             step == 1 || d.notiApps.isEmpty() -> AppPickStep(vm) { step = 2 }
             step == 2 -> CardMapStep(vm) { step = 3 }
-            else -> NotiOverview(vm) { step = 1 }
+            else -> NotiOverview(vm, { step = 1 }, { teach = it })
         }
     }
 }
@@ -372,7 +378,7 @@ private fun CardMapStep(vm: MoneyViewModel, onDone: () -> Unit) {
 }
 
 @Composable
-private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
+private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit, onTeach: (TplTeach) -> Unit) {
     val ctx = LocalContext.current
     val cute = LocalCute.current
     val d = vm.data
@@ -390,7 +396,7 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
                 Text(
                     (if (list.isEmpty()) "還沒收到。刷卡後，勾選的 App 跳出的通知會出現在下面。"
                     else "最後收到：${notiTime(list.first().time)}，最近 7 天 ${list.size} 則。") +
-                        "\n讀出來的消費會放在首頁等你確認，按「記」才會記帳；退款、預先授權這種還不會讀。",
+                        "\n讀出來的消費會放在首頁等你確認，按「記」才會記帳；退款、預先授權這種還不會讀。讀錯的通知點一下可以教它怎麼讀。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
@@ -419,6 +425,7 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
                 }
             }
         }
+        if (d.notiTpls.isNotEmpty()) item { TplListCard(vm, list) { onTeach(d.teachOf(it)) } }
         item {
             // 有待確認時吉祥物發手機通知；手機沒允許記帳本發通知時，點一下要權限（拒絕過就打開系統設定）
             var tick by remember { mutableIntStateOf(0) }
@@ -478,7 +485,8 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
         }
         items(list, key = { it.id }) { n ->
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cute.card).padding(horizontal = 14.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cute.card).clickable { onTeach(d.teachOf(n)) }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 val (kind, tag) = remember(n, pends, d) { d.notiTag(n, pends) }
@@ -486,6 +494,7 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
                     Text("${n.label}・${notiTime(n.time)}", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.weight(1f))
                     val col = when (kind) {
                         NotiTagKind.GOOD -> cute.income
+                        NotiTagKind.TPL -> cute.out
                         NotiTagKind.PART -> cute.accent2
                         NotiTagKind.OFF -> cute.sub
                     }

@@ -1332,6 +1332,40 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         })
     }
 
+    /**
+     * 存一個刷卡通知範本（id 是 0＝新的）。存好後這個 App 收到的通知用新範本重讀：
+     * 待確認裡還沒處理的換成新讀到的，還沒放進去的放進去。
+     */
+    fun saveTpl(t: NotiTpl) {
+        var saved = t
+        update { d ->
+            if (t.id != 0L && d.notiTpls.any { it.id == t.id }) d.copy(notiTpls = d.notiTpls.map { if (it.id == t.id) t else it })
+            else {
+                saved = t.copy(id = d.nextId)
+                d.copy(notiTpls = d.notiTpls + saved, nextId = d.nextId + 1)
+            }
+        }
+        var n = 0
+        val captured = tw.moneybook.app.notify.CardNotiLog.load(appContext)
+        tw.moneybook.app.notify.CardPendLog.update(appContext) { list ->
+            val (out, k) = retplPends(list, captured, data, saved, System.currentTimeMillis())
+            n = k
+            out
+        }
+        toast("範本存好了" + if (n > 0) "，重讀了 $n 則通知" else "")
+    }
+
+    /** 刪掉一個範本，可以復原 */
+    fun deleteTpl(id: Long) {
+        val d = data
+        val t = d.notiTpls.firstOrNull { it.id == id } ?: return
+        val name = d.tplName(t)
+        commit(d.copy(notiTpls = d.notiTpls.filter { it.id != id }))
+        _messages.tryEmit(UiMsg("已刪除範本「$name」", "復原") {
+            update { now -> if (now.notiTpls.any { it.id == id }) now else now.copy(notiTpls = now.notiTpls + t) }
+        })
+    }
+
     /** 記一筆（改一下）存好了：待確認那筆算記好了 */
     fun pendSaved(id: Long, txnId: Long) {
         setPend(id) { if (it.state == PendState.WAIT) it.copy(state = PendState.DONE, txnId = txnId) else it }
