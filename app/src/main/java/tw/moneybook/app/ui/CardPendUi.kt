@@ -147,7 +147,7 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                     sm != null && !sm.exact -> "可能是訂閱：${sm.sub.name}（${subAmountText(sm.sub)}）" to
                         (d.subTwd(sm.sub)?.let { "用現在的匯率算大約 ${formatMoney(it)}" } ?: "")
                     had != null -> "${shortDay(had.day, today)} ${card.name} 已經有一筆 ${formatMoney(had.recorded)}" to
-                        "（" + listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).joinToString("，") + "）"
+                        "（" + listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).distinct().joinToString("，") + "）"
                     else -> null
                 }
                 if (hint != null) {

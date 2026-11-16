@@ -721,7 +721,7 @@ fun SubDueCard(vm: MoneyViewModel, due: List<Pair<Sub, Long>>) {
                             "${shortDay(had.day, today)} ${a?.name ?: ""} 已經有一筆 " + (if (had.fxSpendAmount > 0L) formatFx(had.fxSpendAmount, had.fxSpendCur) else tw.moneybook.app.formatMoney(had.recorded)),
                             style = MaterialTheme.typography.labelMedium,
                         )
-                        val what = listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).joinToString("，")
+                        val what = listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).distinct().joinToString("，")
                         Text("（" + what.ifEmpty { "你自己記的" } + "）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                     }
                     Row(Modifier.padding(start = 44.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
