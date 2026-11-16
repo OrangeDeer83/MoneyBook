@@ -81,6 +81,7 @@ import tw.moneybook.app.expenseSum
 import tw.moneybook.app.billMonthFor
 import tw.moneybook.app.subsDue
 import tw.moneybook.app.subsShownInPend
+import tw.moneybook.app.pendWaiting
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.formatShort
 import tw.moneybook.app.inMonth

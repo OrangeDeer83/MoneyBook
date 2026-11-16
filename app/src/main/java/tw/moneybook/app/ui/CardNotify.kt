@@ -27,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,6 +55,7 @@ import tw.moneybook.app.AccountType
 import tw.moneybook.app.CapturedNoti
 import tw.moneybook.app.NotiTagKind
 import tw.moneybook.app.notiTag
+import tw.moneybook.app.mascotTitle
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.NotiApp
 import tw.moneybook.app.looksLikePayApp
@@ -414,6 +416,40 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
                             )
                         }
                     }
+                }
+            }
+        }
+        item {
+            // 有待確認時吉祥物發手機通知
+            CuteCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("待確認時發通知", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "收到刷卡通知 1 分鐘後，${d.prefs.mascotTitle(::mascotDefaultName)} 會用手機通知提醒你確認",
+                            style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                        )
+                    }
+                    Switch(
+                        checked = d.prefs.cardNotify,
+                        onCheckedChange = { vm.setCardNotify(it) },
+                        modifier = Modifier.semantics { contentDescription = "待確認時發通知" },
+                    )
+                }
+                if (d.prefs.cardNotify && !tw.moneybook.app.notify.SubNotifier.allowed(ctx)) {
+                    Text(
+                        "手機的通知被關掉了，收不到提醒。點這裡打開",
+                        style = MaterialTheme.typography.bodySmall, color = cute.expense,
+                        modifier = Modifier.padding(top = 6.dp).clickable {
+                            try {
+                                ctx.startActivity(
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            } catch (_: Exception) {
+                            }
+                        }.padding(vertical = 4.dp),
+                    )
                 }
             }
         }

@@ -45,7 +45,7 @@ import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.PendState
 import tw.moneybook.app.claimedTxns
 import tw.moneybook.app.pendSub
-import tw.moneybook.app.pendSubDone
+import tw.moneybook.app.pendWaiting
 import tw.moneybook.app.subTwd
 import tw.moneybook.app.formatFx
 import tw.moneybook.app.isForeign
@@ -319,6 +319,4 @@ private fun CardPickDialog(d: AppData, p: CardPend, onDismiss: () -> Unit, onPic
     )
 }
 
-/** 首頁要列的待確認：還沒處理、也不是已經記過的那次訂閱（照收到的時間，早的在前） */
-fun AppData.pendWaiting(list: List<CardPend>): List<CardPend> =
-    list.filter { it.state == PendState.WAIT && pendSubDone(it) == null }.sortedBy { it.time }
+

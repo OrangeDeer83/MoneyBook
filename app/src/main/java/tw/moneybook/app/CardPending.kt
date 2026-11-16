@@ -347,3 +347,47 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
         NotiKind.OTHER -> NotiTagKind.OFF to "還不會讀"
     }
 }
+
+// ───────── 首頁、手機通知要列的 ─────────
+
+/** 首頁要列的待確認：還沒處理、也不是已經記過的那次訂閱（照收到的時間，早的在前） */
+fun AppData.pendWaiting(list: List<CardPend>): List<CardPend> =
+    list.filter { it.state == PendState.WAIT && pendSubDone(it) == null }.sortedBy { it.time }
+
+/** 吉祥物的手機通知內容；single＝只有一筆、卡和分類都有，通知上可以直接「記好了／不是消費」 */
+data class PendNotice(val title: String, val body: String, val lines: List<String>, val single: Long?)
+
+private fun pendAmt(p: CardPend) = if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur)
+
+/**
+ * 有待確認時的通知：一筆寫「刷了一筆 $85」＋商店・卡・分類；好幾筆寫「有 N 筆刷卡等你確認」。
+ * 通知上能直接記的只有：一筆、對得到卡、有分類（或對到訂閱）、不用問匯率、不是「可能已經記過」。
+ */
+fun AppData.pendNotice(list: List<CardPend>, name: String): PendNotice? {
+    val w = pendWaiting(list)
+    if (w.isEmpty()) return null
+    if (w.size == 1) {
+        val p = w[0]
+        val card = resolveCard(p)
+        val cardName = card?.let { accMap[it]?.name }
+        val sm = pendSub(p, card)?.takeIf { !it.done }
+        val title = "$name：刷了一筆 ${pendAmt(p)}"
+        if (sm != null && sm.exact) {
+            val ok = pendSubTxn(p, sm, 0L) != null
+            return PendNotice(title, listOfNotNull("訂閱：${sm.sub.name}", cardName).joinToString("・"), emptyList(), if (ok) p.id else null)
+        }
+        val cat = guessCat(p.merchant, card)?.let { catMap[it] }
+        val where = cardName ?: (p.label + if (p.last4.isNotEmpty()) " 末四碼 ${p.last4}" else "")
+        val body = listOfNotNull(p.merchant.ifEmpty { null }, where, if (card != null) cat?.name ?: "還沒有分類" else "點開來選是哪張卡").joinToString("・")
+        val ok = card != null && cat != null && sm == null && pendTxn(p, 0L, currentBook.id, card, cat.id) != null &&
+            possibleHad(p, card, claimedTxns(list)) == null
+        return PendNotice(title, body, emptyList(), if (ok) p.id else null)
+    }
+    val items = w.map { "${it.merchant.ifEmpty { "刷卡" }} ${pendAmt(it)}" }
+    return PendNotice(
+        "$name：有 ${w.size} 筆刷卡等你確認",
+        items.take(3).joinToString("、") + if (w.size > 3) "、…" else "",
+        items.take(6),
+        null,
+    )
+}

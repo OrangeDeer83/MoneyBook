@@ -149,6 +149,7 @@ object Codec {
                 .put("trendCats", JSONArray(p.trendCats))
                 .put("subNotify", p.subNotify).put("subNotifyTime", p.subNotifyTime)
                 .put("subNotifyRepeat", p.subNotifyRepeat).put("subNotifyAhead", p.subNotifyAhead)
+                .put("cardNotify", p.cardNotify)
         )
         return root.toString()
     }
@@ -296,6 +297,7 @@ object Codec {
             subNotifyTime = po.optInt("subNotifyTime", 9 * 60).coerceIn(0, 24 * 60 - 1),
             subNotifyRepeat = po.optInt("subNotifyRepeat", 2),
             subNotifyAhead = po.optInt("subNotifyAhead", 0),
+            cardNotify = po.optBoolean("cardNotify", true),
         )
         val settles = objects(root.optJSONArray("settles")) { o ->
             Settle(

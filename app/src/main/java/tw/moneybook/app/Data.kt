@@ -277,6 +277,8 @@ data class Prefs(
     val subNotifyTime: Int = 9 * 60,
     val subNotifyRepeat: Int = 2,
     val subNotifyAhead: Int = 0,
+    /** 刷卡有待確認時，吉祥物發手機通知（預設開） */
+    val cardNotify: Boolean = true,
 )
 
 data class AppData(

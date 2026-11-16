@@ -103,6 +103,8 @@ fun onCardNoti(ctx: Context, n: CapturedNoti) {
     val p = pendOf(n, r) ?: return
     val d = SubNotifier.current(ctx)
     CardPendLog.update(ctx) { addPend(it, p, d, System.currentTimeMillis()) }
+    // 1 分鐘後由吉祥物發手機通知（同一筆的第二則通知趕得上合併）
+    CardPendNotifier.later(ctx)
 }
 
 /** 使用者有沒有打開記帳本的通知存取權 */

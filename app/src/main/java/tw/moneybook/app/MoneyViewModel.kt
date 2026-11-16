@@ -1230,8 +1230,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     // ───────── 刷卡待確認（見 CardPending.kt） ─────────
 
-    private fun setPend(id: Long, f: (CardPend) -> CardPend) =
+    /** 改一筆待確認；手機上的通知跟著更新（記好了就收掉） */
+    private fun setPend(id: Long, f: (CardPend) -> CardPend) {
         tw.moneybook.app.notify.CardPendLog.update(appContext) { list -> list.map { if (it.id == id) f(it) else it } }
+        tw.moneybook.app.notify.CardPendNotifier.refreshShown(appContext)
+    }
 
     private fun pendTitle(p: CardPend): String =
         p.merchant.ifEmpty { "刷卡" } + " " + if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur)
@@ -1282,6 +1285,23 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     fun notSubPend(id: Long) {
         setPend(id) { it.copy(notSub = true) }
         _messages.tryEmit(UiMsg("已改成一般的刷卡", "復原") { setPend(id) { it.copy(notSub = false) } })
+    }
+
+    /** 刷卡有待確認時發手機通知的開關；關掉時收掉通知 */
+    fun setCardNotify(on: Boolean) {
+        update { d -> d.copy(prefs = d.prefs.copy(cardNotify = on)) }
+        if (on) tw.moneybook.app.notify.CardPendNotifier.post(appContext, data, silent = true)
+        else tw.moneybook.app.notify.CardPendNotifier.cancel(appContext)
+    }
+
+    /** 通知上按了「記好了」「不是消費」（App 開著時由這裡處理，才有「復原」） */
+    fun handlePendNotice(id: Long, record: Boolean) {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return
+        if (!record) { notSpendPend(id); return }
+        val d = data
+        val card = d.resolveCard(p) ?: return
+        val sm = d.pendSub(p, card)?.takeIf { !it.done && it.exact }
+        if (sm != null) recordPendSub(id) else recordPend(id, card, d.guessCat(p.merchant, card))
     }
 
     /** 記一筆（改一下）存好了：待確認那筆算記好了 */

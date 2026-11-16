@@ -101,6 +101,10 @@
         <receiver
             android:name=".notify.SubNotifyReceiver"
             android:exported="false" />
+        <!-- 刷卡待確認通知上的按鈕（不對外） -->
+        <receiver
+            android:name=".notify.CardPendReceiver"
+            android:exported="false" />
         <!-- 開機、App 更新後重排檢查時間 -->
         <receiver
             android:name=".notify.SubBootReceiver"
