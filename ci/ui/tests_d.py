@@ -6521,11 +6521,9 @@ def t_card_tpl():
     s = S.Seed(f.today())
     d.fresh(card_noti_seed(s))
     card_noti_on()
-    t1 = "交易提醒 卡片1234 店家 COSTCO 已扣款 NTD 2,350"
+    # 不寫卡號：「卡片1234」這種會被 Android 當成驗證碼，內容藏起來（Sensitive notification content hidden）
+    t1 = "交易提醒 店家 COSTCO 已扣款 NTD 2,350"
     bank_post("t1", t1)
-    # 除錯：通知有沒有發出去、記帳本有沒有收到
-    d.note("posted: " + str(d.sh("dumpsys notification --noredact | grep -c COSTCO")))
-    d.note("captured: " + str(d.sh(f"run-as {d.PKG} cat files/card_notis.json"))[:600])
     to_main()
     f.tab("明細")
     d.time.sleep(1.5)
@@ -6541,7 +6539,7 @@ def t_card_tpl():
     ns = d.shot("教範本")
     d.check("教範本：有 1.選欄位 2.點字 3.讀出來的結果，一開始照通用規則標好金額",
             d.has(ns, "1. 選要標的欄位", True) and d.has(ns, "3. 讀出來的結果", True) and d.has(ns, "$2,350", True), pend_texts(ns))
-    sample = "交易提醒卡片1234店家COSTCO已扣款NTD 2,350"
+    sample = "交易提醒店家COSTCO已扣款NTD 2,350"
     a = sample.index("COSTCO")
     d.tap(d.wait(lambda n: n.desc == "標商店", 8, "標商店"))
     d.tap(d.wait(lambda n: n.desc == f"字{a}", 8, f"字{a}"))
@@ -6568,7 +6566,7 @@ def t_card_tpl():
     d.time.sleep(1.5)
     ns = d.shot("範本清單")
     d.check("設定頁有範本清單「X 銀行・交易」", d.has(ns, "X 銀行・交易", True) and d.has(ns, "最近 7 天對上 1 則", False), pend_texts(ns))
-    bank_post("t2", "交易提醒 卡片1234 店家 UNIQLO 已扣款 NTD 990")
+    bank_post("t2", "交易提醒 店家 UNIQLO 已扣款 NTD 990")
     d.time.sleep(1)
     ns = d.shot("用範本")
     d.check("下一則同格式的通知標「用範本」", d.has(ns, "用範本", True), pend_texts(ns))
