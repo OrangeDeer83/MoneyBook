@@ -44,6 +44,9 @@ import tw.moneybook.app.Currencies
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.PendState
 import tw.moneybook.app.claimedTxns
+import tw.moneybook.app.pendSub
+import tw.moneybook.app.pendSubDone
+import tw.moneybook.app.subTwd
 import tw.moneybook.app.formatFx
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.formatMoney
@@ -72,13 +75,15 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
     val d = vm.data
     val cute = LocalCute.current
     val today = LocalDate.now().toEpochDay()
-    val waiting = all.filter { it.state == PendState.WAIT }.sortedBy { it.time }
+    val waiting = d.pendWaiting(all)
     val claimed = remember(all) { claimedTxns(all) }
     var expanded by remember { mutableStateOf(false) }
     // 正在處理的那一筆：選卡片、選分類、外幣金額
     var pickCard by remember { mutableStateOf<CardPend?>(null) }
     var pickCat by remember { mutableStateOf<Pair<CardPend, Long>?>(null) }
     var fx by remember { mutableStateOf<Triple<CardPend, Long, Long?>?>(null) }
+    // 對到訂閱、外幣對外幣記在台幣卡又沒有匯率：先問台幣金額
+    var subFx by remember { mutableStateOf<CardPend?>(null) }
 
     /** 按「記」：沒有分類先選分類；外幣記在台幣卡、又沒有匯率，先問金額 */
     fun record(p: CardPend, cardId: Long, catId: Long?) {
@@ -98,18 +103,40 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
             val card = cardId?.let { d.accMap[it] }
             val catId = d.guessCat(p.merchant, cardId)
             val cat = catId?.let { d.catMap[it] }
-            val had = d.possibleHad(p, cardId, claimed)
+            val sm = d.pendSub(p, cardId)?.takeIf { !it.done }
+            val had = if (sm != null) null else d.possibleHad(p, cardId, claimed)
+            val subCat = sm?.sub?.categoryId?.let { d.catMap[it] }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft.copy(alpha = 0.45f)).padding(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    CatBubble(cat?.emoji ?: "？", cat?.color ?: 8, 34.dp)
+                    if (sm != null && sm.exact) CatBubble(sm.sub.icon.ifEmpty { subCat?.emoji ?: "img:cat_box" }, subCat?.color ?: 8, 34.dp)
+                    else CatBubble(cat?.emoji ?: "？", cat?.color ?: 8, 34.dp)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(p.merchant.ifEmpty { "（通知沒寫商店）" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (sm != null && sm.exact) sm.sub.name else p.merchant.ifEmpty { "（通知沒寫商店）" },
+                                style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                            )
+                            if (sm != null && sm.exact) {
+                                Text(
+                                    "訂閱", style = MaterialTheme.typography.labelSmall, color = cute.income,
+                                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).background(cute.income.copy(alpha = 0.16f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
                         val where = card?.name ?: (p.label + if (p.last4.isNotEmpty()) "・末四碼 ${p.last4}" else "")
                         val fxNote = if (p.cur.isNotEmpty() && !(card?.isForeign == true && card.currency == p.cur)) "外幣消費（待請款）" else null
                         Text(
-                            listOfNotNull(where, pendWhen(p, today), if (card != null) (cat?.name ?: "還沒有分類") else null, fxNote).joinToString("・"),
+                            listOfNotNull(
+                                where, pendWhen(p, today),
+                                when {
+                                    card == null -> null
+                                    sm != null && sm.exact -> subCat?.name ?: "還沒有分類"
+                                    else -> cat?.name ?: "還沒有分類"
+                                },
+                                fxNote,
+                            ).joinToString("・"),
                             style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 2,
                         )
                     }
@@ -117,6 +144,8 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                 }
                 val hint: Pair<String, String>? = when {
                     card == null -> (if (p.last4.isNotEmpty()) "${p.label} 的 ${p.last4} 是哪張卡？" else "${p.label} 的通知是哪張卡？") to "選一次就記住"
+                    sm != null && !sm.exact -> "可能是訂閱：${sm.sub.name}（${subAmountText(sm.sub)}）" to
+                        (d.subTwd(sm.sub)?.let { "用現在的匯率算大約 ${formatMoney(it)}" } ?: "")
                     had != null -> "${shortDay(had.day, today)} ${card.name} 已經有一筆 ${formatMoney(had.recorded)}" to
                         "（" + listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).joinToString("，") + "）"
                     else -> null
@@ -136,6 +165,12 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                         card == null -> {
                             PendMainButton("選卡片", "選卡片 $name") { pickCard = p }
                             SoftButton("不是消費", { vm.notSpendPend(p.id) }, compact = true)
+                        }
+                        sm != null -> {
+                            PendMainButton(if (sm.exact) "記" else "是訂閱", (if (sm.exact) "記 " else "是訂閱 ") + sm.sub.name) {
+                                if (!vm.recordPendSub(p.id) && sm.sub.isForeign) subFx = p
+                            }
+                            SoftButton(if (sm.exact) "不是這個訂閱" else "不是", { vm.notSubPend(p.id) }, compact = true)
                         }
                         had != null -> {
                             PendMainButton("已經記過了", "已經記過了 $name") { vm.hadPend(p.id, had.id) }
@@ -165,6 +200,19 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
             vm.pickPendCard(p.id, cardId, remember)
             record(p, cardId, vm.data.guessCat(p.merchant, cardId))
         }
+    }
+    subFx?.let { p ->
+        val s = d.pendSub(p, d.resolveCard(p))?.sub
+        if (s == null) subFx = null
+        else FxSpendDialog(
+            vm = vm,
+            init = FxSpendInit(cur = s.cur, amount = fxPlain(p.amount, Currencies.of(s.cur).decimals), pending = true, twd = 0L),
+            hasValue = false,
+            onConfirm = { _, _, twd, pending -> subFx = null; vm.recordPendSub(p.id, twd, pending) },
+            onClear = { subFx = null },
+            onDismiss = { subFx = null },
+            title = s.name,
+        )
     }
     pickCat?.let { (p, cardId) ->
         SubCatPickDialog(d, null, onPick = { c -> pickCat = null; record(p, cardId, c) }, onDismiss = { pickCat = null })
@@ -271,5 +319,6 @@ private fun CardPickDialog(d: AppData, p: CardPend, onDismiss: () -> Unit, onPic
     )
 }
 
-/** 待確認裡還沒處理的有幾筆（首頁、通知用） */
-fun waitingPends(list: List<CardPend>): List<CardPend> = list.filter { it.state == PendState.WAIT }
+/** 首頁要列的待確認：還沒處理、也不是已經記過的那次訂閱（照收到的時間，早的在前） */
+fun AppData.pendWaiting(list: List<CardPend>): List<CardPend> =
+    list.filter { it.state == PendState.WAIT && pendSubDone(it) == null }.sortedBy { it.time }

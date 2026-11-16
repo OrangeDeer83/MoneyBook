@@ -42,6 +42,8 @@ data class CardPend(
     val state: Int = PendState.WAIT,
     /** 記成的那一筆、或認走的那一筆 */
     val txnId: Long = 0L,
+    /** 使用者按了「不是這個訂閱」：不再對訂閱 */
+    val notSub: Boolean = false,
 ) {
     val last4: String get() = src.firstOrNull { it.last4.isNotEmpty() }?.last4 ?: ""
     val label: String get() = src.firstOrNull()?.label ?: ""
@@ -135,6 +137,7 @@ object CardPendCodec {
                 JSONObject().put("id", p.id).put("amount", p.amount).put("cur", p.cur).put("merchant", p.merchant).put("sure", p.merchantSure)
                     .put("wallet", p.wallet).put("day", p.day).put("minute", p.minute).put("time", p.time)
                     .put("cardId", p.cardId ?: JSONObject.NULL).put("state", p.state).put("txnId", p.txnId)
+                    .apply { if (p.notSub) put("notSub", true) }
                     .put("src", JSONArray().apply {
                         p.src.forEach { s -> put(JSONObject().put("n", s.notiId).put("pkg", s.pkg).put("label", s.label).put("title", s.title).put("last4", s.last4)) }
                     }),
@@ -156,7 +159,7 @@ object CardPendCodec {
                 o.optLong("id"), src, o.optLong("amount"), o.optString("cur"), o.optString("merchant"), o.optBoolean("sure"),
                 o.optString("wallet"), o.optLong("day"), o.optInt("minute", -1), o.optLong("time"),
                 if (o.isNull("cardId")) null else o.optLong("cardId").takeIf { it > 0L },
-                o.optInt("state", PendState.WAIT), o.optLong("txnId", 0L),
+                o.optInt("state", PendState.WAIT), o.optLong("txnId", 0L), o.optBoolean("notSub", false),
             )
         }
     } catch (_: Exception) {
@@ -260,4 +263,62 @@ fun AppData.pendTxn(p: CardPend, id: Long, bookId: Long, cardId: Long, catId: Lo
     val est = twd ?: rateOf(p.cur)?.let { fxToTwd(p.amount, dec, it) } ?: return null
     return if (acc.isForeign && acc.currency == p.cur) base.copy(amount = est, fxAmount = p.amount)
     else base.copy(amount = est, fxSpendAmount = p.amount, fxSpendCur = p.cur, fxPending = pending)
+}
+
+// ───────── 刷卡通知對到訂閱（不會跟訂閱提醒重複） ─────────
+
+/** 刷卡和訂閱的扣款日差幾天以內算同一次 */
+const val SUB_MATCH_DAYS = 3
+
+/** 外幣訂閱、通知寫台幣：用匯率算，差多少以內才問「可能是訂閱」 */
+const val SUB_FX_TOLERANCE = 0.10
+
+/**
+ * 一筆刷卡對到的訂閱：day＝訂閱的哪一次扣款；exact＝金額一樣（直接當成訂閱），
+ * false＝外幣訂閱、通知寫台幣，金額差 10% 以內（要問）；done＝那一次已經記過或略過了。
+ */
+data class SubMatch(val sub: Sub, val day: Long, val exact: Boolean, val done: Boolean)
+
+/**
+ * 這筆刷卡是不是某個訂閱的扣款：同一張卡、沒暫停的訂閱，在刷卡日期前後 3 天內有扣款日，金額一樣
+ * （外幣訂閱、通知寫台幣時用匯率算，差 10% 以內）。有還沒處理的那一次優先，再來是日期近的。
+ */
+fun AppData.pendSub(p: CardPend, cardId: Long?): SubMatch? {
+    if (cardId == null || p.notSub) return null
+    val out = ArrayList<SubMatch>()
+    for (s in subs) {
+        if (s.paused || s.accountId != cardId) continue
+        val exact = when {
+            !s.isForeign && p.cur.isEmpty() -> s.amount == p.amount
+            s.isForeign && p.cur == s.cur -> s.amount == p.amount
+            else -> false
+        }
+        val near = !exact && s.isForeign && p.cur.isEmpty() && (subTwd(s)?.let { est -> est > 0 && kotlin.math.abs(p.amount - est) <= est * SUB_FX_TOLERANCE } ?: false)
+        if (!exact && !near) continue
+        s.dates(p.day + SUB_MATCH_DAYS).filter { it >= p.day - SUB_MATCH_DAYS }.forEach { e -> out.add(SubMatch(s, e, exact, s.isDone(e))) }
+    }
+    return out.minWithOrNull(compareBy<SubMatch>({ it.done }, { kotlin.math.abs(it.day - p.day) }, { !it.exact }))
+}
+
+/** 首頁的訂閱提醒不再列這些（已經在刷卡待確認裡出現、金額一樣的）：(訂閱 id, 扣款日) */
+fun AppData.subsShownInPend(list: List<CardPend>): Set<Pair<Long, Long>> =
+    list.filter { it.state == PendState.WAIT }.mapNotNull { p -> pendSub(p, resolveCard(p))?.takeIf { it.exact && !it.done } }
+        .map { it.sub.id to it.day }.toSet()
+
+/** 對到已經處理過的那次訂閱：首頁不出現（「收到的通知」裡標「已記（訂閱）」） */
+fun AppData.pendSubDone(p: CardPend): SubMatch? = pendSub(p, resolveCard(p))?.takeIf { it.done }
+
+/**
+ * 刷卡記成那次訂閱：名稱、分類、備註、標籤照訂閱（多加 #刷卡通知），日期時間照通知。
+ * 台幣：金額照通知；外幣訂閱、通知寫台幣：記成已請款的外幣消費（台幣照通知）；
+ * 外幣對外幣：記在外幣卡是外幣金額，記在台幣卡是待請款的外幣消費，twd 沒給就用目前匯率（沒有回傳 null）。
+ */
+fun AppData.pendSubTxn(p: CardPend, m: SubMatch, id: Long, twd: Long? = null, pending: Boolean = true): Txn? {
+    val s = m.sub
+    val t = when {
+        !s.isForeign -> subTxn(s, p.day, id, p.amount, false).copy(amount = p.amount)
+        p.cur.isEmpty() -> subTxn(s, p.day, id, p.amount, false)
+        else -> subTxn(s, p.day, id, twd ?: subTwd(s) ?: return null, pending)
+    }
+    return t.copy(time = p.minute, tags = (t.tags + CARD_NOTI_TAG).distinct())
 }

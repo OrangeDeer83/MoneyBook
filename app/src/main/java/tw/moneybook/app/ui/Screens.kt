@@ -80,6 +80,7 @@ import tw.moneybook.app.Txn
 import tw.moneybook.app.expenseSum
 import tw.moneybook.app.billMonthFor
 import tw.moneybook.app.subsDue
+import tw.moneybook.app.subsShownInPend
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.formatShort
 import tw.moneybook.app.inMonth
@@ -630,12 +631,16 @@ fun HomeScreen(
     var rankBudget by remember { mutableStateOf(false) }
     var rankTab by rememberSaveable { mutableIntStateOf(0) }
     // 到期還沒記的固定扣款（見 Subs.kt）：放在書本列下面
-    val subsDue = remember(d) { d.subsDue(LocalDate.now().toEpochDay()) }
     // 刷卡待確認（見 CardPendUi.kt）：放在固定扣款提醒下面；讀通知的服務加了新的就重新讀
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val pendVer by tw.moneybook.app.notify.CardPendLog.version.collectAsState()
     val pends = remember(pendVer) { tw.moneybook.app.notify.CardPendLog.load(ctx) }
-    val hasPend = pends.any { it.state == tw.moneybook.app.PendState.WAIT }
+    val hasPend = remember(pends, d) { d.pendWaiting(pends).isNotEmpty() }
+    // 到期還沒記的固定扣款；已經在刷卡待確認裡出現（金額一樣）的不再列
+    val subsDue = remember(d, pends) {
+        val inPend = d.subsShownInPend(pends)
+        d.subsDue(LocalDate.now().toEpochDay()).filter { (s, day) -> (s.id to day) !in inPend }
+    }
     // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、刷卡待確認（有才有）、吉祥物（可以關）、預算、本月摘要
     val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0) + (if (hasPend) 1 else 0)
     // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排

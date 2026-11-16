@@ -1255,6 +1255,35 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    /**
+     * 刷卡對到訂閱：記成那次訂閱（見 pendSubTxn），訂閱那一次也算處理過。外幣對外幣記在台幣卡、沒有匯率時回傳 false（畫面要問）。
+     * 可以復原：刪掉那一筆、訂閱那一次回到還沒處理、回到待確認。
+     */
+    fun recordPendSub(id: Long, twd: Long? = null, pending: Boolean = true): Boolean {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return false
+        val d = data
+        val m = d.pendSub(p, d.resolveCard(p))?.takeIf { !it.done } ?: return false
+        val t = d.pendSubTxn(p, m, d.nextId, twd, pending) ?: run { toast("還沒有 ${m.sub.cur} 的匯率，請先設定匯率"); return false }
+        val old = m.sub
+        commit(d.copy(txns = sortTxns(d.txns + t), subs = d.subs.map { if (it.id == old.id) it.markDone(m.day) else it }, nextId = d.nextId + 1))
+        setPend(id) { it.copy(state = PendState.DONE, txnId = t.id) }
+        _messages.tryEmit(UiMsg("已記 ${old.name} ${formatMoney(t.amount)}", "復原") {
+            val now = data
+            commit(now.copy(
+                txns = now.txns.filter { it.id != t.id },
+                subs = now.subs.map { if (it.id == old.id) it.copy(doneUntil = old.doneUntil, doneDays = old.doneDays) else it },
+            ))
+            setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) }
+        })
+        return true
+    }
+
+    /** 「不是這個訂閱」：變回一般的刷卡，訂閱提醒那一次回來；可以復原 */
+    fun notSubPend(id: Long) {
+        setPend(id) { it.copy(notSub = true) }
+        _messages.tryEmit(UiMsg("已改成一般的刷卡", "復原") { setPend(id) { it.copy(notSub = false) } })
+    }
+
     /** 記一筆（改一下）存好了：待確認那筆算記好了 */
     fun pendSaved(id: Long, txnId: Long) {
         setPend(id) { if (it.state == PendState.WAIT) it.copy(state = PendState.DONE, txnId = txnId) else it }
