@@ -6073,3 +6073,309 @@ def t_sub_icon():
     ns = d.shot("改回分類的圖示")
     r1 = bubble_left_of(ns, last_png(), "影音平台")
     d.check("清單：影音平台變回分類的圖示", 0 <= r1 < 0.005, f"{r1:.1%}")
+
+
+SHELL_PKG = "com.android.shell"
+
+
+def card_noti_seed(s, nos=("1234",), app_cards=(S.CARD,), extra_nos=None):
+    """Seed 加上刷卡通知設定：Shell 發的通知當成「X 銀行」App（對應 app_cards 這幾張卡）、測試信用卡的末四碼"""
+    import json as _json
+    root = _json.loads(s.json())
+    for a in root["accounts"]:
+        if a["id"] == S.CARD:
+            a["cardNos"] = [{"d": n} for n in nos]
+        if extra_nos and a["id"] in extra_nos:
+            a["cardNos"] = [{"d": n} for n in extra_nos[a["id"]]]
+    root["notiApps"] = [{"pkg": SHELL_PKG, "label": "X 銀行", "cardIds": list(app_cards), "defaultCard": None}]
+    return _json.dumps(root, ensure_ascii=False)
+
+
+def card_noti_on():
+    """打開記帳本的通知存取權和發通知的權限（等同使用者在系統設定打開），清掉通知欄"""
+    d.sh(f"cmd notification allow_listener {d.PKG}/tw.moneybook.app.notify.CardNotiListener")
+    d.sh(f"pm grant {d.PKG} android.permission.POST_NOTIFICATIONS")
+    d.sh("service call notification 1")
+    d.time.sleep(2)
+
+
+def bank_post(tag, text, title="X 銀行"):
+    """Shell 發一則「銀行」通知（勾選的 App），等讀通知的服務收到"""
+    d.sh(f"cmd notification post -S bigtext -t '{title}' {tag} '{text}'")
+    d.time.sleep(2.5)
+
+
+def today_slash():
+    return f.today().strftime("%Y/%m/%d")
+
+
+def pend_texts(ns):
+    return [n.text for n in ns if n.text][:40]
+
+
+@case(D, "刷卡通知第二步：讀出來的消費出現在首頁待確認，分類直接帶好；按記記到那張卡、可以復原；沒分類先選；吉祥物通知上可以直接記", visual=True)
+def t_card_pend():
+    s = S.Seed(f.today())
+    s.expense(-3, 60, S.C_DRINK, acc=S.CARD, note="統一超商 信義門市")
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    day = today_slash()
+    bank_post("b1", f"【刷卡通知】金額NT$85元 卡號末四碼1234於{day} 09:11在ＯＰ錢包統一超商刷卡，點擊查看消費明細")
+    bank_post("b2", f"您的信用卡末四碼1234於{day} 12:31在全聯福利中心消費NT$350")
+    bank_post("b3", "您已獲得 2 點")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("首頁待確認")
+    d.check("首頁出現「有 2 筆刷卡等你確認」（點數通知不算）", d.has(ns, "有 2 筆刷卡等你確認", True), pend_texts(ns))
+    d.check("統一超商：卡、時間、分類直接寫（上次記成飲料），沒有「猜」",
+            d.has(ns, "統一超商", True) and d.has(ns, "測試信用卡・今天 09:11・飲料", True) and not d.has(ns, "猜"), pend_texts(ns))
+    d.check("全聯福利中心：找不到分類寫「還沒有分類」", d.has(ns, "測試信用卡・今天 12:31・還沒有分類", True))
+    btn = d.first(ns, "記 統一超商", True)
+    d.check("每一筆有「記」「改一下」「不是消費」", btn is not None and d.has(ns, "改一下", True) and d.has(ns, "不是消費", True))
+    if not btn:
+        return
+    d.tap(btn)
+    d.tap_text("復原", exact=True, timeout=6)   # 提示只停 4 秒
+    d.time.sleep(1.5)
+    ns = d.shot("復原")
+    d.check("按了記再復原：回到 2 筆", d.has(ns, "有 2 筆刷卡等你確認", True) and not d.has(ns, "統一超商（OP錢包）", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "記 統一超商", 8, "記 統一超商"))
+    d.time.sleep(1.5)
+    ns = d.shot("記好統一超商")
+    d.check("記好了：剩 1 筆，明細多一筆「統一超商（OP錢包）」#刷卡通知",
+            d.has(ns, "刷卡等你確認", False) and d.has(ns, "統一超商（OP錢包）", True) and d.has(ns, "#刷卡通知", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "記 全聯福利中心", 8, "記 全聯福利中心"))
+    try:
+        d.wait_text("選擇分類", timeout=8)
+        d.shot("沒有分類：先選分類")
+        d.check("沒有分類：按記先跳出選分類", True)
+        d.tap_text("購物", exact=True)
+        d.time.sleep(1.5)
+    except TimeoutError:
+        d.check("沒有分類：按記先跳出選分類", False)
+        return
+    ns = d.shot("都記好了")
+    d.check("都記好了：待確認卡片不見，明細有全聯福利中心", not d.has(ns, "刷卡等你確認") and d.has(ns, "全聯福利中心", True), pend_texts(ns))
+    # 收到的通知旁邊的標籤
+    f.me_page("刷卡通知")
+    d.time.sleep(1)
+    for _ in range(3):
+        ns = d.nodes()
+        if d.has(ns, "您已獲得2點") or d.has(ns, "您已獲得 2 點"):
+            break
+        d.scroll_down(1)
+    ns = d.shot("收到的通知標籤")
+    d.check("收到的通知：記了的標「已記」、點數通知標「不是消費」", len(d.find(ns, "已記", True)) >= 1 and d.has(ns, "不是消費", True), pend_texts(ns))
+    # 吉祥物通知：收到 1 分鐘後才發；只有一筆、卡和分類都有，通知上可以直接記
+    to_main()
+    f.tab("明細")
+    bank_post("b4", f"您的信用卡末四碼1234於{day} 18:40在統一超商消費NT$45")
+    d.time.sleep(66)
+    d.sh("cmd statusbar expand-notifications")
+    d.time.sleep(2.5)
+    ns = d.shot("吉祥物通知")
+    d.check("1 分鐘後吉祥物發通知：小鹿：刷了一筆 $45", d.has(ns, "小鹿：刷了一筆 $45", True), [n.text for n in ns if n.text][:30])
+    rec = d.first(ns, "記好了", True)
+    d.check("通知上有「記好了」「不是消費」", rec is not None and d.has(ns, "不是消費", True))
+    if rec:
+        d.tap(rec)
+        d.time.sleep(2.5)
+    d.sh("cmd statusbar collapse")
+    d.time.sleep(1)
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("通知上記好了")
+    d.check("通知上按了記好了：首頁沒有待確認，明細有 $45 的統一超商", not d.has(ns, "刷卡等你確認") and d.has(ns, "$45"), pend_texts(ns))
+
+
+@case(D, "刷卡待確認：可能已經記過、對不到卡時選卡片並記住末四碼、改一下打開記一筆並帶好內容", visual=True)
+def t_card_pend_more():
+    s = S.Seed(f.today(), card2=True)
+    s.expense(0, 120, S.C_LUNCH, acc=S.CARD, note="午餐")
+    # X 銀行的 App 沒設定卡：末四碼對不到就要問
+    d.fresh(card_noti_seed(s, app_cards=()))
+    card_noti_on()
+    day = today_slash()
+    bank_post("c1", f"末四碼1234於{day} 12:05在鼎泰豐消費NT$120")
+    bank_post("c2", f"末四碼1234於{day} 13:00在誠品書店消費NT$480")
+    bank_post("c3", f"末四碼9012於{day} 18:40在7-ELEVEN消費NT$65")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("三筆待確認")
+    d.check("有 3 筆刷卡等你確認", d.has(ns, "有 3 筆刷卡等你確認", True), pend_texts(ns))
+    d.check("鼎泰豐：今天測試信用卡已經有一筆 $120，按鈕是「已經記過了／還是要記」",
+            d.has(ns, "已經有一筆 $120") and d.first(ns, "已經記過了 鼎泰豐", True) is not None and d.has(ns, "還是要記", True), pend_texts(ns))
+    d.check("7-ELEVEN：問「X 銀行 的 9012 是哪張卡？」，按鈕是「選卡片」", d.has(ns, "X 銀行 的 9012 是哪張卡？", True) and d.first(ns, "選卡片 7-ELEVEN", True) is not None)
+    d.tap(d.first(ns, "已經記過了 鼎泰豐", True))
+    d.time.sleep(1.5)
+    ns = d.shot("已經記過了")
+    d.check("按「已經記過了」：剩 2 筆，沒有多記一筆 $120", d.has(ns, "有 2 筆刷卡等你確認", True) and len(d.find(ns, "$120", True)) <= 1, pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "選卡片 7-ELEVEN", 8, "選卡片"))
+    try:
+        d.wait_text("X 銀行 的 9012 是哪張卡？", timeout=8)
+    except TimeoutError:
+        d.check("打開選卡片視窗", False)
+        return
+    ns = d.shot("選卡片")
+    d.check("選卡片：列出信用卡、「記住」預設打勾", d.has(ns, "測試信用卡", True) and d.has(ns, "第二張卡", True) and d.has(ns, "記住：9012 是這張卡", True)
+            and any(n.checkable and n.checked for n in ns), pend_texts(ns))
+    d.tap_text("第二張卡", exact=True)
+    d.time.sleep(0.6)
+    d.tap_text("記到第二張卡", exact=True)
+    try:
+        d.wait_text("選擇分類", timeout=8)
+        d.tap_text("餐飲", exact=True)
+        d.time.sleep(1.5)
+    except TimeoutError:
+        d.check("選了卡、沒有分類：先選分類", False)
+    ns = d.shot("記到第二張卡")
+    d.check("記到第二張卡：剩 1 筆，明細有 7-ELEVEN", d.has(ns, "有 1 筆刷卡等你確認", True) and d.has(ns, "7-ELEVEN", True), pend_texts(ns))
+    # 改一下：打開記一筆、內容帶好
+    d.tap_text("改一下", exact=True)
+    try:
+        d.wait_text("從刷卡通知帶入", timeout=10)
+    except TimeoutError:
+        d.check("改一下打開記一筆", False)
+        return
+    d.time.sleep(1)
+    ns = d.shot("改一下")
+    note = next((e for e in d.edits() if "誠品書店" in e.text), None)
+    d.check("改一下：上面寫從哪則通知帶入、備註是商店、金額 480",
+            d.has(ns, "X 銀行・末四碼 1234", False) and note is not None and d.has(ns, "480", False), pend_texts(ns))
+    d.tap_text("購物", exact=True)
+    d.time.sleep(0.6)
+    f.save_edit()
+    d.time.sleep(1.5)
+    ns = d.shot("改一下存好")
+    d.check("存好之後待確認沒有了，明細有誠品書店", not d.has(ns, "刷卡等你確認") and d.has(ns, "誠品書店", True), pend_texts(ns))
+    # 記住：9012 存到第二張卡的末四碼
+    open_account("第二張卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    for _ in range(6):
+        if d.has(d.nodes(), "卡號末四碼", True):
+            break
+        d.swipe(540, 1700, 540, 1000, 400)
+        d.time.sleep(0.5)
+    d.swipe(540, 1700, 540, 1200, 400)
+    d.time.sleep(0.5)
+    ns = d.shot("第二張卡的末四碼")
+    d.check("第二張卡的末四碼有 9012，寫著是從通知學的", d.has(ns, "9012", True) and d.has(ns, "從通知學的"), pend_texts(ns))
+
+
+@case(D, "刷卡通知對到訂閱：首頁只出現一次（標訂閱），按記照訂閱記；訂閱提醒先手動記過的可以按「已經記過了」", visual=True)
+def t_card_pend_sub():
+    s = S.Seed(f.today())
+    s.sub("影音平台", 390, [f.today().day], done_off=-1)
+    s.sub("健身房", 1288, [f.today().day], cat=S.C_MED, done_off=-1)
+    s.expense(-1, 1288, S.C_MED, acc=S.CARD, note="健身")
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    day = today_slash()
+    bank_post("s1", f"末四碼1234於{day} 03:12在NETFLIX.COM刷卡NT$390")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("訂閱和刷卡")
+    d.check("影音平台只出現一次：在刷卡待確認、標「訂閱」，訂閱提醒剩健身房",
+            len(d.find(ns, "影音平台", True)) == 1 and d.has(ns, "訂閱", True) and d.first(ns, "記 影音平台", True) is not None
+            and d.has(ns, "固定扣款到期了", True), pend_texts(ns))
+    d.check("健身房：昨天測試信用卡已經有一筆 $1,288，按鈕是「已經記過了／還是要記」",
+            d.has(ns, "已經有一筆 $1,288") and d.first(ns, "已經記過了 健身房", True) is not None, pend_texts(ns))
+    d.tap(d.first(ns, "記 影音平台", True))
+    d.time.sleep(1.5)
+    ns = d.shot("記了影音平台")
+    d.check("按記：照訂閱記一筆 $390，刷卡待確認不見", not d.has(ns, "刷卡等你確認") and d.has(ns, "$390"), pend_texts(ns))
+    b = d.first(ns, "已經記過了 健身房", True)
+    if b:
+        d.tap(b)
+        d.time.sleep(0.8)
+        ns = d.shot("已經記過了")
+        d.check("按「已經記過了」：提示標成訂閱，訂閱提醒不見", d.has(ns, "的那筆標成訂閱了") or not d.has(ns, "固定扣款到期了"), pend_texts(ns))
+    d.time.sleep(3)
+    ns = d.shot("都處理好了")
+    d.check("訂閱提醒不見了；自己記的健身那筆加上 #訂閱", not d.has(ns, "固定扣款到期了") and d.has(ns, "#訂閱", True), pend_texts(ns))
+    # 訂閱已經記了，才又收到一則同金額的刷卡通知：首頁不出現
+    bank_post("s2", f"末四碼1234於{day} 03:13在NETFLIX.COM刷卡NT$390")
+    d.time.sleep(1)
+    ns = d.shot("訂閱記過了才收到")
+    d.check("訂閱這次已經記了：再收到的刷卡通知不出現在首頁", not d.has(ns, "刷卡等你確認"), pend_texts(ns))
+    f.me_page("刷卡通知")
+    d.time.sleep(1)
+    ns = d.shot("收到的通知")
+    d.check("收到的通知標「已記（訂閱：影音平台）」", d.has(ns, "已記（訂閱：影音平台）", True), pend_texts(ns))
+
+
+@case(D, "信用卡的卡號末四碼：新增（4 碼、備註）、刪掉；已經在別張卡的問要不要移過來", visual=True)
+def t_card_nos():
+    s = S.Seed(f.today(), card2=True)
+    d.fresh(card_noti_seed(s, nos=("1234",), extra_nos={S.CARD2: ["7788"]}))
+    open_account("測試信用卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+
+    def to_section():
+        for _ in range(6):
+            if d.has(d.nodes(), "＋ 新增", True):
+                break
+            d.swipe(540, 1700, 540, 1000, 400)
+            d.time.sleep(0.5)
+    to_section()
+    ns = d.shot("卡號末四碼")
+    d.check("編輯信用卡有「卡號末四碼」：1234、＋ 新增、說明", d.has(ns, "卡號末四碼", True) and d.has(ns, "1234", True)
+            and d.has(ns, "刷卡通知用來分辨是哪張卡，可以不填", True), pend_texts(ns))
+    d.tap_text("＋ 新增", exact=True)
+    d.wait_text("新增末四碼", timeout=8)
+    d.tap_text("加入", exact=True)
+    d.time.sleep(0.6)
+    ns = d.shot("沒打就加入")
+    d.check("沒打滿 4 碼：提示「請輸入 4 碼」", d.has(ns, "請輸入 4 碼", True))
+    d.type_text("5566")
+    d.tap_text("手機", exact=True)
+    d.time.sleep(0.4)
+    d.tap_text("加入", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("加了 5566")
+    d.check("加了 5566（手機）", d.has(ns, "5566", True) and d.has(ns, "手機", False))
+    # 7788 在第二張卡：問要不要移過來
+    d.tap_text("＋ 新增", exact=True)
+    d.wait_text("新增末四碼", timeout=8)
+    d.type_text("7788")
+    d.tap_text("加入", exact=True)
+    try:
+        d.wait_text("移到這張卡？", timeout=6)
+        ns = d.shot("移過來？")
+        d.check("7788 已經在第二張卡：問要不要移過來", d.has(ns, "第二張卡", False))
+        d.tap_text("移過來", exact=True)
+        d.time.sleep(1)
+    except TimeoutError:
+        d.check("7788 已經在第二張卡：問要不要移過來", False)
+    b = d.first(d.nodes(), "刪掉末四碼 1234", True)
+    if b:
+        d.tap(b)
+        d.time.sleep(0.6)
+    ns = d.shot("刪掉 1234")
+    d.check("點 × 刪掉 1234；5566、7788 還在", not d.has(ns, "1234", True) and d.has(ns, "5566", True) and d.has(ns, "7788", True), pend_texts(ns))
+    d.tap_text("儲存", exact=True, lowest=True)
+    d.time.sleep(1.5)
+    d.tap_back()
+    d.time.sleep(1)
+    open_account("第二張卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    to_section()
+    ns = d.shot("第二張卡")
+    d.check("第二張卡的 7788 移走了", not d.has(ns, "7788", True), pend_texts(ns))
+    d.tap_text("取消", exact=True, lowest=True)
+    d.time.sleep(1)
+    d.tap_back()
+    d.time.sleep(1)
+    open_account("測試信用卡")
+    d.tap_text("編輯", exact=True)
+    d.wait_text("編輯帳戶", timeout=10)
+    to_section()
+    ns = d.shot("重開測試信用卡")
+    d.check("測試信用卡存好了：5566、7788，沒有 1234", d.has(ns, "5566", True) and d.has(ns, "7788", True) and not d.has(ns, "1234", True), pend_texts(ns))
