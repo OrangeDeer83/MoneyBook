@@ -76,7 +76,7 @@ import tw.moneybook.app.mascotTitle
 fun subAmountText(s: Sub): String = if (s.isForeign) formatFx(s.amount, s.cur) else formatMoney(s.amount)
 
 /** 「今天」「昨天」「11/5」「2027/3/1」 */
-private fun shortDay(day: Long, today: Long): String {
+internal fun shortDay(day: Long, today: Long): String {
     val dt = LocalDate.ofEpochDay(day)
     return when (day) {
         today -> "今天"
@@ -631,7 +631,7 @@ private fun MonthDayGrid(on: Set<Int>, onChange: (Set<Int>) -> Unit) {
 
 /** 選支出分類：大分類可以收折，打開時只展開選到的那個大分類 */
 @Composable
-private fun SubCatPickDialog(d: AppData, selected: Long?, onPick: (Long) -> Unit, onDismiss: () -> Unit) {
+internal fun SubCatPickDialog(d: AppData, selected: Long?, onPick: (Long) -> Unit, onDismiss: () -> Unit) {
     val cute = LocalCute.current
     val tops = remember(d) { d.topCategories(TxType.EXPENSE) }
     val open = remember { mutableStateListOf<Long>().apply { selected?.let { s -> d.catMap[s]?.let { c -> add(d.topOf(c).id) } } } }

@@ -114,6 +114,10 @@ import tw.moneybook.app.ReimbCodec
 import tw.moneybook.app.ReimbItem
 import tw.moneybook.app.TxnDraft
 import tw.moneybook.app.formatMoney
+import tw.moneybook.app.resolveCard
+import tw.moneybook.app.guessCat
+import tw.moneybook.app.pendNote
+import tw.moneybook.app.CARD_NOTI_TAG
 import java.time.LocalDate
 
 private fun defaultCat(d: AppData, type: TxType): Long? =
@@ -135,6 +139,8 @@ fun EditScreen(
     onGoRecords: (String) -> Unit = {},
     /** 右上角 •••「設成固定扣款」：用這筆記錄新增訂閱（傳記錄 id） */
     onMakeSub: (Long) -> Unit = {},
+    /** 從刷卡待確認按「改一下」：內容照那一筆帶好，存好後那筆算記好了 */
+    pendId: Long? = null,
     onClose: () -> Unit,
 ) {
     val d = vm.data
@@ -144,6 +150,12 @@ fun EditScreen(
     // 常用記帳的金額是台幣整數，不能選外幣帳戶
     val accs = d.visibleAccounts.filter { !tplMode || !it.isForeign }
     val tpl = remember(tplId) { tplId?.let { id -> d.templates.firstOrNull { it.id == id } } }
+    // 刷卡待確認（改一下）：那一筆和對到的卡
+    val pend = remember(pendId) { pendId?.let { id -> tw.moneybook.app.notify.CardPendLog.load(context).firstOrNull { it.id == id } } }
+    val pendCard = remember(pendId) { pend?.let { d.resolveCard(it) } }
+    val pendAcc = pendCard?.let { d.accMap[it] }
+    // 外幣刷台幣卡：記成外幣消費（待請款），台幣先用目前匯率估
+    val pendFxs = pend != null && pend.cur.isNotEmpty() && !(pendAcc?.isForeign == true && pendAcc.currency == pend.cur)
     var tplName by rememberSaveable { mutableStateOf(tpl?.name ?: "") }
     // 常用記帳自己換的圖示；空白＝用分類的圖示
     var tplIcon by rememberSaveable { mutableStateOf(tpl?.icon ?: "") }
@@ -160,15 +172,22 @@ fun EditScreen(
             when {
                 orig != null && origPlan != null && origPlan.mode == FxMode.BUY -> orig.amount.toString()
                 orig != null && origPlan != null && origPlan.mode != FxMode.NONE -> fxExpr(orig.fxAmount, origDec)
+                pend != null && pend.cur.isNotEmpty() ->
+                    if (pendFxs) d.rateOf(pend.cur)?.let { tw.moneybook.app.fxToTwd(pend.amount, tw.moneybook.app.Currencies.of(pend.cur).decimals, it).toString() } ?: ""
+                    else fxExpr(pend.amount, tw.moneybook.app.Currencies.of(pend.cur).decimals)
+                pend != null -> pend.amount.toString()
                 else -> orig?.amount?.toString() ?: tpl?.amount?.takeIf { it > 0 }?.toString() ?: presetAmount?.takeIf { it > 0 }?.toString() ?: ""
             }
         )
     }
-    var catId by rememberSaveable { mutableStateOf(orig?.categoryId ?: tpl?.categoryId ?: defaultCat(d, type)) }
+    var catId by rememberSaveable {
+        mutableStateOf(orig?.categoryId ?: tpl?.categoryId ?: if (pend != null) d.guessCat(pend.merchant, pendCard) else defaultCat(d, type))
+    }
     var accId by rememberSaveable {
         mutableStateOf(
             orig?.accountId
                 ?: tpl?.accountId
+                ?: pendCard
                 ?: presetFrom
                 ?: presetAcc?.takeIf { id -> accs.any { it.id == id } }
                 ?: (if (presetTo != null) accs.firstOrNull { it.id != presetTo && it.type != tw.moneybook.app.AccountType.CARD && !it.isForeign }?.id else null)
@@ -182,19 +201,20 @@ fun EditScreen(
                 ?: accs.getOrNull(1)?.id
         )
     }
-    var day by rememberSaveable { mutableLongStateOf(orig?.day ?: presetDay ?: LocalDate.now().toEpochDay()) }
+    var day by rememberSaveable { mutableLongStateOf(orig?.day ?: pend?.day ?: presetDay ?: LocalDate.now().toEpochDay()) }
     // 時間：新增預設現在；編輯舊記錄沒有時間就是「未設定」（-1）
     var timeMin by rememberSaveable {
         mutableIntStateOf(
             when {
                 orig != null -> orig.time
+                pend != null -> pend.minute
                 tplMode -> -1
                 else -> java.time.LocalTime.now().let { it.hour * 60 + it.minute }
             }
         )
     }
-    var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: "") }
-    var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags)?.joinToString("\n") ?: "") }
+    var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: pend?.let { pendNote(it) } ?: "") }
+    var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
     var inst by rememberSaveable { mutableIntStateOf(1) }
     var fee by rememberSaveable { mutableLongStateOf(orig?.fee ?: 0L) }
     var discount by rememberSaveable { mutableLongStateOf(orig?.discount ?: 0L) }
@@ -227,9 +247,9 @@ fun EditScreen(
     }
     var rateUserCode by rememberSaveable { mutableStateOf(origPlan?.acc?.currency ?: "") }
     // 台幣帳戶刷外幣：外幣金額、幣別、是否還沒請款（見 FxSpendDialog）；金額欄位放預估或實際請款的台幣
-    var fxsCur by rememberSaveable { mutableStateOf(orig?.fxSpendCur ?: "") }
-    var fxsMinor by rememberSaveable { mutableStateOf(orig?.fxSpendAmount ?: 0L) }
-    var fxsPending by rememberSaveable { mutableStateOf(orig?.fxPending ?: false) }
+    var fxsCur by rememberSaveable { mutableStateOf(orig?.fxSpendCur ?: if (pendFxs) pend!!.cur else "") }
+    var fxsMinor by rememberSaveable { mutableStateOf(orig?.fxSpendAmount ?: if (pendFxs) pend!!.amount else 0L) }
+    var fxsPending by rememberSaveable { mutableStateOf(orig?.fxPending ?: pendFxs) }
     // 欠款：別人先墊、我還沒付（見 Debt.kt）；開了就沒有帳戶，還款時才動帳戶。已經有還款記錄的不能改回一般、金額不能改
     // 欠款：別人先幫我付的部分，每個人一項（名單在「報銷／欠款」頁編輯，見 ReimbEditPage）；帳戶只扣剩下我自己付的。
     // 全部都是別人先付時沒有帳戶。已經有還款記錄的不能改金額
@@ -444,6 +464,7 @@ fun EditScreen(
         } else {
             saved = true
             vm.saveTxn(editId, draft())
+            if (pendId != null) vm.savedTxnId?.let { vm.pendSaved(pendId, it) }
         }
         onClose()
         return true
@@ -514,6 +535,20 @@ fun EditScreen(
             }
         }
 
+        // 從刷卡通知帶入：這筆是從哪則通知來的
+        if (pend != null) {
+            Column(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(cute.accent2.copy(alpha = 0.18f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("從刷卡通知帶入", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                val at = LocalDate.ofEpochDay(pend.day).let { "${it.monthValue}/${it.dayOfMonth}" } + if (pend.minute >= 0) " %02d:%02d".format(pend.minute / 60, pend.minute % 60) else ""
+                Text(
+                    listOfNotNull(pend.label, pend.last4.takeIf { it.isNotEmpty() }?.let { "末四碼 $it" }, at).joinToString("・"),
+                    style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                )
+            }
+        }
         // 備註：放在最上面，鍵盤開關時不會跟著移動
         OutlinedTextField(
             value = note,

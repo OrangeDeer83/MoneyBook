@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -611,6 +612,8 @@ fun HomeScreen(
     onDebt: () -> Unit = {},
     /** 預算排行「看明細」：打開統計下鑽頁（vm.drill 已經設好） */
     onDrill: () -> Unit = {},
+    /** 刷卡待確認按「改一下」 */
+    onEditPend: (Long) -> Unit = {},
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -628,8 +631,13 @@ fun HomeScreen(
     var rankTab by rememberSaveable { mutableIntStateOf(0) }
     // 到期還沒記的固定扣款（見 Subs.kt）：放在書本列下面
     val subsDue = remember(d) { d.subsDue(LocalDate.now().toEpochDay()) }
-    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、吉祥物（可以關）、預算、本月摘要
-    val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0)
+    // 刷卡待確認（見 CardPendUi.kt）：放在固定扣款提醒下面；讀通知的服務加了新的就重新讀
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val pendVer by tw.moneybook.app.notify.CardPendLog.version.collectAsState()
+    val pends = remember(pendVer) { tw.moneybook.app.notify.CardPendLog.load(ctx) }
+    val hasPend = pends.any { it.state == tw.moneybook.app.PendState.WAIT }
+    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、刷卡待確認（有才有）、吉祥物（可以關）、預算、本月摘要
+    val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0) + (if (hasPend) 1 else 0)
     // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排
     val settleIds = d.settles.map { it.id }.toSet()
     val homeRecvs = reimbRecvsOf(d.bookTxns, settleIds).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.pay.day)) == month }
@@ -668,6 +676,9 @@ fun HomeScreen(
 
         if (subsDue.isNotEmpty()) {
             item(key = "subsDue") { SubDueCard(vm, subsDue) }
+        }
+        if (hasPend) {
+            item(key = "cardPend") { CardPendCard(vm, pends, onEditPend) }
         }
 
         if (mascot != "none") {

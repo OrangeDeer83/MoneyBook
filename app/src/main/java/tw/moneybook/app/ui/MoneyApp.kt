@@ -69,13 +69,15 @@ sealed interface Route {
         val presetFrom: Long? = null,
         /** 預設記在哪個帳戶（從帳戶明細按記一筆：一般的支出／收入，帳戶自動帶入） */
         val presetAcc: Long? = null,
+        /** 刷卡待確認按「改一下」：那一筆的 id */
+        val pendId: Long? = null,
     ) : Route
     data class Page(val name: String) : Route
 }
 
 /** 一頁存成一段文字（頁面堆疊存檔用，也當成記住那一頁狀態的 key） */
 private fun encodeRoute(r: Route): String = when (r) {
-    is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}|${r.presetFrom ?: ""}|${r.presetAcc ?: ""}"
+    is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}|${r.presetFrom ?: ""}|${r.presetAcc ?: ""}|${r.pendId ?: ""}"
     is Route.Page -> "P|${r.name}"
 }
 
@@ -84,7 +86,7 @@ private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
     save = { list -> ArrayList(list.map { encodeRoute(it) }) },
     restore = { saved ->
         saved.mapNotNull { s ->
-            val p = s.split("|", limit = 9)
+            val p = s.split("|", limit = 10)
             when (p.firstOrNull()) {
                 "E" -> if (p.size >= 6) Route.Edit(
                     id = p[1].toLongOrNull(),
@@ -95,6 +97,7 @@ private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
                     presetDay = p.getOrNull(6)?.toLongOrNull(),
                     presetFrom = p.getOrNull(7)?.toLongOrNull(),
                     presetAcc = p.getOrNull(8)?.toLongOrNull(),
+                    pendId = p.getOrNull(9)?.toLongOrNull(),
                 ) else null
                 "P" -> if (p.size >= 2) Route.Page(s.substring(2)) else null
                 else -> null
@@ -204,10 +207,17 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 onAdd = { push(Route.Edit(null, presetDay = if (tab == 0 && vm.homeCalendar) vm.calSelected else null)) },
                 onEdit = { editTxn(it) },
                 // 「我的 → 帳戶管理」直接切到帳戶分頁
-                open = { if (it == "accounts") { tab = 1 } else { push(Route.Page(it)) } },
+                open = {
+                    when {
+                        it == "accounts" -> tab = 1
+                        // 刷卡待確認的「改一下」：打開記一筆，內容帶好
+                        it.startsWith("pend:") -> push(Route.Edit(null, pendId = it.removePrefix("pend:").toLongOrNull()))
+                        else -> push(Route.Page(it))
+                    }
+                },
             )
             is Route.Edit -> EditScreen(
-                vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, presetFrom = top.presetFrom, presetAcc = top.presetAcc,
+                vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, presetFrom = top.presetFrom, presetAcc = top.presetAcc, pendId = top.pendId,
                 onMakeSub = { push(Route.Page("sub:from:$it")) },
                 onGoRecords = { who ->
                     // 關掉記一筆，打開這個人的紀錄分頁；本來就是從報銷頁過來的就不再疊一層
@@ -340,6 +350,7 @@ private fun MainTabs(
                     onReimb = { open("reimb") },
                     onFxPending = { open("fxpending") },
                     onDrill = { open("drill") },
+                    onEditPend = { open("pend:$it") },
                 )
                 1 -> AccountsScreen(vm, onOpen = { vm.accMonths.remove(it); open("account:$it") }, onAsset = { open("asset") }, onInvest = { open("invest") })
                 2 -> StatsScreen(vm, onSearch = { open("search") }, onDrill = { open("drill") }, onLayout = { open("layout:$it") }, onAsset = { open("asset") }, onDay = { open("day:$it") })

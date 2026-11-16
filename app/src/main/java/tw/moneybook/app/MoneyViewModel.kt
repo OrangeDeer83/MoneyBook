@@ -1228,6 +1228,79 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         update { d -> d.copy(notiApps = d.notiApps.map { if (it.pkg == pkg) it.copy(cardIds = cardIds.distinct(), defaultCard = defaultCard) else it }) }
     }
 
+    // ───────── 刷卡待確認（見 CardPending.kt） ─────────
+
+    private fun setPend(id: Long, f: (CardPend) -> CardPend) =
+        tw.moneybook.app.notify.CardPendLog.update(appContext) { list -> list.map { if (it.id == id) f(it) else it } }
+
+    private fun pendTitle(p: CardPend): String =
+        p.merchant.ifEmpty { "刷卡" } + " " + if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur)
+
+    /**
+     * 記下一筆刷卡（記在目前的帳本；卡、分類由畫面決定）。外幣記在台幣卡：twd 是台幣金額，沒給就用目前匯率，
+     * 沒有匯率回傳 false（畫面要問）。可以復原：刪掉那一筆、回到待確認。
+     */
+    fun recordPend(id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true): Boolean {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return false
+        val d = data
+        val t = d.pendTxn(p, d.nextId, d.currentBook.id, cardId, catId, twd, pending)
+            ?: run { toast("還沒有 ${p.cur} 的匯率，請先設定匯率"); return false }
+        commit(d.copy(txns = sortTxns(d.txns + t), nextId = d.nextId + 1))
+        setPend(id) { it.copy(state = PendState.DONE, txnId = t.id, cardId = cardId) }
+        _messages.tryEmit(UiMsg("已記 ${pendTitle(p)}", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.filter { it.id != t.id }))
+            setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) }
+        })
+        return true
+    }
+
+    /** 記一筆（改一下）存好了：待確認那筆算記好了 */
+    fun pendSaved(id: Long, txnId: Long) {
+        setPend(id) { if (it.state == PendState.WAIT) it.copy(state = PendState.DONE, txnId = txnId) else it }
+    }
+
+    /** 「不是消費」：拿掉，可以復原 */
+    fun notSpendPend(id: Long) {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id } ?: return
+        setPend(id) { it.copy(state = PendState.NOT) }
+        _messages.tryEmit(UiMsg("已拿掉 ${pendTitle(p)}", "復原") { setPend(id) { it.copy(state = PendState.WAIT) } })
+    }
+
+    /** 「已經記過了」：認走 txnId 那一筆，不記新的，可以復原 */
+    fun hadPend(id: Long, txnId: Long) {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id } ?: return
+        setPend(id) { it.copy(state = PendState.HAD, txnId = txnId) }
+        _messages.tryEmit(UiMsg("${pendTitle(p)} 已經記過了", "復原") { setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) } })
+    }
+
+    /**
+     * 對不到卡時選了卡片。remember＝記住：
+     * 有末四碼 → 沒有卡有這組就加到這張卡（標成從通知學的）；好幾張卡都有 → 這張卡加進這個 App 的卡（App 的卡優先）；
+     * 沒有末四碼 → 有標題就記住「這個標題 → 這張卡」，沒有標題就當這個 App 的預設卡。
+     */
+    fun pickPendCard(id: Long, cardId: Long, remember: Boolean) {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id } ?: return
+        setPend(id) { it.copy(cardId = cardId) }
+        if (!remember) return
+        val s = p.src.firstOrNull { it.last4.isNotEmpty() } ?: p.src.first()
+        val today = LocalDate.now().toEpochDay()
+        update { d ->
+            fun addToApp(dd: AppData) = dd.copy(notiApps = dd.notiApps.map { a -> if (a.pkg == s.pkg && cardId !in a.cardIds) a.copy(cardIds = a.cardIds + cardId) else a })
+            if (s.last4.isNotEmpty()) {
+                val holders = d.accounts.filter { a -> a.cardNos.any { it.digits == s.last4 } }
+                val withNo = if (holders.none { it.id == cardId })
+                    d.copy(accounts = d.accounts.map { a -> if (a.id == cardId) a.copy(cardNos = a.cardNos + CardNo(s.last4, learned = today)) else a })
+                else d
+                if (holders.isEmpty()) withNo else addToApp(withNo)
+            } else if (titleKey(s.title).isNotEmpty()) {
+                d.copy(notiApps = d.notiApps.map { a -> if (a.pkg == s.pkg) a.copy(titles = a.titles + (titleKey(s.title) to cardId)) else a })
+            } else {
+                d.copy(notiApps = d.notiApps.map { a -> if (a.pkg == s.pkg) a.copy(defaultCard = cardId) else a })
+            }
+        }
+    }
+
     /** 到期通知的設定（null＝不改）；開關關掉時收掉通知、取消定時檢查 */
     fun setSubNotify(on: Boolean? = null, time: Int? = null, repeat: Int? = null, ahead: Int? = null) {
         update { d ->

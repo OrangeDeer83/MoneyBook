@@ -163,3 +163,101 @@ object CardPendCodec {
         emptyList()
     }
 }
+
+// ───────── 首頁顯示時才算的：自動帶分類、可能已經記過 ─────────
+
+/** 刷卡記的那一筆加的標籤 */
+const val CARD_NOTI_TAG = "刷卡通知"
+
+/**
+ * 商店名稱整理成比對用的字串：全形轉半形、轉小寫，刪掉括號和裡面的字、
+ * 英文最後一段有數字的（付款代碼，例如 SPOTIFY P1F2），再刪掉空白和標點。
+ */
+fun shopKey(s: String): String {
+    var t = normalizeNoti(s).lowercase()
+    t = t.replace(Regex("""[(（\[【「][^)）\]】」]*[)）\]】」]"""), " ")
+    val parts = t.trim().split(' ').filter { it.isNotEmpty() }
+    if (parts.size > 1 && parts.last().any { it.isDigit() } && parts.last().any { it.isLetter() && !(it in '㐀'..'鿿') }) {
+        t = parts.dropLast(1).joinToString(" ")
+    }
+    return t.filter { it.isLetterOrDigit() }
+}
+
+private val BRANCH = listOf("門市", "分店", "營業所", "店")
+
+/**
+ * 兩個整理過的名稱算不算同一家（都至少 2 個字）：一樣；一個是另一個的開頭
+ * （「統一超商」和「統一超商信義門市」、被截斷的商店名稱、備註「統一超商買咖啡」）；
+ * 或兩個都以門市／分店／店結尾、前 4 個字一樣（「統一超商信義門市」和「統一超商松仁門市」）。
+ */
+fun sameShop(a: String, b: String): Boolean {
+    if (a.length < 2 || b.length < 2) return false
+    if (a.startsWith(b) || b.startsWith(a)) return true
+    return a.length >= 4 && b.length >= 4 && a.take(4) == b.take(4) && BRANCH.any { a.endsWith(it) } && BRANCH.any { b.endsWith(it) }
+}
+
+/**
+ * 自動帶的分類（找不到回傳 null，要使用者選）：
+ * 1. 同一家商店上次記成什麼：記錄從新到舊，第一筆「支出、有分類、不是餘額調整、備註和商店是同一家」的分類
+ * 2. 這張卡最常記的分類：這張卡最近 30 筆有分類的支出（不算餘額調整、#訂閱），至少 5 筆，最多的那個分類超過一半才算
+ */
+fun AppData.guessCat(merchant: String, cardId: Long?): Long? {
+    fun ok(id: Long?) = id?.let { catMap[it] }?.takeIf { it.kind == TxType.EXPENSE }?.id
+    val key = shopKey(merchant)
+    if (key.length >= 2) {
+        // txns 已經是新到舊（同一天的照時間）
+        for (t in txns) {
+            if (t.type != TxType.EXPENSE || t.adjust || t.categoryId == null) continue
+            if (sameShop(key, shopKey(t.note.lineSequence().firstOrNull() ?: ""))) ok(t.categoryId)?.let { return it }
+        }
+    }
+    if (cardId == null) return null
+    val recent = txns.asSequence()
+        .filter { it.accountId == cardId && it.type == TxType.EXPENSE && !it.adjust && it.categoryId != null && Sub.TAG !in it.tags }
+        .take(30).toList()
+    if (recent.size < 5) return null
+    val (top, n) = recent.groupingBy { it.categoryId!! }.eachCount().maxByOrNull { it.value } ?: return null
+    return if (n * 2 > recent.size) ok(top) else null
+}
+
+/** 待確認裡已經記過、認走的那些記錄（不會再被當成「可能已經記過」） */
+fun claimedTxns(list: List<CardPend>): Set<Long> = list.filter { it.state == PendState.DONE || it.state == PendState.HAD }.map { it.txnId }.toSet()
+
+/**
+ * 可能已經記過：那一天、那張卡有一筆實付金額一樣的支出（外幣比外幣金額），不是餘額調整、還沒被別的待確認認走。
+ */
+fun AppData.possibleHad(p: CardPend, cardId: Long?, claimed: Set<Long>): Txn? {
+    if (cardId == null) return null
+    val acc = accMap[cardId]
+    return txns.firstOrNull { t ->
+        t.accountId == cardId && t.type == TxType.EXPENSE && !t.adjust && t.day == p.day && t.id !in claimed &&
+            when {
+                p.cur.isEmpty() -> t.recorded == p.amount
+                acc?.isForeign == true && acc.currency == p.cur -> t.fxAmount == p.amount
+                else -> t.fxSpendCur == p.cur && t.fxSpendAmount == p.amount
+            }
+    }
+}
+
+/** 記成那一筆的備註：商店（有錢包加在後面）；都沒有就空白 */
+fun pendNote(p: CardPend): String = when {
+    p.merchant.isNotEmpty() && p.wallet.isNotEmpty() -> "${p.merchant}（${p.wallet}）"
+    else -> p.merchant.ifEmpty { p.wallet }
+}
+
+/**
+ * 待確認記成的一筆支出（記在 bookId 這本帳本）。外幣：記在同幣別的外幣卡就是外幣金額；
+ * 記在台幣卡是「外幣消費」，twd 是預估的台幣（pending＝待請款）。外幣沒有給 twd 回傳 null。
+ */
+fun AppData.pendTxn(p: CardPend, id: Long, bookId: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true): Txn? {
+    val acc = accMap[cardId] ?: return null
+    val base = Txn(
+        id = id, bookId = bookId, type = TxType.EXPENSE, amount = p.amount, categoryId = catId, accountId = cardId, toAccountId = null,
+        day = p.day, note = pendNote(p), tags = listOf(CARD_NOTI_TAG), time = p.minute,
+    )
+    if (p.cur.isEmpty()) return base
+    val dec = Currencies.of(p.cur).decimals
+    val est = twd ?: rateOf(p.cur)?.let { fxToTwd(p.amount, dec, it) } ?: return null
+    return if (acc.isForeign && acc.currency == p.cur) base.copy(amount = est, fxAmount = p.amount)
+    else base.copy(amount = est, fxSpendAmount = p.amount, fxSpendCur = p.cur, fxPending = pending)
+}
