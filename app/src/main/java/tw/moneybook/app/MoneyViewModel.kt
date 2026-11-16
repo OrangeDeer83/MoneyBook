@@ -967,16 +967,12 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     // ───────── 帳戶 ─────────
 
-    /** a 的 id 與 order 會被忽略（新增時自動產生） */
+    /**
+     * a 的 id 與 order 會被忽略（新增時自動產生）。
+     * 卡號末四碼同一組只能在一張卡：這張卡有的，從別張卡拿掉（編輯頁已經問過「要不要移過來」）。
+     */
     fun saveAccount(id: Long?, a: Account) {
-        update { d ->
-            if (id == null) {
-                val n = a.copy(id = d.nextId, order = (d.accounts.maxOfOrNull { it.order } ?: 0) + 1)
-                d.copy(accounts = d.accounts + n, nextId = d.nextId + 1)
-            } else {
-                d.copy(accounts = d.accounts.map { if (it.id == id) a.copy(id = id, order = it.order) else it })
-            }
-        }
+        update { d -> saveAccountTo(d, id, a) }
     }
 
     /** 設定某個外幣的目前匯率（1 單位外幣換多少台幣）；rate 是 null 或 0 代表清掉手動匯率，改用最近一次買賣的匯率 */

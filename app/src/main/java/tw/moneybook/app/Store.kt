@@ -52,6 +52,7 @@ object Codec {
                         .put("creditLimit", a.creditLimit).put("statementDay", a.statementDay).put("dueDay", a.dueDay)
                         .put("sharedLimitOf", a.sharedLimitOf).put("payAccountId", a.payAccountId)
                         .put("favorite", a.favorite).put("currency", a.currency)
+                        .apply { if (a.cardNos.isNotEmpty()) put("cardNos", CardNoCodec.toJson(a.cardNos)) }
                 )
             }
         })
@@ -186,6 +187,7 @@ object Codec {
                 dueDay = o.optInt("dueDay", 0),
                 sharedLimitOf = o.optLong("sharedLimitOf", 0L),
                 payAccountId = o.optLong("payAccountId", 0L),
+                cardNos = CardNoCodec.fromJson(o.optJSONArray("cardNos")),
             )
         }
         val categories = objects(root.optJSONArray("categories")) { o ->

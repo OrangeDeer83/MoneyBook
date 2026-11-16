@@ -45,6 +45,48 @@ object NotiAppCodec {
  */
 data class CapturedNoti(val id: Long, val pkg: String, val label: String, val title: String, val text: String, val time: Long)
 
+/**
+ * 信用卡的一組卡號末四碼。note：自己加的備註（實體卡、手機、舊卡…，空白＝沒寫）；
+ * learned：從刷卡通知學到的那天（epoch day），0＝自己輸入的。
+ */
+data class CardNo(val digits: String, val note: String = "", val learned: Long = 0L)
+
+/** 末四碼是不是 4 個數字 */
+fun validCardNo(s: String): Boolean = s.length == 4 && s.all { it in '0'..'9' }
+
+/** 這組末四碼在哪張卡（排除 exceptId 那張）；沒有回傳 null */
+fun AppData.cardWithNo(digits: String, exceptId: Long = 0L): Account? =
+    accounts.firstOrNull { it.id != exceptId && it.cardNos.any { n -> n.digits == digits } }
+
+/** 存一個帳戶（id＝null 是新增）：卡號末四碼同一組只能在一張卡，這張卡有的從別張卡拿掉 */
+fun saveAccountTo(d: AppData, id: Long?, a: Account): AppData {
+    val mine = a.cardNos.map { it.digits }.toSet()
+    fun others(list: List<Account>, selfId: Long) =
+        if (mine.isEmpty()) list else list.map { o -> if (o.id != selfId && o.cardNos.any { it.digits in mine }) o.copy(cardNos = o.cardNos.filter { it.digits !in mine }) else o }
+    return if (id == null) {
+        val n = a.copy(id = d.nextId, order = (d.accounts.maxOfOrNull { it.order } ?: 0) + 1)
+        d.copy(accounts = others(d.accounts, n.id) + n, nextId = d.nextId + 1)
+    } else {
+        d.copy(accounts = others(d.accounts.map { if (it.id == id) a.copy(id = id, order = it.order) else it }, id))
+    }
+}
+
+object CardNoCodec {
+    fun toJson(list: List<CardNo>): JSONArray = JSONArray().apply {
+        list.forEach { n ->
+            put(JSONObject().put("d", n.digits).apply { if (n.note.isNotEmpty()) put("note", n.note); if (n.learned != 0L) put("learned", n.learned) })
+        }
+    }
+
+    fun fromJson(arr: JSONArray?): List<CardNo> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            CardNo(o.optString("d", ""), o.optString("note", ""), o.optLong("learned", 0L)).takeIf { validCardNo(it.digits) }
+        }.distinctBy { it.digits }
+    }
+}
+
 /** 收到的通知最多留幾天、幾則 */
 const val NOTI_KEEP_DAYS = 7
 const val NOTI_KEEP_MAX = 500

@@ -611,6 +611,7 @@ fun AccountDialog(
     var limit by remember { mutableStateOf(acc?.creditLimit?.takeIf { it > 0 }?.toString() ?: "") }
     var stmt by remember { mutableStateOf(acc?.statementDay?.takeIf { it > 0 }?.toString() ?: "") }
     var due by remember { mutableStateOf(acc?.dueDay?.takeIf { it > 0 }?.toString() ?: "") }
+    var cardNos by remember { mutableStateOf(acc?.cardNos ?: emptyList()) }
     var sharedOf by remember { mutableStateOf(acc?.sharedLimitOf ?: 0L) }
     // 和這張卡同一組共用額度的其他卡（可以多選）：這張是主卡時就是掛在它底下的卡；這張是副卡時是同組的其他副卡
     var members by remember {
@@ -663,6 +664,7 @@ fun AccountDialog(
         dueDay = if (type == AccountType.CARD) (due.toIntOrNull() ?: 0).coerceIn(0, 31) else 0,
         sharedLimitOf = if (type == AccountType.CARD) (joinOwner?.id ?: sharedOf) else 0L,
         payAccountId = if (type == AccountType.INVEST) pay else 0L,
+        cardNos = if (type == AccountType.CARD) cardNos else emptyList(),
     )
 
     /** 按儲存時，其他卡的共用額度要怎麼改 */
@@ -936,6 +938,7 @@ fun AccountDialog(
                             modifier = Modifier.weight(1f),
                         )
                     }
+                    CardNoSection(cardNos, acc?.id ?: 0L, cards) { cardNos = it }
                 }
                 if (acc != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

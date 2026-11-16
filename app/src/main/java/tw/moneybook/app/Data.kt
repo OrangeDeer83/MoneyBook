@@ -56,6 +56,8 @@ data class Account(
     val favorite: Boolean = false,
     /** 外幣帳戶的幣別代碼（例如 USD）；空白是台幣帳戶。外幣帳戶的初始金額與餘額都用該幣別的最小單位（美元是分） */
     val currency: String = "",
+    /** 信用卡的卡號末四碼（可以好幾組：實體卡、手機綁定的虛擬卡號、舊卡），刷卡通知分辨是哪張卡用；舊資料沒有這個欄位 */
+    val cardNos: List<CardNo> = emptyList(),
 )
 
 /**
