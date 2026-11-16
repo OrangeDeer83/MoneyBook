@@ -149,6 +149,23 @@ fun AppData.subsMonthly(today: Long): Long = bookSubs.filter { !it.paused && it.
 /** 目前帳本的訂閱 */
 val AppData.bookSubs: List<Sub> get() = subs.filter { it.bookId == currentBook.id }
 
+/**
+ * 訂閱提醒的「可能已經記過」：同一本帳本、同一個帳戶，扣款日前後 3 天內有一筆金額一樣的支出
+ * （台幣比記的時候的總額，外幣比外幣金額），不是餘額調整、沒有 #訂閱（訂閱記的、已經認走的都有）。好幾筆取日期最近的。
+ */
+fun AppData.subHad(s: Sub, day: Long): Txn? {
+    val acc = s.accountId?.let { accMap[it] } ?: return null
+    return txns.filter { t ->
+        t.bookId == s.bookId && t.accountId == acc.id && t.type == TxType.EXPENSE && !t.adjust &&
+            kotlin.math.abs(t.day - day) <= SUB_MATCH_DAYS && Sub.TAG !in t.tags &&
+            when {
+                !s.isForeign -> t.recorded == s.amount
+                acc.isForeign && acc.currency == s.cur -> t.fxAmount == s.amount
+                else -> t.fxSpendCur == s.cur && t.fxSpendAmount == s.amount
+            }
+    }.minByOrNull { kotlin.math.abs(it.day - day) }
+}
+
 /** 目前帳本到期還沒處理的扣款（訂閱, 扣款日），最早的在前面 */
 fun AppData.subsDue(today: Long): List<Pair<Sub, Long>> =
     bookSubs.flatMap { s -> s.due(today).map { s to it } }.sortedWith(compareBy({ it.second }, { it.first.id }))

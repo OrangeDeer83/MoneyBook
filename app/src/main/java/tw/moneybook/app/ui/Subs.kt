@@ -69,6 +69,7 @@ import tw.moneybook.app.next
 import tw.moneybook.app.parseFx
 import tw.moneybook.app.ruleText
 import tw.moneybook.app.subTwd
+import tw.moneybook.app.subHad
 import tw.moneybook.app.subsMonthly
 import tw.moneybook.app.mascotTitle
 
@@ -683,19 +684,56 @@ fun SubDueCard(vm: MoneyViewModel, due: List<Pair<Sub, Long>>) {
     val cute = LocalCute.current
     val today = LocalDate.now().toEpochDay()
     var fx by remember { mutableStateOf<Pair<Sub, Long>?>(null) }
+    // 可能已經記過（同帳戶、同金額、前後 3 天已經有一筆自己記的）：「全部記」不記這些
+    val hads = remember(d, due) { due.associate { (s, day) -> (s.id to day) to d.subHad(s, day) } }
+    val recordable = due.filter { (s, day) -> hads[s.id to day] == null }
     CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (due.size == 1) "固定扣款到期了" else "有 ${due.size} 筆固定扣款還沒記",
                 style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
             )
-            if (due.size > 1) Button(onClick = { vm.recordAllSubs(due.map { it.first.id to it.second }) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp), modifier = Modifier.height(32.dp)) {
+            if (due.size > 1 && recordable.isNotEmpty()) Button(onClick = { vm.recordAllSubs(recordable.map { it.first.id to it.second }) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp), modifier = Modifier.height(32.dp)) {
                 Text("全部記", style = MaterialTheme.typography.labelLarge)
             }
         }
         due.take(5).forEach { (s, day) ->
             val c = s.categoryId?.let { d.catMap[it] }
             val a = s.accountId?.let { d.accMap[it] }
+            val had = hads[s.id to day]
+            if (had != null) {
+                // 可能已經記過：說明那一筆，按鈕換成「已經記過了／還是要記」
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CatBubble(s.icon.ifEmpty { c?.emoji ?: "img:cat_box" }, c?.color ?: 8, 34.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(s.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(listOfNotNull(shortDay(day, today), a?.name).joinToString("・"), style = MaterialTheme.typography.labelSmall, color = if (day < today) cute.expense else cute.sub, maxLines = 1)
+                        }
+                        Text(subAmountText(s), color = cute.expense, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
+                    }
+                    Column(
+                        Modifier.padding(start = 44.dp, top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(cute.soft)
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            "${shortDay(had.day, today)} ${a?.name ?: ""} 已經有一筆 " + (if (had.fxSpendAmount > 0L) formatFx(had.fxSpendAmount, had.fxSpendCur) else tw.moneybook.app.formatMoney(had.recorded)),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        val what = listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).joinToString("，")
+                        Text("（" + what.ifEmpty { "你自己記的" } + "）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    }
+                    Row(Modifier.padding(start = 44.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { vm.subAlready(s.id, day, had.id) },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp), modifier = Modifier.height(32.dp).semantics { contentDescription = "已經記過了 ${s.name}" },
+                        ) { Text("已經記過了", style = MaterialTheme.typography.labelLarge) }
+                        SoftButton("還是要記", { if (s.isForeign && a?.isForeign != true) fx = s to day else vm.recordSub(s.id, day) }, compact = true)
+                    }
+                }
+                return@forEach
+            }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 CatBubble(s.icon.ifEmpty { c?.emoji ?: "img:cat_box" }, c?.color ?: 8, 34.dp)
                 Spacer(Modifier.width(10.dp))

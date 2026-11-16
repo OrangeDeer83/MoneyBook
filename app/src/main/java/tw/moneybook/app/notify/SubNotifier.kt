@@ -30,6 +30,7 @@ import tw.moneybook.app.ui.mascotDefaultName
 import tw.moneybook.app.ui.mascotRes
 import tw.moneybook.app.withSubRecorded
 import tw.moneybook.app.withSubSkipped
+import tw.moneybook.app.subHad
 
 /**
  * 訂閱到期的手機通知：每天在設定的時間（AlarmManager）檢查一次，有到期沒記的就由吉祥物發一則通知
@@ -172,7 +173,12 @@ class SubNotifyReceiver : BroadcastReceiver() {
                 }
                 val store = Store(ctx.filesDir)
                 var d = store.load()
-                for ((id, day) in items) d = (if (skip) d.withSubSkipped(id, day) else d.withSubRecorded(id, day)) ?: d
+                // 「全部記好」：可能已經記過的（同帳戶同金額已經有一筆）留著，打開 App 再選
+                val all = intent.action == SubNotifier.ACTION_ALL
+                for ((id, day) in items) {
+                    if (all && d.subs.firstOrNull { it.id == id }?.let { d.subHad(it, day) } != null) continue
+                    d = (if (skip) d.withSubSkipped(id, day) else d.withSubRecorded(id, day)) ?: d
+                }
                 store.save(d)
                 SubNotifier.post(ctx, d, silent = true)
                 val pending = goAsync()

@@ -1352,7 +1352,30 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         _messages.tryEmit(UiMsg("已略過 ${s.name}（${LocalDate.ofEpochDay(day).monthValue}/${LocalDate.ofEpochDay(day).dayOfMonth}）", "復原") { undoSub(id, s, null) })
     }
 
-    /** 首頁「全部記」：到期的都記（外幣用目前匯率、待請款；沒有匯率的留著），可以一起復原 */
+    /**
+     * 訂閱提醒按「已經記過了」：不記新的，這一次算處理過，自己記的那一筆加上 #訂閱（之後不會再被別的訂閱認走）。
+     * 可以復原：拿掉標籤、這一次回到還沒處理。
+     */
+    fun subAlready(id: Long, day: Long, txnId: Long) {
+        val d = data
+        val s = d.subs.firstOrNull { it.id == id } ?: return
+        val t = d.txns.firstOrNull { it.id == txnId } ?: return
+        val hadTag = Sub.TAG in t.tags
+        commit(d.copy(
+            txns = d.txns.map { if (it.id == txnId) it.copy(tags = (it.tags + Sub.TAG).distinct()) else it },
+            subs = d.subs.map { if (it.id == id) it.markDone(day) else it },
+        ))
+        val dt = LocalDate.ofEpochDay(t.day)
+        _messages.tryEmit(UiMsg("${s.name} ${dt.monthValue}/${dt.dayOfMonth} 的那筆標成訂閱了", "復原") {
+            val now = data
+            commit(now.copy(
+                txns = if (hadTag) now.txns else now.txns.map { if (it.id == txnId) it.copy(tags = it.tags - Sub.TAG) else it },
+                subs = now.subs.map { if (it.id == id) it.copy(doneUntil = s.doneUntil, doneDays = s.doneDays) else it },
+            ))
+        })
+    }
+
+    /** 首頁「全部記」：到期的都記（外幣用目前匯率、待請款；沒有匯率的留著；可能已經記過的留著讓使用者選），可以一起復原 */
     fun recordAllSubs(items: List<Pair<Long, Long>>) {
         var d = data
         val before = d.subs.associateBy { it.id }
@@ -1360,6 +1383,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         var left = 0
         for ((id, day) in items) {
             val s = d.subs.firstOrNull { it.id == id } ?: continue
+            if (d.subHad(s, day) != null) continue
             val amt = d.subTwd(s)
             if (amt == null) { left++; continue }
             val t = d.subTxn(s, day, d.nextId, amt, true)
