@@ -6429,3 +6429,73 @@ def t_card_backfill():
     d.time.sleep(1.5)
     ns = d.shot("再打開一次")
     d.check("再打開一次不會再補：還是 2 筆", d.has(ns, "有 2 筆刷卡等你確認", True) and not d.has(ns, "放進待確認了"), pend_texts(ns))
+
+
+def relearn_open(note):
+    """點明細裡那一筆打開修改頁，帳戶改成第二張卡，按完成"""
+    d.tap_text(note, exact=True)
+    f.edit_open()
+    d.time.sleep(1)
+
+
+@case(D, "刷卡通知記的那一筆事後改成別張卡：按儲存問「以後 1234 也記到這張嗎」，以後都記到／只改這一筆", visual=True)
+def t_card_relearn():
+    s = S.Seed(f.today(), card2=True)
+    s.expense(-3, 60, S.C_DRINK, acc=S.CARD, note="統一超商 信義門市")
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    day = today_slash()
+    bank_post("r1", f"末四碼1234於{day} 09:11在統一超商消費NT$85")
+    to_main()
+    f.tab("明細")
+    d.tap(d.wait(lambda n: n.desc == "記 統一超商", 10, "記 統一超商"))
+    d.time.sleep(2)
+    relearn_open("統一超商")
+    ns = d.shot("修改刷卡通知記的那一筆")
+    d.check("修改頁上面寫「這筆是刷卡通知記的」、X 銀行・末四碼 1234", d.has(ns, "這筆是刷卡通知記的", True) and d.has(ns, "X 銀行・末四碼 1234", True), pend_texts(ns))
+    d.tap(f.acc_button())
+    d.wait_text("選擇帳戶", timeout=10)
+    d.time.sleep(0.6)
+    d.tap(max([n for n in d.nodes() if n.text == "第二張卡"], key=lambda n: n.cy))
+    d.time.sleep(0.8)
+    d.tap(max([n for n in d.nodes() if n.text == "完成"], key=lambda n: n.cy))
+    try:
+        d.wait_text("以後 1234 也記到第二張卡嗎？", timeout=8)
+    except TimeoutError:
+        d.check("改成第二張卡按完成：問「以後 1234 也記到第二張卡嗎？」", False, pend_texts(d.nodes()))
+        return
+    ns = d.shot("問以後也記到這張嗎")
+    d.check("問「以後 1234 也記到第二張卡嗎？」，說明現在記到測試信用卡，有「以後都記到第二張卡」「只改這一筆」",
+            d.has(ns, "記帳本現在把 1234 記到測試信用卡") and d.has(ns, "以後都記到第二張卡", True) and d.has(ns, "只改這一筆", True), pend_texts(ns))
+    d.tap_text("以後都記到第二張卡", exact=True)
+    try:
+        d.wait_text("以後 1234 記到第二張卡", timeout=6)
+        d.check("存好：提示「以後 1234 記到第二張卡」", True)
+    except TimeoutError:
+        d.check("存好：提示「以後 1234 記到第二張卡」", False, pend_texts(d.nodes()))
+    d.time.sleep(4)
+    # 再刷一筆 1234：記到第二張卡
+    bank_post("r2", f"末四碼1234於{day} 12:31在全聯福利中心消費NT$350")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("以後的 1234 記到第二張卡")
+    d.check("之後的 1234 通知直接對到第二張卡", d.has(ns, "第二張卡・今天 12:31", False), pend_texts(ns))
+    # 只改這一筆：改回測試信用卡，不記住
+    relearn_open("統一超商")
+    d.tap(f.acc_button())
+    d.wait_text("選擇帳戶", timeout=10)
+    d.time.sleep(0.6)
+    d.tap(max([n for n in d.nodes() if n.text == "測試信用卡"], key=lambda n: n.cy))
+    d.time.sleep(0.8)
+    d.tap(max([n for n in d.nodes() if n.text == "完成"], key=lambda n: n.cy))
+    try:
+        d.wait_text("以後 1234 也記到測試信用卡嗎？", timeout=8)
+        d.tap_text("只改這一筆", exact=True)
+        d.wait(lambda n: n.text in ("明細", "帳戶", "統計", "我的") and n.cy > 2000, 15, "回到主畫面")
+    except TimeoutError:
+        d.check("改回測試信用卡也會問", False, pend_texts(d.nodes()))
+        return
+    d.time.sleep(1.5)
+    ns = d.shot("只改這一筆")
+    d.check("只改這一筆：待確認的全聯還是第二張卡", d.has(ns, "第二張卡・今天 12:31", False) and not d.has(ns, "以後 1234 記到測試信用卡"), pend_texts(ns))
