@@ -6092,7 +6092,10 @@ def card_noti_seed(s, nos=("1234",), app_cards=(S.CARD,), extra_nos=None):
 
 
 def card_noti_on():
-    """打開記帳本的通知存取權和發通知的權限（等同使用者在系統設定打開），清掉通知欄"""
+    """打開記帳本的通知存取權和發通知的權限（等同使用者在系統設定打開），清掉通知欄。
+    先關再開：前一個用例強制停止過 App 時，系統不會自己重新連上讀通知的服務"""
+    d.sh(f"cmd notification disallow_listener {d.PKG}/tw.moneybook.app.notify.CardNotiListener")
+    d.time.sleep(0.5)
     d.sh(f"cmd notification allow_listener {d.PKG}/tw.moneybook.app.notify.CardNotiListener")
     d.sh(f"pm grant {d.PKG} android.permission.POST_NOTIFICATIONS")
     d.sh("service call notification 1")
