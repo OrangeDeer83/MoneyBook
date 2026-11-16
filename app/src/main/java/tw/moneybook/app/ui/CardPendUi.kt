@@ -45,6 +45,7 @@ import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.PendState
 import tw.moneybook.app.claimedTxns
 import tw.moneybook.app.formatFx
+import tw.moneybook.app.isForeign
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.fxPlain
 import tw.moneybook.app.guessCat
