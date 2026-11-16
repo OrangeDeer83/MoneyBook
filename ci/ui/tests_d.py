@@ -6340,7 +6340,8 @@ def t_card_nos():
     d.time.sleep(1)
     ns = d.shot("加了 5566")
     d.check("加了 5566（手機）", d.has(ns, "5566", True) and d.has(ns, "手機", False))
-    # 7788 在第二張卡：問要不要移過來
+    # 7788 在第二張卡：問要不要移過來（加了一組之後「＋ 新增」可能換到下一行，先捲過去）
+    to_section()
     d.tap_text("＋ 新增", exact=True)
     d.wait_text("新增末四碼", timeout=8)
     d.type_text("7788")
@@ -6353,6 +6354,7 @@ def t_card_nos():
         d.time.sleep(1)
     except TimeoutError:
         d.check("7788 已經在第二張卡：問要不要移過來", False)
+    to_section()
     b = d.first(d.nodes(), "刪掉末四碼 1234", True)
     if b:
         d.tap(b)
