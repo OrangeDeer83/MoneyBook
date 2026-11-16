@@ -95,9 +95,10 @@ fun AppData.teachOf(t: NotiTpl): TplTeach =
 fun tplColor(f: TplField): Color {
     val cute = LocalCute.current
     return when (f) {
-        TplField.AMOUNT -> cute.accent2
+        // 金額用支出的顏色；末四碼用點綴色（tertiary 跟點綴色一樣，會跟金額分不出來）
+        TplField.AMOUNT -> cute.expense
         TplField.MERCHANT -> cute.income
-        TplField.LAST4 -> MaterialTheme.colorScheme.tertiary
+        TplField.LAST4 -> cute.accent2
         TplField.TIME -> cute.out
     }
 }
