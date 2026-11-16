@@ -184,6 +184,8 @@ data class Txn(
     val debtSelf: Long = 0L,
     /** 預算外（見 Budget.kt）：0＝跟著分類、1＝預算外、2＝算預算 */
     val budgetOut: Int = 0,
+    /** 從刷卡通知記的：是哪則通知（App、標題、末四碼）。事後在修改頁改卡時用它問「以後也記到這張嗎」；舊資料沒有 */
+    val noti: NotiSrc? = null,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))

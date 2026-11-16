@@ -51,6 +51,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -117,6 +119,11 @@ import tw.moneybook.app.formatMoney
 import tw.moneybook.app.resolveCard
 import tw.moneybook.app.guessCat
 import tw.moneybook.app.pendNote
+import tw.moneybook.app.NotiSrc
+import tw.moneybook.app.mainSrc
+import tw.moneybook.app.relearnAsk
+import tw.moneybook.app.relearnWhat
+import tw.moneybook.app.matchCard
 import tw.moneybook.app.CARD_NOTI_TAG
 import java.time.LocalDate
 
@@ -264,6 +271,8 @@ fun EditScreen(
     var noteFocused by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf(false) }
+    // 事後改卡：要問「以後也記到這張嗎」的那則通知
+    var relearnSrc by remember { mutableStateOf<NotiSrc?>(null) }
     val focus = LocalFocusManager.current
     // 系統鍵盤直接蓋在畫面上，不要把畫面往上推（備註在最上面，不會被蓋到）
     val hostContext = LocalContext.current
@@ -413,6 +422,7 @@ fun EditScreen(
         debtItems = debtEff,
         budgetOut = if (type == TxType.EXPENSE) budgetOut else 0,
         offsetWho = offsets.map { it.who },
+        noti = if (orig == null) pend?.mainSrc else null,
     )
 
     val initialDraft = remember { draft() }
@@ -445,8 +455,8 @@ fun EditScreen(
         showTpl = false
     }
 
-    /** 儲存；成功回傳 true */
-    fun doSave(): Boolean {
+    /** 儲存；成功回傳 true。relearn：事後改卡問過了（true＝以後都記到這張、false＝只改這一筆），null＝還沒問 */
+    fun doSave(relearn: Boolean? = null): Boolean {
         // 快速連點時，換頁動畫還沒結束、畫面還能點，不能重複儲存
         if (saved) return true
         if (need != null) {
@@ -462,9 +472,18 @@ fun EditScreen(
             vm.saveTemplate(tplId, tplName.trim(), draft(), tplIcon)
             vm.toast("常用記帳已儲存")
         } else {
+            // 刷卡通知記的那一筆改成別張信用卡：先問以後這種通知要不要也記到這張
+            val ask = if (relearn == null && orig != null) d.relearnAsk(orig, draft().accountId) else null
+            if (ask != null) {
+                relearnSrc = ask
+                dialog = "relearn"
+                return false
+            }
             saved = true
-            vm.saveTxn(editId, draft())
+            val dr = draft()
+            vm.saveTxn(editId, dr)
             if (pendId != null) vm.savedTxnId?.let { vm.pendSaved(pendId, it) }
+            if (relearn == true) relearnSrc?.let { s -> dr.accountId?.let { vm.relearnCard(s, it) } }
         }
         onClose()
         return true
@@ -545,6 +564,20 @@ fun EditScreen(
                 val at = LocalDate.ofEpochDay(pend.day).let { "${it.monthValue}/${it.dayOfMonth}" } + if (pend.minute >= 0) " %02d:%02d".format(pend.minute / 60, pend.minute % 60) else ""
                 Text(
                     listOfNotNull(pend.label, pend.last4.takeIf { it.isNotEmpty() }?.let { "末四碼 $it" }, at).joinToString("・"),
+                    style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                )
+            }
+        }
+        // 刷卡通知記的那一筆：寫是從哪則通知來的（改卡時會問以後要不要也記到新的卡）
+        val on = orig?.noti
+        if (pend == null && on != null) {
+            Column(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(cute.accent2.copy(alpha = 0.18f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("這筆是刷卡通知記的", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    listOfNotNull(on.label.ifEmpty { null }, on.last4.takeIf { it.isNotEmpty() }?.let { "末四碼 $it" } ?: on.title.ifEmpty { null }).joinToString("・"),
                     style = MaterialTheme.typography.labelSmall, color = cute.sub,
                 )
             }
@@ -926,6 +959,29 @@ fun EditScreen(
             onGo = { w -> goPending = w },
             onClose = { dialog = "" },
         )
+        "relearn" -> {
+            val s = relearnSrc
+            val newName = d.accMap[accId]?.name ?: ""
+            val nowName = s?.let { d.matchCard(it) }?.let { d.accMap[it]?.name }
+            val what = s?.let { relearnWhat(it) } ?: ""
+            AlertDialog(
+                // 按旁邊空白也是只改這一筆
+                onDismissRequest = { dialog = ""; doSave(false) },
+                title = { Text("以後${what}也記到${newName}嗎？") },
+                text = {
+                    Text(
+                        "這筆是刷卡通知記的" + (s?.last4?.takeIf { it.isNotEmpty() }?.let { "（末四碼 $it）" } ?: "") + "，" +
+                            (if (nowName != null) "記帳本現在把${what}記到$nowName。" else "記帳本現在對不到這張卡，每次都會問你。")
+                    )
+                },
+                confirmButton = {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { dialog = ""; doSave(true) }, modifier = Modifier.fillMaxWidth()) { Text("以後都記到$newName") }
+                        OutlinedButton(onClick = { dialog = ""; doSave(false) }, modifier = Modifier.fillMaxWidth()) { Text("只改這一筆") }
+                    }
+                },
+            )
+        }
         "unsaved" -> AlertDialog(
             onDismissRequest = { dialog = "" },
             title = { Text("要儲存修改嗎？") },

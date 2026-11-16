@@ -59,6 +59,8 @@ data class TxnDraft(
     val budgetOut: Int = 0,
     /** 存好後這一筆裡要互相抵銷的人（同一個人兩邊都有，在「報銷／欠款」頁按完成時選的，見 withSameTxnOffset） */
     val offsetWho: List<String> = emptyList(),
+    /** 從刷卡通知「改一下」記的：是哪則通知（只有新增時用；修改時留著原本的） */
+    val noti: NotiSrc? = null,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -332,6 +334,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     // 分期（n > 1）不支援外幣消費：這裡只有單筆
                     fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                     budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
+                    noti = dr.noti,
                 ).let { withDebt(it, dr.debtItems) }.let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
@@ -358,6 +361,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                         fee = if (i == 0) dr.fee else 0L,
                         discount = if (i == 0) dr.discount else 0L,
                         budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
+                        noti = dr.noti,
                     ).let {
                         // 每個報銷對象的金額也平均分到每一期
                         val shares = dr.reimbItems.map { r ->
@@ -1314,6 +1318,18 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val card = d.resolveCard(p) ?: return
         val sm = d.pendSub(p, card)?.takeIf { !it.done && it.exact }
         if (sm != null) recordPendSub(id) else recordPend(id, card, d.guessCat(p.merchant, card))
+    }
+
+    /**
+     * 事後在修改頁改了卡，選「以後都記到這張」：這種通知以後記到 cardId（見 relearnCard），可以復原。
+     */
+    fun relearnCard(s: NotiSrc, cardId: Long) {
+        val before = data
+        val name = before.accMap[cardId]?.name ?: return
+        update { d -> d.relearnCard(s, cardId, LocalDate.now().toEpochDay()) }
+        _messages.tryEmit(UiMsg("以後${relearnWhat(s)}記到$name", "復原") {
+            update { d -> d.copy(accounts = d.accounts.map { a -> before.accMap[a.id]?.let { o -> a.copy(cardNos = o.cardNos) } ?: a }, notiApps = before.notiApps) }
+        })
     }
 
     /** 記一筆（改一下）存好了：待確認那筆算記好了 */

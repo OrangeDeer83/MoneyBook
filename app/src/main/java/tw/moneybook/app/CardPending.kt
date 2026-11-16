@@ -63,8 +63,8 @@ private fun nameKey(s: String) = normalizeNoti(s).lowercase().filter { !it.isWhi
  * 1. 有末四碼：先在這個 App 設定的卡裡找，再到所有信用卡找（剛好一張才算）
  * 2. 以前「記住」的：通知標題 → 卡（Samsung Wallet 這種標題是卡片名稱的）
  * 3. 標題和卡名一樣（去掉空白比）
- * 4. 這個 App 只設了一張卡
- * 5. 沒寫末四碼：這個 App 的預設卡
+ * 4. 沒寫末四碼：這個 App 的預設卡（使用者自己選的，比 5 優先）
+ * 5. 這個 App 只設了一張卡
  */
 fun AppData.matchCard(s: NotiSrc): Long? {
     val cards = accounts.filter { it.type == AccountType.CARD && !it.hidden }
@@ -79,8 +79,8 @@ fun AppData.matchCard(s: NotiSrc): Long? {
         app?.titles?.get(tk)?.takeIf { id -> cards.any { it.id == id } }?.let { return it }
         cards.filter { nameKey(it.name) == tk }.singleOrNull()?.let { return it.id }
     }
-    if (appCards.size == 1) return appCards[0].id
     if (s.last4.isEmpty()) app?.defaultCard?.takeIf { id -> cards.any { it.id == id } }?.let { return it }
+    if (appCards.size == 1) return appCards[0].id
     return null
 }
 
@@ -129,6 +129,22 @@ fun pendOf(n: CapturedNoti, r: NotiRead): CardPend? =
         id = n.id, src = listOf(NotiSrc(n.id, n.pkg, n.label, n.title, r.last4)), amount = r.amount, cur = r.cur,
         merchant = r.merchant, merchantSure = r.merchantSure, wallet = r.wallet, day = r.day, minute = r.minute, time = n.time,
     )
+
+/** 記成一筆時留著的來源：有末四碼的那則優先 */
+val CardPend.mainSrc: NotiSrc get() = src.firstOrNull { it.last4.isNotEmpty() } ?: src.first()
+
+/** 記在那一筆上的通知來源（Txn.noti） */
+object NotiSrcCodec {
+    fun toJson(s: NotiSrc): JSONObject =
+        JSONObject().put("id", s.notiId).put("pkg", s.pkg).put("label", s.label).put("title", s.title).put("last4", s.last4)
+
+    fun fromJson(o: JSONObject?): NotiSrc? {
+        if (o == null) return null
+        val pkg = o.optString("pkg", "")
+        if (pkg.isEmpty()) return null
+        return NotiSrc(o.optLong("id", 0L), pkg, o.optString("label", ""), o.optString("title", ""), o.optString("last4", ""))
+    }
+}
 
 object CardPendCodec {
     fun encode(list: List<CardPend>): String = JSONArray().apply {
@@ -256,7 +272,7 @@ fun AppData.pendTxn(p: CardPend, id: Long, bookId: Long, cardId: Long, catId: Lo
     val acc = accMap[cardId] ?: return null
     val base = Txn(
         id = id, bookId = bookId, type = TxType.EXPENSE, amount = p.amount, categoryId = catId, accountId = cardId, toAccountId = null,
-        day = p.day, note = pendNote(p), tags = listOf(CARD_NOTI_TAG), time = p.minute,
+        day = p.day, note = pendNote(p), tags = listOf(CARD_NOTI_TAG), time = p.minute, noti = p.mainSrc,
     )
     if (p.cur.isEmpty()) return base
     val dec = Currencies.of(p.cur).decimals
@@ -320,7 +336,7 @@ fun AppData.pendSubTxn(p: CardPend, m: SubMatch, id: Long, twd: Long? = null, pe
         p.cur.isEmpty() -> subTxn(s, p.day, id, p.amount, false)
         else -> subTxn(s, p.day, id, twd ?: subTwd(s) ?: return null, pending)
     }
-    return t.copy(time = p.minute, tags = (t.tags + CARD_NOTI_TAG).distinct())
+    return t.copy(time = p.minute, tags = (t.tags + CARD_NOTI_TAG).distinct(), noti = p.mainSrc)
 }
 
 // ───────── 「收到的通知」旁邊的標籤 ─────────
@@ -409,4 +425,42 @@ fun backfillPends(pends: List<CardPend>, captured: List<CapturedNoti>, d: AppDat
         if (out.size > before) n++
     }
     return out to n
+}
+
+// ───────── 事後在修改頁改卡：問「以後也記到這張嗎」（使用者選乙） ─────────
+
+/**
+ * 修改刷卡通知記的那一筆、帳戶換成另一張信用卡時要不要問：照規則這種通知現在不會記到新的這張才問
+ * （已經會了就不用問）。回傳要記住的那則來源，不用問回傳 null。
+ */
+fun AppData.relearnAsk(t: Txn, newAcc: Long?): NotiSrc? {
+    val s = t.noti ?: return null
+    if (t.type != TxType.EXPENSE || newAcc == null || newAcc == t.accountId) return null
+    if (accMap[newAcc]?.type != AccountType.CARD) return null
+    // 沒有末四碼的要記在這個 App 上：App 已經不讀了就不問
+    if (s.last4.isEmpty() && notiApps.none { it.pkg == s.pkg }) return null
+    return s.takeIf { matchCard(it) != newAcc }
+}
+
+/** 「以後 ___ 也記到 X 卡」：末四碼、通知標題、或這個 App 沒寫末四碼的通知 */
+fun relearnWhat(s: NotiSrc): String = when {
+    s.last4.isNotEmpty() -> " ${s.last4} "
+    titleKey(s.title).isNotEmpty() -> "「${s.title}」的通知"
+    else -> " ${s.label} 沒寫末四碼的通知"
+}
+
+/**
+ * 以後這種通知記到 cardId：有末四碼 → 這組末四碼移到這張卡（從別張卡拿掉，標成今天學的）；
+ * 沒有末四碼 → 記住「這個標題 → 這張卡」；連標題都沒有 → 當這個 App 的預設卡。
+ */
+fun AppData.relearnCard(s: NotiSrc, cardId: Long, today: Long): AppData = when {
+    s.last4.isNotEmpty() -> copy(accounts = accounts.map { a ->
+        when {
+            a.id == cardId -> if (a.cardNos.any { it.digits == s.last4 }) a else a.copy(cardNos = a.cardNos + CardNo(s.last4, learned = today))
+            a.cardNos.any { it.digits == s.last4 } -> a.copy(cardNos = a.cardNos.filter { it.digits != s.last4 })
+            else -> a
+        }
+    })
+    titleKey(s.title).isNotEmpty() -> copy(notiApps = notiApps.map { a -> if (a.pkg == s.pkg) a.copy(titles = a.titles + (titleKey(s.title) to cardId)) else a })
+    else -> copy(notiApps = notiApps.map { a -> if (a.pkg == s.pkg) a.copy(defaultCard = cardId) else a })
 }

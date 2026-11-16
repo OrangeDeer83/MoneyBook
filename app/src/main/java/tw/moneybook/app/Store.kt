@@ -81,6 +81,7 @@ object Codec {
                         .put("adjust", t.adjust).put("time", t.time).put("fxAmount", t.fxAmount).put("billMonth", t.billMonth)
                         .put("fxSpendAmount", t.fxSpendAmount).put("fxSpendCur", t.fxSpendCur).put("fxPending", t.fxPending)
                         .put("debtItems", DebtCodec.itemsToJson(t.debtItems)).put("debtSelf", t.debtSelf).put("budgetOut", t.budgetOut)
+                        .apply { t.noti?.let { put("noti", NotiSrcCodec.toJson(it)) } }
                 )
             }
         })
@@ -235,6 +236,7 @@ object Codec {
                 debtItems = DebtCodec.itemsFromJson(o.optJSONArray("debtItems")),
                 debtSelf = o.optLong("debtSelf", 0L),
                 budgetOut = o.optInt("budgetOut", 0),
+                noti = NotiSrcCodec.fromJson(o.optJSONObject("noti")),
             ).let { t0 -> DebtCodec.migrateV1(t0, o) }
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
