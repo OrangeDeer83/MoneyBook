@@ -10,6 +10,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import tw.moneybook.app.CapturedCodec
 import tw.moneybook.app.CapturedNoti
+import tw.moneybook.app.CardPend
+import tw.moneybook.app.CardPendCodec
+import tw.moneybook.app.addPend
+import tw.moneybook.app.parseCardNoti
+import tw.moneybook.app.pendOf
+import tw.moneybook.app.prunePend
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.Store
 import tw.moneybook.app.addCaptured
@@ -36,11 +42,50 @@ object CardNotiLog {
         pruneCaptured(list, System.currentTimeMillis())
     }
 
-    fun add(ctx: Context, n: CapturedNoti) {
-        synchronized(lock) {
+    /** 加一則；重複的（系統重送同一則）不加，回傳 false */
+    fun add(ctx: Context, n: CapturedNoti): Boolean {
+        val added = synchronized(lock) {
             val f = file(ctx)
             val list = if (f.exists()) CapturedCodec.decode(f.readText()) else emptyList()
-            f.writeText(CapturedCodec.encode(addCaptured(list, n, System.currentTimeMillis())))
+            val out = addCaptured(list, n, System.currentTimeMillis())
+            f.writeText(CapturedCodec.encode(out))
+            out.any { it.id == n.id }
+        }
+        _version.value = _version.value + 1
+        return added
+    }
+
+    fun clear(ctx: Context) {
+        synchronized(lock) { file(ctx).delete() }
+        _version.value = _version.value + 1
+    }
+}
+
+/**
+ * 刷卡的待確認（見 CardPending.kt）：存在手機自己的檔案裡（不跟著備份），放 14 天。
+ * 讀通知的服務和 App 都會改，所以一律透過 update 在鎖裡讀、改、寫。
+ */
+object CardPendLog {
+    private const val FILE = "card_pending.json"
+    private val lock = Any()
+    private val _version = MutableStateFlow(0)
+
+    /** 每次有變就加 1，畫面看到變了就重新讀 */
+    val version: StateFlow<Int> = _version
+
+    private fun file(ctx: Context) = File(ctx.filesDir, FILE)
+
+    fun load(ctx: Context): List<CardPend> = synchronized(lock) {
+        val f = file(ctx)
+        val list = if (f.exists()) CardPendCodec.decode(f.readText()) else emptyList()
+        prunePend(list, System.currentTimeMillis())
+    }
+
+    fun update(ctx: Context, change: (List<CardPend>) -> List<CardPend>) {
+        synchronized(lock) {
+            val f = file(ctx)
+            val list = if (f.exists()) CardPendCodec.decode(f.readText()) else emptyList()
+            f.writeText(CardPendCodec.encode(prunePend(change(list), System.currentTimeMillis())))
         }
         _version.value = _version.value + 1
     }
@@ -49,6 +94,15 @@ object CardNotiLog {
         synchronized(lock) { file(ctx).delete() }
         _version.value = _version.value + 1
     }
+}
+
+/** 收到一則勾選的 App 的通知：存原文；讀得出消費就放進待確認 */
+fun onCardNoti(ctx: Context, n: CapturedNoti) {
+    if (!CardNotiLog.add(ctx, n)) return
+    val r = parseCardNoti(n.title, n.text, n.time)
+    val p = pendOf(n, r) ?: return
+    val d = SubNotifier.current(ctx)
+    CardPendLog.update(ctx) { addPend(it, p, d, System.currentTimeMillis()) }
 }
 
 /** 使用者有沒有打開記帳本的通知存取權 */
@@ -108,7 +162,7 @@ class CardNotiListener : NotificationListenerService() {
                 ?: ex.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.joinToString("\n")
                 ?: "").trim()
             if (title.isEmpty() && text.isEmpty()) return
-            CardNotiLog.add(this, CapturedNoti(sbn.postTime * 1000 + (text.hashCode() and 0x3ff), sbn.packageName, label, title, text, sbn.postTime))
+            onCardNoti(this, CapturedNoti(sbn.postTime * 1000 + (text.hashCode() and 0x3ff), sbn.packageName, label, title, text, sbn.postTime))
         } catch (_: Exception) {
         }
     }

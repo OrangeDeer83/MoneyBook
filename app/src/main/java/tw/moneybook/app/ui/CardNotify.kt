@@ -446,11 +446,12 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
         "off" -> AlertDialog(
             onDismissRequest = { ask = "" },
             title = { Text("停用刷卡通知？") },
-            text = { Text("會清掉勾選的 App 和收到的通知。接著打開系統的通知存取權頁面，請把「記帳本」關掉。") },
+            text = { Text("會清掉勾選的 App、收到的通知和還沒確認的刷卡。接著打開系統的通知存取權頁面，請把「記帳本」關掉。") },
             confirmButton = {
                 TextButton(onClick = {
                     vm.setNotiApps(emptyList())
                     CardNotiLog.clear(ctx)
+                    tw.moneybook.app.notify.CardPendLog.clear(ctx)
                     ask = ""
                     try {
                         ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

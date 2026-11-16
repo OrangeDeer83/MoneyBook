@@ -13,6 +13,8 @@ data class NotiApp(
     val label: String,
     val cardIds: List<Long> = emptyList(),
     val defaultCard: Long? = null,
+    /** 「記住」的：通知標題（titleKey）→ 卡（Samsung Wallet 這種沒有末四碼、標題是卡片名稱的）；舊資料沒有 */
+    val titles: Map<String, Long> = emptyMap(),
 )
 
 object NotiAppCodec {
@@ -21,6 +23,7 @@ object NotiAppCodec {
             put(
                 JSONObject().put("pkg", a.pkg).put("label", a.label).put("cardIds", JSONArray(a.cardIds))
                     .put("defaultCard", a.defaultCard ?: JSONObject.NULL)
+                    .apply { if (a.titles.isNotEmpty()) put("titles", JSONObject().apply { a.titles.forEach { (k, v) -> put(k, v) } }) }
             )
         }
     }
@@ -33,7 +36,9 @@ object NotiAppCodec {
             val pkg = o.optString("pkg", "")
             if (pkg.isEmpty()) continue
             val ids = o.optJSONArray("cardIds")?.let { a -> (0 until a.length()).mapNotNull { j -> a.optLong(j, 0L).takeIf { it > 0L } } } ?: emptyList()
-            out.add(NotiApp(pkg, o.optString("label", pkg), ids, if (o.isNull("defaultCard")) null else o.optLong("defaultCard").takeIf { it > 0L }))
+            val tj = o.optJSONObject("titles")
+            val titles = tj?.keys()?.asSequence()?.mapNotNull { k -> tj.optLong(k, 0L).takeIf { it > 0L }?.let { k to it } }?.toMap() ?: emptyMap()
+            out.add(NotiApp(pkg, o.optString("label", pkg), ids, if (o.isNull("defaultCard")) null else o.optLong("defaultCard").takeIf { it > 0L }, titles))
         }
         return out.distinctBy { it.pkg }
     }
