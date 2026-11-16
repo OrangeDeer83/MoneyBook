@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import tw.moneybook.app.AccountType
 import tw.moneybook.app.CapturedNoti
+import tw.moneybook.app.NotiTagKind
+import tw.moneybook.app.notiTag
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.NotiApp
 import tw.moneybook.app.looksLikePayApp
@@ -374,6 +376,9 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
     val d = vm.data
     val ver by CardNotiLog.version.collectAsState()
     val list: List<CapturedNoti> = remember(ver) { CardNotiLog.load(ctx) }
+    // 待確認（每一則旁邊標讀得怎麼樣、記了沒有）
+    val pendVer by tw.moneybook.app.notify.CardPendLog.version.collectAsState()
+    val pends = remember(pendVer) { tw.moneybook.app.notify.CardPendLog.load(ctx) }
     var ask by remember { mutableStateOf("") }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
@@ -383,7 +388,7 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
                 Text(
                     (if (list.isEmpty()) "還沒收到。刷卡後，勾選的 App 跳出的通知會出現在下面。"
                     else "最後收到：${notiTime(list.first().time)}，最近 7 天 ${list.size} 則。") +
-                        "\n現在只收集、還不會記帳；讀出金額、商店、按一下記帳是下一步。",
+                        "\n讀出來的消費會放在首頁等你確認，按「記」才會記帳；退款、預先授權這種還不會讀。",
                     style = MaterialTheme.typography.bodySmall, color = cute.sub,
                 )
             }
@@ -421,7 +426,19 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cute.card).padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text("${n.label}・${notiTime(n.time)}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                val (kind, tag) = remember(n, pends, d) { d.notiTag(n, pends) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${n.label}・${notiTime(n.time)}", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.weight(1f))
+                    val col = when (kind) {
+                        NotiTagKind.GOOD -> cute.income
+                        NotiTagKind.PART -> cute.accent2
+                        NotiTagKind.OFF -> cute.sub
+                    }
+                    Text(
+                        tag, style = MaterialTheme.typography.labelSmall, color = if (kind == NotiTagKind.PART) cute.ink else col,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(col.copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
+                }
                 if (n.title.isNotEmpty()) Text(n.title, style = MaterialTheme.typography.titleSmall)
                 if (n.text.isNotEmpty()) Text(n.text, style = MaterialTheme.typography.bodySmall)
             }

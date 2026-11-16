@@ -322,3 +322,28 @@ fun AppData.pendSubTxn(p: CardPend, m: SubMatch, id: Long, twd: Long? = null, pe
     }
     return t.copy(time = p.minute, tags = (t.tags + CARD_NOTI_TAG).distinct())
 }
+
+// ───────── 「收到的通知」旁邊的標籤 ─────────
+
+/** 收到的通知讀得怎麼樣：GOOD＝讀對了／已記（綠）、PART＝少了商店（橘）、OFF＝不是消費、還不會讀、已經記過（灰） */
+enum class NotiTagKind { GOOD, PART, OFF }
+
+/** 收到的一則通知旁邊的標籤：有放進待確認的看那筆的狀態，沒有的看讀出來的結果 */
+fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, String> {
+    val p = pends.firstOrNull { pp -> pp.src.any { it.notiId == n.id } }
+    if (p != null) {
+        return when (p.state) {
+            PendState.DONE -> NotiTagKind.GOOD to "已記"
+            PendState.HAD -> NotiTagKind.OFF to "已經記過"
+            PendState.NOT -> NotiTagKind.OFF to "不是消費"
+            else -> pendSubDone(p)?.let { NotiTagKind.GOOD to "已記（訂閱：${it.sub.name}）" }
+                ?: if (p.merchant.isEmpty()) NotiTagKind.PART to "少了商店" else NotiTagKind.GOOD to "讀對了"
+        }
+    }
+    val r = parseCardNoti(n.title, n.text, n.time)
+    return when (r.kind) {
+        NotiKind.SPEND -> if (r.merchant.isEmpty()) NotiTagKind.PART to "少了商店" else NotiTagKind.GOOD to "讀對了"
+        NotiKind.NO_AMOUNT -> NotiTagKind.OFF to "不是消費"
+        NotiKind.OTHER -> NotiTagKind.OFF to "還不會讀"
+    }
+}
