@@ -12,7 +12,9 @@ import tw.moneybook.app.CapturedCodec
 import tw.moneybook.app.CapturedNoti
 import tw.moneybook.app.CardPend
 import tw.moneybook.app.CardPendCodec
+import tw.moneybook.app.AppData
 import tw.moneybook.app.addPend
+import tw.moneybook.app.backfillPends
 import tw.moneybook.app.parseCardNoti
 import tw.moneybook.app.pendOf
 import tw.moneybook.app.prunePend
@@ -93,6 +95,27 @@ object CardPendLog {
     fun clear(ctx: Context) {
         synchronized(lock) { file(ctx).delete() }
         _version.value = _version.value + 1
+    }
+
+    /**
+     * 更新到會讀通知的版本後，第一次打開 App 時補一次：「收到的通知」裡還沒放進待確認的也放進去
+     * （已經手動記過的會顯示「可能已經記過」）。之後不會再補。回傳補了幾筆。
+     */
+    fun backfillOnce(ctx: Context, d: AppData): Int {
+        val mark = File(ctx.filesDir, "card_backfill_done")
+        if (mark.exists()) return 0
+        val captured = CardNotiLog.load(ctx)
+        var n = 0
+        synchronized(lock) {
+            val f = file(ctx)
+            val list = if (f.exists()) CardPendCodec.decode(f.readText()) else emptyList()
+            val (out, added) = backfillPends(list, captured, d, System.currentTimeMillis())
+            if (added > 0) f.writeText(CardPendCodec.encode(prunePend(out, System.currentTimeMillis())))
+            n = added
+            mark.writeText("1")
+        }
+        if (n > 0) _version.value = _version.value + 1
+        return n
     }
 }
 

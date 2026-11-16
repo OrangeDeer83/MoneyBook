@@ -391,3 +391,22 @@ fun AppData.pendNotice(list: List<CardPend>, name: String): PendNotice? {
         null,
     )
 }
+
+// ───────── 更新後補一次：第一步收到的通知也放進待確認 ─────────
+
+/**
+ * 把「收到的通知」裡還沒放進待確認的（第一步收的、早於讀通知的版本）讀一遍放進去，由早到晚加（同一筆的兩則照樣合併）。
+ * 回傳新的清單和補了幾筆。只在更新後第一次打開 App 時做一次（見 notify/CardPendLog.backfillOnce）。
+ */
+fun backfillPends(pends: List<CardPend>, captured: List<CapturedNoti>, d: AppData, now: Long): Pair<List<CardPend>, Int> {
+    val seen = pends.flatMap { p -> p.src.map { it.notiId } }.toSet()
+    var out = pends
+    var n = 0
+    for (c in captured.filter { it.id !in seen }.sortedBy { it.time }) {
+        val p = pendOf(c, parseCardNoti(c.title, c.text, c.time)) ?: continue
+        val before = out.size
+        out = addPend(out, p, d, now)
+        if (out.size > before) n++
+    }
+    return out to n
+}

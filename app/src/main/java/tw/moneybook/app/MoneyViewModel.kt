@@ -238,6 +238,18 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             tw.moneybook.app.notify.SubNotifier.schedule(appContext, data.prefs)
         } catch (_: Exception) {
         }
+        // 更新到會讀刷卡通知的版本後補一次：之前「收到的通知」裡的刷卡也放進待確認（等畫面接上提示再說）
+        viewModelScope.launch {
+            val n = try {
+                tw.moneybook.app.notify.CardPendLog.backfillOnce(appContext, data)
+            } catch (_: Exception) {
+                0
+            }
+            if (n > 0) {
+                kotlinx.coroutines.delay(1500)
+                toast("之前收到的 $n 筆刷卡放進待確認了")
+            }
+        }
     }
 
     override fun onCleared() {
