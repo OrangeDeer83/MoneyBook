@@ -6381,3 +6381,51 @@ def t_card_nos():
     to_section()
     ns = d.shot("重開測試信用卡")
     d.check("測試信用卡存好了：5566、7788，沒有 1234", d.has(ns, "5566", True) and d.has(ns, "7788", True) and not d.has(ns, "1234", True), pend_texts(ns))
+
+
+def put_old_notis(items):
+    """模擬更新前（第一步）就收到的通知：寫進「收到的通知」的檔案，拿掉「已經補過」的記號"""
+    import json as _json, os
+    path = os.path.join(d.OUT, "_notis.json")
+    with open(path, "w", encoding="utf-8") as f_:
+        f_.write(_json.dumps(items, ensure_ascii=False))
+    d.adb("push", path, "/data/local/tmp/card_notis.json")
+    d.sh(f"run-as {d.PKG} cp /data/local/tmp/card_notis.json files/card_notis.json")
+    d.sh(f"run-as {d.PKG} rm -f files/card_backfill_done files/card_pending.json")
+
+
+@case(D, "更新後第一次打開 App：之前收到的刷卡通知補進待確認（只補一次），已經手動記過的顯示可能已經記過", visual=True)
+def t_card_backfill():
+    import time as _t
+    s = S.Seed(f.today())
+    s.expense(-1, 350, S.C_SHOP, acc=S.CARD, note="全聯")
+    d.fresh(card_noti_seed(s))
+    now = int(_t.time() * 1000)
+    day = 86_400_000
+    y = (f.today() - S.datetime.timedelta(days=1)).strftime("%Y/%m/%d")
+    y2 = (f.today() - S.datetime.timedelta(days=2)).strftime("%Y/%m/%d")
+    put_old_notis([
+        dict(id=now - 2 * day, pkg=SHELL_PKG, label="X 銀行", title="X 銀行", text=f"末四碼1234於{y2} 19:20在鼎泰豐消費NT$880", time=now - 2 * day),
+        dict(id=now - day, pkg=SHELL_PKG, label="X 銀行", title="X 銀行", text=f"末四碼1234於{y} 12:31在全聯福利中心消費NT$350", time=now - day),
+        dict(id=now - day + 5, pkg=SHELL_PKG, label="X 銀行", title="X 銀行", text="您已獲得 2 點", time=now - day + 5),
+    ])
+    d.stop_app()
+    d.launch()
+    d.wait_main()
+    try:
+        d.wait_text("之前收到的 2 筆刷卡放進待確認了", timeout=8)
+        d.check("打開 App 提示「之前收到的 2 筆刷卡放進待確認了」", True)
+    except TimeoutError:
+        d.check("打開 App 提示「之前收到的 2 筆刷卡放進待確認了」", False, pend_texts(d.nodes()))
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("補進待確認")
+    d.check("前天的鼎泰豐、昨天的全聯補進待確認（點數通知不算）", d.has(ns, "有 2 筆刷卡等你確認", True) and d.has(ns, "鼎泰豐", True)
+            and d.has(ns, "全聯福利中心", True), pend_texts(ns))
+    d.check("昨天已經手動記了全聯 $350：顯示可能已經記過", d.has(ns, "已經有一筆 $350") and d.first(ns, "已經記過了 全聯福利中心", True) is not None, pend_texts(ns))
+    d.restart()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("再打開一次")
+    d.check("再打開一次不會再補：還是 2 筆", d.has(ns, "有 2 筆刷卡等你確認", True) and not d.has(ns, "放進待確認了"), pend_texts(ns))
