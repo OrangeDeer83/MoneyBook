@@ -55,7 +55,7 @@ class RefundTest {
         assertEquals(700L, d2.txns.expenseSum())
         assertEquals(listOf<Pair<Long?, Long>>(daily to 700L), d2.budgetRankCats(d2.txns))
         // 沒選退的是哪一筆：不算收入、也不扣
-        val loose = inc(4, 350, refundCat)
+        val loose = inc(4, 350, refundCat, noIncome = true)
         val d3 = data(e, loose)
         assertEquals(350L, d3.txns.expenseSum())
         assertEquals(0L, d3.txns.incomeSum())
