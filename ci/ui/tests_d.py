@@ -6137,8 +6137,8 @@ def t_card_pend():
     d.time.sleep(1.5)
     ns = d.shot("首頁待確認")
     d.check("首頁出現「有 2 筆刷卡等你確認」（點數通知不算）", d.has(ns, "有 2 筆刷卡等你確認", True), pend_texts(ns))
-    d.check("統一超商：卡、時間、分類直接寫（上次記成飲料），沒有「猜」",
-            d.has(ns, "統一超商", True) and d.has(ns, "測試信用卡・今天 09:11・飲料", True) and not d.has(ns, "猜"), pend_texts(ns))
+    d.check("統一超商：卡、錢包、時間、分類直接寫（上次記成飲料），沒有「猜」",
+            d.has(ns, "統一超商", True) and d.has(ns, "測試信用卡・OP錢包・今天 09:11・飲料", True) and not d.has(ns, "猜"), pend_texts(ns))
     d.check("全聯福利中心：找不到分類寫「還沒有分類」", d.has(ns, "測試信用卡・今天 12:31・還沒有分類", True))
     btn = d.first(ns, "記 統一超商", True)
     d.check("每一筆有「記」「改一下」「不是消費」", btn is not None and d.has(ns, "改一下", True) and d.has(ns, "不是消費", True))
@@ -6148,12 +6148,12 @@ def t_card_pend():
     d.tap_text("復原", exact=True, timeout=6)   # 提示只停 4 秒
     d.time.sleep(1.5)
     ns = d.shot("復原")
-    d.check("按了記再復原：回到 2 筆", d.has(ns, "有 2 筆刷卡等你確認", True) and not d.has(ns, "統一超商（OP錢包）", True), pend_texts(ns))
+    d.check("按了記再復原：回到 2 筆", d.has(ns, "有 2 筆刷卡等你確認", True) and not d.has(ns, "#刷卡通知", True), pend_texts(ns))
     d.tap(d.wait(lambda n: n.desc == "記 統一超商", 8, "記 統一超商"))
     d.time.sleep(1.5)
     ns = d.shot("記好統一超商")
-    d.check("記好了：剩 1 筆，明細多一筆「統一超商（OP錢包）」#刷卡通知",
-            d.has(ns, "刷卡等你確認", False) and d.has(ns, "統一超商（OP錢包）", True) and d.has(ns, "#刷卡通知", True), pend_texts(ns))
+    d.check("記好了：剩 1 筆，明細多一筆店家「統一超商」#刷卡通知（錢包不放進店家）",
+            d.has(ns, "刷卡等你確認", False) and len(d.find(ns, "統一超商", True)) >= 1 and d.has(ns, "#刷卡通知", True), pend_texts(ns))
     d.tap(d.wait(lambda n: n.desc == "記 全聯福利中心", 8, "記 全聯福利中心"))
     try:
         d.wait_text("選擇分類", timeout=8)
