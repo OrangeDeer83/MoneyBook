@@ -24,6 +24,13 @@ object PendState {
     const val HAD = 3
 }
 
+/** 待確認是哪一種：一般刷卡、退款、預先授權 */
+object PendKind {
+    const val SPEND = 0
+    const val REFUND = 1
+    const val PREAUTH = 2
+}
+
 data class CardPend(
     val id: Long,
     val src: List<NotiSrc>,
@@ -44,6 +51,12 @@ data class CardPend(
     val txnId: Long = 0L,
     /** 使用者按了「不是這個訂閱」：不再對訂閱 */
     val notSub: Boolean = false,
+    /** 一般刷卡、退款、預先授權（PendKind） */
+    val kind: Int = PendKind.SPEND,
+    /** 分幾期（通知寫「分 12 期」）；0＝不是分期 */
+    val inst: Int = 0,
+    /** 使用者按了「是另一筆」：不再當成預先授權的請款 */
+    val notPre: Boolean = false,
 ) {
     val last4: String get() = src.firstOrNull { it.last4.isNotEmpty() }?.last4 ?: ""
     val label: String get() = src.firstOrNull()?.label ?: ""
@@ -99,7 +112,7 @@ fun titleKey(title: String) = nameKey(title)
 fun addPend(list: List<CardPend>, n: CardPend, d: AppData, now: Long): List<CardPend> {
     val nCard = d.resolveCard(n)
     val partner = list.firstOrNull { p ->
-        kotlin.math.abs(p.time - n.time) <= PEND_MERGE_MINUTES * 60_000L && p.amount == n.amount && p.cur == n.cur &&
+        kotlin.math.abs(p.time - n.time) <= PEND_MERGE_MINUTES * 60_000L && p.amount == n.amount && p.cur == n.cur && p.kind == n.kind &&
             p.src.none { s -> n.src.any { it.pkg == s.pkg } } &&
             d.resolveCard(p).let { pc -> pc == null || nCard == null || pc == nCard }
     }
@@ -113,6 +126,7 @@ fun addPend(list: List<CardPend>, n: CardPend, d: AppData, now: Long): List<Card
                 wallet = p.wallet.ifEmpty { n.wallet },
                 // 時間用有寫幾點的那則
                 minute = if (p.minute < 0) n.minute else p.minute,
+                inst = maxOf(p.inst, n.inst),
             )
         }
     }
@@ -122,13 +136,20 @@ fun addPend(list: List<CardPend>, n: CardPend, d: AppData, now: Long): List<Card
 fun prunePend(list: List<CardPend>, now: Long): List<CardPend> =
     list.filter { now - it.time < PEND_KEEP_DAYS * 86_400_000L }.sortedByDescending { it.time }
 
-/** 讀到的通知 → 一筆待確認（不是消費的回傳 null） */
-fun pendOf(n: CapturedNoti, r: NotiRead): CardPend? =
-    if (r.kind != NotiKind.SPEND) null
-    else CardPend(
+/** 讀到的通知 → 一筆待確認（消費、退款、預先授權；其他回傳 null） */
+fun pendOf(n: CapturedNoti, r: NotiRead): CardPend? {
+    val kind = when (r.kind) {
+        NotiKind.SPEND -> PendKind.SPEND
+        NotiKind.REFUND -> PendKind.REFUND
+        NotiKind.PREAUTH -> PendKind.PREAUTH
+        else -> return null
+    }
+    return CardPend(
         id = n.id, src = listOf(NotiSrc(n.id, n.pkg, n.label, n.title, r.last4)), amount = r.amount, cur = r.cur,
         merchant = r.merchant, merchantSure = r.merchantSure, wallet = r.wallet, day = r.day, minute = r.minute, time = n.time,
+        kind = kind, inst = r.inst,
     )
+}
 
 /** 記成一筆時留著的來源：有末四碼的那則優先 */
 val CardPend.mainSrc: NotiSrc get() = src.firstOrNull { it.last4.isNotEmpty() } ?: src.first()
@@ -154,6 +175,7 @@ object CardPendCodec {
                     .put("wallet", p.wallet).put("day", p.day).put("minute", p.minute).put("time", p.time)
                     .put("cardId", p.cardId ?: JSONObject.NULL).put("state", p.state).put("txnId", p.txnId)
                     .apply { if (p.notSub) put("notSub", true) }
+                    .apply { if (p.kind != PendKind.SPEND) put("kind", p.kind); if (p.inst > 0) put("inst", p.inst); if (p.notPre) put("notPre", true) }
                     .put("src", JSONArray().apply {
                         p.src.forEach { s -> put(JSONObject().put("n", s.notiId).put("pkg", s.pkg).put("label", s.label).put("title", s.title).put("last4", s.last4)) }
                     }),
@@ -176,6 +198,7 @@ object CardPendCodec {
                 o.optString("wallet"), o.optLong("day"), o.optInt("minute", -1), o.optLong("time"),
                 if (o.isNull("cardId")) null else o.optLong("cardId").takeIf { it > 0L },
                 o.optInt("state", PendState.WAIT), o.optLong("txnId", 0L), o.optBoolean("notSub", false),
+                o.optInt("kind", PendKind.SPEND), o.optInt("inst", 0), o.optBoolean("notPre", false),
             )
         }
     } catch (_: Exception) {
@@ -259,7 +282,7 @@ fun claimedTxns(list: List<CardPend>): Set<Long> = list.filter { it.state == Pen
  * 可能已經記過：那一天、那張卡有一筆實付金額一樣的支出（外幣比外幣金額），不是餘額調整、還沒被別的待確認認走。
  */
 fun AppData.possibleHad(p: CardPend, cardId: Long?, claimed: Set<Long>): Txn? {
-    if (cardId == null) return null
+    if (cardId == null || p.kind != PendKind.SPEND) return null
     val acc = accMap[cardId]
     return txns.firstOrNull { t ->
         t.accountId == cardId && t.type == TxType.EXPENSE && !t.adjust && t.day == p.day && t.id !in claimed &&
@@ -313,7 +336,7 @@ data class SubMatch(val sub: Sub, val day: Long, val exact: Boolean, val done: B
  * （外幣訂閱、通知寫台幣時用匯率算，差 10% 以內）。有還沒處理的那一次優先，再來是日期近的。
  */
 fun AppData.pendSub(p: CardPend, cardId: Long?): SubMatch? {
-    if (cardId == null || p.notSub) return null
+    if (cardId == null || p.notSub || p.kind != PendKind.SPEND) return null
     val out = ArrayList<SubMatch>()
     for (s in subs) {
         if (s.paused || s.accountId != cardId) continue
@@ -362,9 +385,18 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
     val p = pends.firstOrNull { pp -> pp.src.any { it.notiId == n.id } }
     if (p != null) {
         return when (p.state) {
-            PendState.DONE -> NotiTagKind.GOOD to "已記"
+            PendState.DONE -> NotiTagKind.GOOD to when (p.kind) {
+                PendKind.REFUND -> "已記（退款）"
+                PendKind.PREAUTH -> "已記（預估）"
+                else -> when {
+                    p.isInst -> "已記（分期）"
+                    // 改了預先授權那筆的金額（那筆是授權通知記的）
+                    txnMap[p.txnId]?.noti?.let { s -> p.src.none { it.notiId == s.notiId } } == true -> "已記（請款）"
+                    else -> "已記"
+                }
+            }
             PendState.HAD -> NotiTagKind.OFF to "已經記過"
-            PendState.NOT -> NotiTagKind.OFF to "不是消費"
+            PendState.NOT -> NotiTagKind.OFF to if (p.kind == PendKind.SPEND) "不是消費" else "不用記"
             else -> pendSubDone(p)?.let { NotiTagKind.GOOD to "已記（訂閱：${it.sub.name}）" }
                 ?: if (p.merchant.isEmpty()) NotiTagKind.PART to "少了商店"
                 else if (tplFor(n) != null) NotiTagKind.TPL to "用範本" else NotiTagKind.GOOD to "讀對了"
@@ -373,8 +405,9 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
     if (tplFor(n) != null) return NotiTagKind.TPL to "用範本"
     val r = parseCardNoti(n.title, n.text, n.time)
     return when (r.kind) {
-        NotiKind.SPEND -> if (r.merchant.isEmpty()) NotiTagKind.PART to "少了商店" else NotiTagKind.GOOD to "讀對了"
+        NotiKind.SPEND, NotiKind.REFUND, NotiKind.PREAUTH -> if (r.merchant.isEmpty()) NotiTagKind.PART to "少了商店" else NotiTagKind.GOOD to "讀對了"
         NotiKind.NO_AMOUNT -> NotiTagKind.OFF to "不是消費"
+        NotiKind.INST_PAY -> NotiTagKind.OFF to "分期請款，不記"
         NotiKind.OTHER -> NotiTagKind.OFF to "還不會讀"
     }
 }
@@ -402,7 +435,21 @@ fun AppData.pendNotice(list: List<CardPend>, name: String): PendNotice? {
         val card = resolveCard(p)
         val cardName = card?.let { accMap[it]?.name }
         val sm = pendSub(p, card)?.takeIf { !it.done }
-        val title = "$name：刷了一筆 ${pendAmt(p)}"
+        val where0 = cardName ?: (p.label + if (p.last4.isNotEmpty()) " 末四碼 ${p.last4}" else "")
+        // 退款、預先授權的請款：照草圖的寫法；退款對得到卡就能直接記，請款要進 App 看
+        if (p.kind == PendKind.REFUND) {
+            val link = pendRefundOf(p, card)
+            val body = listOfNotNull(p.merchant.ifEmpty { null }, where0, link?.let { "退的是 ${refundLabel(it)}" } ?: "不算收入").joinToString("・")
+            return PendNotice("$name：退款 ${pendAmt(p)}", body, emptyList(), if (card != null && p.cur.isEmpty()) p.id else null)
+        }
+        preauthFor(p, card)?.let { e ->
+            return PendNotice("$name：${p.merchant} 請款 ${pendAmt(p)}", "預估的 ${formatMoney(e.amount)} 要改成 ${pendAmt(p)} 嗎？", emptyList(), null)
+        }
+        val title = when {
+            p.kind == PendKind.PREAUTH -> "$name：預先授權 ${pendAmt(p)}"
+            p.isInst -> "$name：刷了一筆 ${pendAmt(p)}（分 ${p.inst} 期）"
+            else -> "$name：刷了一筆 ${pendAmt(p)}"
+        }
         if (sm != null && sm.exact) {
             val ok = pendSubTxn(p, sm, 0L) != null
             return PendNotice(title, listOfNotNull("訂閱：${sm.sub.name}", cardName).joinToString("・"), emptyList(), if (ok) p.id else null)
@@ -414,7 +461,7 @@ fun AppData.pendNotice(list: List<CardPend>, name: String): PendNotice? {
             possibleHad(p, card, claimedTxns(list)) == null
         return PendNotice(title, body, emptyList(), if (ok) p.id else null)
     }
-    val items = w.map { "${it.merchant.ifEmpty { "刷卡" }} ${pendAmt(it)}" }
+    val items = w.map { (if (it.kind == PendKind.REFUND) "退款 " else "") + "${it.merchant.ifEmpty { "刷卡" }} ${pendAmt(it)}" }
     return PendNotice(
         "$name：有 ${w.size} 筆刷卡等你確認",
         items.take(3).joinToString("、") + if (w.size > 3) "、…" else "",

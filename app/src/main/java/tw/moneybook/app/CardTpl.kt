@@ -109,9 +109,14 @@ fun NotiTpl.read(title: String, text: String, postTime: Long, zone: ZoneId = Zon
     }
     val spans = HashMap<TplField, IntRange>()
     ms.forEachIndexed { i, mk -> m.groups[i + 1]?.range?.let { spans[mk.field] = it } }
+    // 退款、預先授權、分期請款照通用規則看；其他（通用規則當成不記、讀不到金額的）對得上範本就是消費
+    val kind = when (base.kind) {
+        NotiKind.REFUND, NotiKind.PREAUTH, NotiKind.INST_PAY -> base.kind
+        else -> NotiKind.SPEND
+    }
     return NotiRead(
-        NotiKind.SPEND, amount, cur, shop.take(30), wallet, g(TplField.LAST4)?.value ?: base.last4, day, minute,
-        merchantSure = shop.isNotEmpty(), spans = spans,
+        kind, amount, cur, shop.take(30), wallet, g(TplField.LAST4)?.value ?: base.last4, day, minute,
+        merchantSure = shop.isNotEmpty(), spans = spans, inst = base.inst,
     )
 }
 

@@ -97,10 +97,32 @@ class CardParseTest {
     }
 
     @Test
-    fun refundsAndCancelsAreLeftForLater() {
-        assertEquals(NotiKind.OTHER, read("X", "您的信用卡退款NT\$300").kind)
-        assertEquals(NotiKind.OTHER, read("X", "預先授權交易 NT\$1,000").kind)
+    fun refundPreauthInstallmentsAndCancels() {
+        // 退款：照樣讀商店（「之消費退款」的「之」拿掉）
+        val r = read("X", "您於11/14在全聯福利中心之消費退款NT\$350元，已退回卡號末四碼1234", at(2026, 11, 20))
+        assertEquals(NotiKind.REFUND, r.kind)
+        assertEquals(350L, r.amount)
+        assertEquals("全聯福利中心", r.merchant)
+        assertEquals("1234", r.last4)
+        assertEquals(day(2026, 11, 14), r.day)
+        assertEquals(NotiKind.REFUND, read("X", "您的信用卡退款NT\$300").kind)
+        // 預先授權：商店、金額照讀
+        val p = read("X", "您的信用卡末四碼1234於11/20 15:10在福華飯店預先授權NT\$10,000", at(2026, 11, 20, 16))
+        assertEquals(NotiKind.PREAUTH, p.kind)
+        assertEquals(10000L, p.amount)
+        assertEquals("福華飯店", p.merchant)
+        // 分期第一次刷：分幾期
+        val i = read("X", "您的信用卡末四碼1234在燦坤消費NT\$12,000，分12期")
+        assertEquals(NotiKind.SPEND, i.kind)
+        assertEquals(12000L, i.amount)
+        assertEquals(12, i.inst)
+        assertEquals(0, read("X", "在全聯消費NT\$350").inst)
+        // 每月的分期請款：不記
+        assertEquals(NotiKind.INST_PAY, read("X", "燦坤 分期第 1/12 期 NT\$1,000 已入帳").kind)
+        assertEquals(NotiKind.INST_PAY, read("X", "您的分期付款第3期NT\$1,000").kind)
+        // 取消、繳款：不記
         assertEquals(NotiKind.OTHER, read("X", "交易取消 NT\$85").kind)
+        assertEquals(NotiKind.OTHER, read("X", "您已繳款 NT\$5,000").kind)
     }
 
     @Test

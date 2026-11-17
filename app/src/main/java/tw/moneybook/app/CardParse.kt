@@ -14,8 +14,11 @@ import java.time.ZoneId
  *  4. 商店：「在／於 ___ 刷卡／消費」→ 括號裡的字 → 把金額、日期和常見字刪掉剩下最長的一段；錢包字樣另外拆出來
  */
 
-/** 讀的結果：SPEND＝一筆消費；NO_AMOUNT＝讀不到金額（例如「您已獲得 2 點」）；OTHER＝退款、取消、預先授權這種，還不會讀 */
-enum class NotiKind { SPEND, NO_AMOUNT, OTHER }
+/**
+ * 讀的結果：SPEND＝一筆消費；NO_AMOUNT＝讀不到金額（例如「您已獲得 2 點」）；REFUND＝退款；PREAUTH＝預先授權（金額是預估的）；
+ * INST_PAY＝分期的每月請款（「第 1/12 期」，分期第一次刷的時候記過了，不記）；OTHER＝取消、繳款這種，不會讀
+ */
+enum class NotiKind { SPEND, NO_AMOUNT, OTHER, REFUND, PREAUTH, INST_PAY }
 
 data class NotiRead(
     val kind: NotiKind,
@@ -36,6 +39,8 @@ data class NotiRead(
     val merchantSure: Boolean = false,
     /** 每個欄位在內文（normalizeNoti 過的）裡的位置：教範本時先照這個標好；標題裡的不算 */
     val spans: Map<TplField, IntRange> = emptyMap(),
+    /** 分幾期（「分 12 期」）；0＝不是分期 */
+    val inst: Int = 0,
 )
 
 internal val WALLETS = listOf(
@@ -44,16 +49,24 @@ internal val WALLETS = listOf(
     "icash Pay" to "icash Pay", "全盈+PAY" to "全盈+PAY", "Pi錢包" to "Pi錢包", "Pi 拍錢包" to "Pi錢包", "台灣Pay" to "台灣Pay",
 )
 
-/** 有這些字的先不記（第三步才處理） */
-private val OTHER_WORDS = listOf("退款", "退貨", "退刷", "取消", "預先授權", "預授權", "繳款", "入帳", "核卡", "開卡", "失敗", "未成功", "拒絕", "交易不成功")
+/** 退款、預先授權（先看這兩種，再看其他不記的） */
+private val REFUND_WORDS = listOf("退款", "退貨", "退刷", "刷退")
+private val PREAUTH_WORDS = listOf("預先授權", "預授權")
+/** 分期的每月請款：「第 1/12 期」「第3期」 */
+private val INST_PAY = Regex("""第\s*\d{1,2}\s*(?:/\s*\d{1,2}\s*)?期""")
+/** 分期第一次刷：「分 12 期」 */
+private val INST_COUNT = Regex("""分\s*(\d{1,2})\s*期""")
+/** 有這些字的不記 */
+private val OTHER_WORDS = listOf("取消", "繳款", "入帳", "核卡", "開卡", "失敗", "未成功", "拒絕", "交易不成功")
 
-private val VERBS = listOf("刷卡", "消費", "交易", "支付", "付款", "扣款")
-private val AMOUNT_WORDS = listOf("消費", "金額", "刷卡", "交易", "扣款", "支付", "付款", "簽帳")
+private val VERBS = listOf("刷卡", "消費", "交易", "支付", "付款", "扣款", "預先授權", "預授權", "授權", "退款", "退貨", "退刷")
+private val AMOUNT_WORDS = listOf("消費", "金額", "刷卡", "交易", "扣款", "支付", "付款", "簽帳", "退款", "授權", "退貨", "退刷")
 
 /** 找商店時刪掉的常見字（長的在前） */
 private val NOISE = listOf(
     "點擊查看消費明細", "查看消費明細", "點擊查看", "查看明細", "簽帳金融卡", "信用卡", "金融卡", "末四碼", "末4碼", "卡號", "刷卡", "消費", "交易",
     "通知", "成功", "金額", "親愛的", "卡友", "您好", "您的", "您", "提醒", "謝謝", "感謝", "新台幣", "台幣", "已於", "已", "明細",
+    "預先授權", "預授權", "授權", "退款", "退貨", "退刷", "刷退", "分期",
 )
 
 /** 金額前面可能的幣別（長的在前）→ 幣別代碼（空白＝台幣） */
@@ -201,8 +214,21 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
     val ts = inBody(timeSpan)
     (if (ds != null && ts != null && ts.first - ds.last in 1..3) ds.first..ts.last else ds ?: ts)?.let { spans[TplField.TIME] = it }
 
-    if (OTHER_WORDS.any { it in all }) return NotiRead(NotiKind.OTHER, best?.value ?: 0L, best?.cur ?: "", last4 = last4, day = day, minute = minute, spans = spans)
-    if (best == null) return NotiRead(NotiKind.NO_AMOUNT, last4 = last4, day = day, minute = minute, spans = spans)
+    // 退款、預先授權照樣讀商店；分期的每月請款、取消這些不讀
+    val kind = when {
+        REFUND_WORDS.any { it in all } -> NotiKind.REFUND
+        PREAUTH_WORDS.any { it in all } -> NotiKind.PREAUTH
+        INST_PAY.containsMatchIn(all) -> NotiKind.INST_PAY
+        OTHER_WORDS.any { it in all } -> NotiKind.OTHER
+        else -> NotiKind.SPEND
+    }
+    if (kind == NotiKind.INST_PAY || kind == NotiKind.OTHER) {
+        return NotiRead(kind, best?.value ?: 0L, best?.cur ?: "", last4 = last4, day = day, minute = minute, spans = spans)
+    }
+    if (best == null) {
+        return NotiRead(if (kind == NotiKind.SPEND) NotiKind.NO_AMOUNT else NotiKind.OTHER, last4 = last4, day = day, minute = minute, spans = spans)
+    }
+    val inst = if (kind == NotiKind.SPEND) INST_COUNT.find(all)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 2..60 } ?: 0 else 0
 
     // 商店（只看內文：Samsung Wallet 的標題是卡片名稱）
     // 內文裡的金額、日期、時間、末四碼的位置
@@ -220,7 +246,8 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
                 val at = maxOf(seg.lastIndexOf('在'), seg.lastIndexOf('於'))
                 // 中間夾著金額、日期的不算；只剩常見字（「於您的信用卡消費」）也不算
                 if (at >= 0 && !overlaps((from + at + 1) until vi, bodyUsed)) {
-                    val cand = seg.substring(at + 1).trim().trim(':', ',', ' ')
+                    // 「在全聯福利中心之消費退款」：後面的「之、的」拿掉
+                    val cand = seg.substring(at + 1).trim().trim(':', ',', ' ').trimEnd('之', '的').trim()
                     var rest = cand
                     NOISE.forEach { rest = rest.replace(it, "") }
                     if (rest.length >= 2 && rest.any { it.isLetter() }) { merchant = cand; sure = true; return@run }
@@ -253,7 +280,7 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
     }
     if (merchant.isNotEmpty()) body.indexOf(merchant).takeIf { it >= 0 }?.let { spans[TplField.MERCHANT] = it until it + merchant.length }
     val (shop, wallet) = splitWallet(merchant, all)
-    return NotiRead(NotiKind.SPEND, best.value, best.cur, shop.take(30), wallet, last4, day, minute, sure && shop.isNotEmpty(), spans)
+    return NotiRead(kind, best.value, best.cur, shop.take(30), wallet, last4, day, minute, sure && shop.isNotEmpty(), spans, inst)
 }
 
 /** 金額的數字（「1,288」「30.00」）換成記帳的金額：台幣小數四捨五入（30.00 → 30），外幣是最小單位；讀不出來回傳 null */

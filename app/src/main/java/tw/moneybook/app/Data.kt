@@ -192,6 +192,8 @@ data class Txn(
     val noIncome: Boolean = false,
     /** 退款：退的是哪一筆支出（id；0＝不是退款或沒選）。統計、預算從那筆的分類扣回，扣在退款這天的月份 */
     val refundOf: Long = 0L,
+    /** 預先授權記的：金額是預估的，還沒請款（見 CardPendKinds.kt）；請款通知來了改金額、或自己在修改頁關掉 */
+    val est: Boolean = false,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
