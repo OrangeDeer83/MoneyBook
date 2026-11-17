@@ -29,6 +29,13 @@ import tw.moneybook.app.pendNotice
 import tw.moneybook.app.pendSub
 import tw.moneybook.app.pendSubTxn
 import tw.moneybook.app.pendTxn
+import tw.moneybook.app.PendKind
+import tw.moneybook.app.Txn
+import tw.moneybook.app.ensureRefundCat
+import tw.moneybook.app.pendRefundTxn
+import tw.moneybook.app.pendRefundOf
+import tw.moneybook.app.pendInstTxns
+import tw.moneybook.app.isInst
 import tw.moneybook.app.resolveCard
 import tw.moneybook.app.sortTxns
 import tw.moneybook.app.ui.Mood
@@ -164,10 +171,20 @@ class CardPendReceiver : BroadcastReceiver() {
         var d = store.load()
         val card = d.resolveCard(p) ?: return
         val sm = d.pendSub(p, card)?.takeIf { !it.done && it.exact }
-        val t = if (sm != null) d.pendSubTxn(p, sm, d.nextId) else d.pendTxn(p, d.nextId, d.currentBook.id, card, d.guessCat(p.merchant, card))
-        if (t == null) return
+        // 退款記成不算收入（連到原本那筆）、分期記成好幾期、預先授權記成預估（跟按「記」一樣）
+        val list: List<Txn> = when {
+            p.kind == PendKind.REFUND -> {
+                val (d2, cat) = d.ensureRefundCat()
+                d = d2
+                listOfNotNull(d.pendRefundTxn(p, d.nextId, d.currentBook.id, card, cat, d.pendRefundOf(p, card)?.id ?: 0L))
+            }
+            sm != null -> listOfNotNull(d.pendSubTxn(p, sm, d.nextId))
+            p.isInst -> d.pendInstTxns(p, d.nextId, d.currentBook.id, card, d.guessCat(p.merchant, card))
+            else -> listOfNotNull(d.pendTxn(p, d.nextId, d.currentBook.id, card, d.guessCat(p.merchant, card))?.let { if (p.kind == PendKind.PREAUTH) it.copy(est = true) else it })
+        }
+        val t = list.firstOrNull() ?: return
         d = d.copy(
-            txns = sortTxns(d.txns + t), nextId = d.nextId + 1,
+            txns = sortTxns(d.txns + list), nextId = d.nextId + list.size,
             subs = if (sm != null) d.subs.map { if (it.id == sm.sub.id) it.markDone(sm.day) else it } else d.subs,
         )
         store.save(d)

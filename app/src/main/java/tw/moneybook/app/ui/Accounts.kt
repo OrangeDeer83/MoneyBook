@@ -76,6 +76,7 @@ import tw.moneybook.app.autoBillMonth
 import tw.moneybook.app.billRange
 import tw.moneybook.app.billMovable
 import tw.moneybook.app.fxPendingList
+import tw.moneybook.app.preauthWaiting
 import tw.moneybook.app.cardBillSpendingAfter
 import tw.moneybook.app.cardCycle
 import tw.moneybook.app.cardSpending
@@ -250,6 +251,25 @@ fun AccountDetailScreen(
                             Text(
                                 "${fxHere.size} 筆外幣還沒請款（預估約 ${formatMoney(fxHere.sumOf { it.amount })}）  ›",
                                 style = MaterialTheme.typography.labelLarge, color = cute.ink,
+                            )
+                        }
+                    }
+                    // 預先授權記成預估、還沒請款的（銀行請款沒發通知時，在這裡看得到；點下面明細標「預估」的那筆改金額）
+                    val preHere = d.preauthWaiting(a.id)
+                    if (preHere.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.accent2.copy(alpha = 0.35f))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                "${preHere.size} 筆預先授權還沒請款（預估 ${formatMoney(preHere.sumOf { it.amount })}）",
+                                style = MaterialTheme.typography.labelLarge, color = cute.ink,
+                            )
+                            Text(
+                                preHere.take(3).joinToString("、") { "${it.date.monthValue}/${it.date.dayOfMonth} ${it.note.lineSequence().firstOrNull()?.ifBlank { null } ?: "預估"}" } +
+                                    "・請款後點下面明細標「預估」的那筆改金額",
+                                style = MaterialTheme.typography.labelSmall, color = cute.sub,
                             )
                         }
                     }

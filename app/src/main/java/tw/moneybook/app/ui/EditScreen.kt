@@ -131,6 +131,8 @@ import tw.moneybook.app.catNoIncome
 import tw.moneybook.app.refundCands
 import tw.moneybook.app.refundLabel
 import tw.moneybook.app.refundedOf
+import tw.moneybook.app.pendRefundOf
+import tw.moneybook.app.isInst
 import java.time.LocalDate
 
 private fun defaultCat(d: AppData, type: TxType): Long? =
@@ -175,7 +177,10 @@ fun EditScreen(
     var showTpl by remember { mutableStateOf(false) }
 
     var type by rememberSaveable {
-        mutableStateOf(orig?.type ?: tpl?.type ?: if (presetTo != null || presetFrom != null) TxType.TRANSFER else TxType.EXPENSE)
+        mutableStateOf(
+            orig?.type ?: tpl?.type ?: if (pend?.kind == tw.moneybook.app.PendKind.REFUND) TxType.INCOME
+            else if (presetTo != null || presetFrom != null) TxType.TRANSFER else TxType.EXPENSE
+        )
     }
     // 外幣：編輯既有的外幣記錄時，算出當初是哪一種外幣模式，計算機和另一邊的金額才放得回去
     val origPlan = remember(editId) { orig?.let { d.fxPlan(it.type, it.accountId, it.toAccountId) } }
@@ -194,7 +199,15 @@ fun EditScreen(
         )
     }
     var catId by rememberSaveable {
-        mutableStateOf(orig?.categoryId ?: tpl?.categoryId ?: if (pend != null) d.guessCat(pend.merchant, pendCard) else defaultCat(d, type))
+        mutableStateOf(
+            orig?.categoryId ?: tpl?.categoryId ?: when {
+                // 退款：「退款」分類（按「改一下」時已經建好）
+                pend?.kind == tw.moneybook.app.PendKind.REFUND ->
+                    (d.categories.firstOrNull { it.kind == TxType.INCOME && it.name == tw.moneybook.app.REFUND_CAT } ?: d.categories.firstOrNull { it.kind == TxType.INCOME && it.noIncome })?.id
+                pend != null -> d.guessCat(pend.merchant, pendCard)
+                else -> defaultCat(d, type)
+            }
+        )
     }
     var accId by rememberSaveable {
         mutableStateOf(
@@ -228,7 +241,8 @@ fun EditScreen(
     }
     var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: pend?.let { pendNote(it) } ?: "") }
     var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
-    var inst by rememberSaveable { mutableIntStateOf(1) }
+    // 刷卡通知寫「分 N 期」的：帶好期數
+    var inst by rememberSaveable { mutableIntStateOf(if (pend != null && pend.isInst) pend.inst else 1) }
     var fee by rememberSaveable { mutableLongStateOf(orig?.fee ?: 0L) }
     var discount by rememberSaveable { mutableLongStateOf(orig?.discount ?: 0L) }
     // 報銷：reimbFull = 一個人、全額（金額跟著實付走）；否則用 reimbJson 存多個對象
@@ -362,7 +376,10 @@ fun EditScreen(
     // 預算外：0＝跟著分類、1＝這筆預算外、2＝這筆算預算（見 Budget.kt）；和分類預設一樣時存 0
     var budgetOut by rememberSaveable { mutableIntStateOf(orig?.budgetOut ?: 0) }
     // 退款：記在「不算收入」分類的收入可以選退的是哪一筆支出（選填，見 Refund.kt）
-    var refundOf by rememberSaveable { mutableLongStateOf(orig?.refundOf ?: 0L) }
+    var refundOf by rememberSaveable { mutableLongStateOf(orig?.refundOf ?: pend?.let { d.pendRefundOf(it, pendCard)?.id } ?: 0L) }
+    // 預估金額（預先授權記的，還沒請款）：只有支出
+    var est by rememberSaveable { mutableStateOf(orig?.est ?: (pend?.kind == tw.moneybook.app.PendKind.PREAUTH)) }
+    val estChip = type == TxType.EXPENSE && !tplMode && (orig?.est == true || pend?.kind == tw.moneybook.app.PendKind.PREAUTH)
     val refundOn = type == TxType.INCOME && !tplMode && d.catNoIncome(catId)
     val catOut = d.categoryOutOfBudget(catId)
     val outEff = when (budgetOut) { 1 -> true; 2 -> false; else -> catOut }
@@ -433,6 +450,7 @@ fun EditScreen(
         offsetWho = offsets.map { it.who },
         noti = if (orig == null) pend?.mainSrc else null,
         refundOf = if (refundOn) refundOf else 0L,
+        est = estChip && est,
     )
 
     val initialDraft = remember { draft() }
@@ -783,6 +801,8 @@ fun EditScreen(
                     budgetOut = if (outEff) (if (!catOut) 0 else 2) else (if (catOut) 0 else 1)
                 }, color = LocalCute.current.out, onColor = LocalCute.current.onOut)
             }
+            // 預先授權：金額是預估的，請款後點一下拿掉
+            if (estChip) CuteChip(if (est) "預估金額" else "已請款", est, { est = !est })
             if (fxsEligible) {
                 CuteChip(
                     if (fxsOn) "外幣 $fxsCur" + (if (fxsPending && !debtAll) "・待請款" else "") else "外幣",

@@ -375,6 +375,8 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
         // 外幣刷卡還沒請款：金額是預估的
         tags.add(StatusTag("待請款", "待請款", cute.ink, cute.accent2.copy(alpha = 0.4f)))
     }
+    // 預先授權記的：金額是預估的，還沒請款
+    if (t.est) tags.add(StatusTag("預估", "預估", cute.ink, cute.accent2.copy(alpha = 0.4f)))
     if (t.isDebt) {
         // 欠款：還沒付、還了一部分（剩多少）、已還清
         val open = t.debtItems.any { !it.done }

@@ -55,6 +55,12 @@ import tw.moneybook.app.guessCat
 import tw.moneybook.app.possibleHad
 import tw.moneybook.app.rateOf
 import tw.moneybook.app.resolveCard
+import tw.moneybook.app.PendKind
+import tw.moneybook.app.isInst
+import tw.moneybook.app.pendRefundOf
+import tw.moneybook.app.preauthFor
+import tw.moneybook.app.preauthBillMonth
+import tw.moneybook.app.refundLabel
 
 /** 首頁最多列幾筆，多的折起來 */
 private const val PEND_SHOW = 3
@@ -89,7 +95,8 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
     fun record(p: CardPend, cardId: Long, catId: Long?) {
         val acc = d.accMap[cardId]
         when {
-            catId == null -> pickCat = p to cardId
+            // 退款不用選分類（記在「退款」）
+            catId == null && p.kind != PendKind.REFUND -> pickCat = p to cardId
             p.cur.isNotEmpty() && !(acc?.isForeign == true && acc.currency == p.cur) && d.rateOf(p.cur) == null -> fx = Triple(p, cardId, catId)
             else -> vm.recordPend(p.id, cardId, catId)
         }
@@ -104,13 +111,32 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
             val catId = d.guessCat(p.merchant, cardId)
             val cat = catId?.let { d.catMap[it] }
             val sm = d.pendSub(p, cardId)?.takeIf { !it.done }
-            val had = if (sm != null) null else d.possibleHad(p, cardId, claimed)
+            // 預先授權的請款（之前記成預估的那筆）、退款連到的那筆
+            val pre = if (sm != null) null else d.preauthFor(p, cardId)
+            val refund = p.kind == PendKind.REFUND
+            val link = if (refund) d.pendRefundOf(p, cardId) else null
+            val linkCat = link?.categoryId?.let { d.catMap[it] }
+            val preCat = pre?.categoryId?.let { d.catMap[it] }
+            val had = if (sm != null || pre != null) null else d.possibleHad(p, cardId, claimed)
             val subCat = sm?.sub?.categoryId?.let { d.catMap[it] }
+            // 標題旁邊的小標籤：訂閱、退款、預先授權、請款、分期
+            val badge: Pair<String, androidx.compose.ui.graphics.Color>? = when {
+                sm != null && sm.exact -> "訂閱" to cute.income
+                refund -> "退款" to cute.income
+                pre != null -> "請款" to cute.expense
+                p.kind == PendKind.PREAUTH -> "預先授權" to cute.expense
+                p.isInst -> "分 ${p.inst} 期" to cute.expense
+                else -> null
+            }
             Spacer(Modifier.height(8.dp))
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft.copy(alpha = 0.45f)).padding(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (sm != null && sm.exact) CatBubble(sm.sub.icon.ifEmpty { subCat?.emoji ?: "img:cat_box" }, subCat?.color ?: 8, 34.dp)
-                    else CatBubble(cat?.emoji ?: "？", cat?.color ?: 8, 34.dp)
+                    when {
+                        sm != null && sm.exact -> CatBubble(sm.sub.icon.ifEmpty { subCat?.emoji ?: "img:cat_box" }, subCat?.color ?: 8, 34.dp)
+                        refund -> CatBubble("退", linkCat?.color ?: 8, 34.dp)
+                        pre != null -> CatBubble(preCat?.emoji ?: "？", preCat?.color ?: 8, 34.dp)
+                        else -> CatBubble(cat?.emoji ?: "？", cat?.color ?: 8, 34.dp)
+                    }
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -118,10 +144,10 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                                 if (sm != null && sm.exact) sm.sub.name else p.merchant.ifEmpty { "（通知沒寫商店）" },
                                 style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                             )
-                            if (sm != null && sm.exact) {
+                            if (badge != null) {
                                 Text(
-                                    "訂閱", style = MaterialTheme.typography.labelSmall, color = cute.income,
-                                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).background(cute.income.copy(alpha = 0.16f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                                    badge.first, style = MaterialTheme.typography.labelSmall, color = badge.second, maxLines = 1,
+                                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).background(badge.second.copy(alpha = 0.16f)).padding(horizontal = 6.dp, vertical = 1.dp),
                                 )
                             }
                         }
@@ -133,6 +159,8 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                                 when {
                                     card == null -> null
                                     sm != null && sm.exact -> subCat?.name ?: "還沒有分類"
+                                    refund -> "退款"
+                                    pre != null -> preCat?.name
                                     else -> cat?.name ?: "還沒有分類"
                                 },
                                 fxNote,
@@ -140,12 +168,24 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                             style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 2,
                         )
                     }
-                    Text(pendAmountText(p), color = cute.expense, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
+                    Text(
+                        (if (refund) "+" else "") + pendAmountText(p), color = if (refund) cute.income else cute.expense,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp),
+                    )
                 }
                 val hint: Pair<String, String>? = when {
                     card == null -> (if (p.last4.isNotEmpty()) "${p.label} 的 ${p.last4} 是哪張卡？" else "${p.label} 的通知是哪張卡？") to "選一次就記住"
                     sm != null && !sm.exact -> "可能是訂閱：${sm.sub.name}（${subAmountText(sm.sub)}）" to
                         (d.subTwd(sm.sub)?.let { "用現在的匯率算大約 ${formatMoney(it)}" } ?: "")
+                    refund -> if (link != null) "退的是 ${d.refundLabel(link)}" to "（${linkCat?.name ?: "沒有分類"}，統計時從${linkCat?.name ?: "那筆"}扣掉）"
+                    else "找不到原本那筆：只記成不算收入" to "按「改一下」可以自己選退的是哪一筆"
+                    pre != null -> {
+                        val bm = d.preauthBillMonth(pre, p.day)
+                        "${shortDay(pre.day, today)} 記的預估是 ${formatMoney(pre.amount)}" to
+                            (tw.moneybook.app.billMonthFromCode(bm)?.takeIf { bm != pre.billMonth }?.let { "請款落在 ${it.monthValue} 月帳單 → 入帳月份改 ${it.monthValue} 月" } ?: "")
+                    }
+                    p.kind == PendKind.PREAUTH -> "預先授權：實際金額請款時才知道" to "先記成預估，請款時再改"
+                    p.isInst -> "分 ${p.inst} 期，每期約 ${formatMoney(p.amount / p.inst)}" to "按「記」會記成 ${p.inst} 期，第 1 期入這期帳單"
                     had != null -> "${shortDay(had.day, today)} ${card.name} 已經有一筆 ${formatMoney(had.recorded)}" to
                         "（" + listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).distinct().joinToString("，") + "）"
                     else -> null
@@ -164,7 +204,16 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                     when {
                         card == null -> {
                             PendMainButton("選卡片", "選卡片 $name") { pickCard = p }
-                            SoftButton("不是消費", { vm.notSpendPend(p.id) }, compact = true)
+                            SoftButton(if (p.kind == PendKind.SPEND) "不是消費" else "不用記", { vm.notSpendPend(p.id) }, compact = true)
+                        }
+                        pre != null -> {
+                            PendMainButton("改成 ${pendAmountText(p)}", "改成 ${pendAmountText(p)} $name") { vm.settlePreauthPend(p.id, pre.id) }
+                            SoftButton("是另一筆", { vm.notPrePend(p.id) }, compact = true)
+                        }
+                        refund || p.kind == PendKind.PREAUTH -> {
+                            PendMainButton(if (refund) "記" else "記成預估", (if (refund) "記 " else "記成預估 ") + name) { record(p, card.id, catId) }
+                            SoftButton("改一下", { if (refund) vm.ensureRefundCat(); onEdit(p.id) }, compact = true)
+                            SoftButton("不用記", { vm.notSpendPend(p.id) }, compact = true)
                         }
                         sm != null -> {
                             PendMainButton(if (sm.exact) "記" else "是訂閱", (if (sm.exact) "記 " else "是訂閱 ") + sm.sub.name) {

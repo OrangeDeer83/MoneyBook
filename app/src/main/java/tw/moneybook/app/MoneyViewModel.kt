@@ -64,6 +64,8 @@ data class TxnDraft(
     val noti: NotiSrc? = null,
     /** 退款：退的是哪一筆支出（只有記在「不算收入」分類的收入有用；0＝沒選，見 Refund.kt） */
     val refundOf: Long = 0L,
+    /** 預估金額（預先授權記的，還沒請款；只有支出） */
+    val est: Boolean = false,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -310,7 +312,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 billMonth = dr.billMonth,
                 fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                 budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
-            ).withRefund(d, dr.refundOf)
+            ).withRefund(d, dr.refundOf).copy(est = dr.est && dr.type == TxType.EXPENSE)
             t = if (locked) {
                 t.copy(
                     amount = old.amount, fee = old.fee, discount = old.discount, accountId = old.accountId,
@@ -342,7 +344,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                     budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
                     noti = dr.noti,
-                ).withRefund(d, dr.refundOf).let { withDebt(it, dr.debtItems) }.let {
+                ).withRefund(d, dr.refundOf).copy(est = dr.est && dr.type == TxType.EXPENSE).let { withDebt(it, dr.debtItems) }.let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
                         else emptyList()
@@ -1276,17 +1278,78 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun recordPend(id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true): Boolean {
         val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return false
+        if (p.kind == PendKind.REFUND) return recordRefund(id, cardId, twd)
         val d = data
-        val t = d.pendTxn(p, d.nextId, d.currentBook.id, cardId, catId, twd, pending)
+        // 寫「分 N 期」的記成 N 期；預先授權記成預估
+        val list = if (p.isInst) d.pendInstTxns(p, d.nextId, d.currentBook.id, cardId, catId)
+        else listOf(
+            (d.pendTxn(p, d.nextId, d.currentBook.id, cardId, catId, twd, pending) ?: run { toast("還沒有 ${p.cur} 的匯率，請先設定匯率"); return false })
+                .let { if (p.kind == PendKind.PREAUTH) it.copy(est = true) else it }
+        )
+        val ids = list.map { it.id }.toSet()
+        commit(d.copy(txns = sortTxns(d.txns + list), nextId = d.nextId + list.size))
+        setPend(id) { it.copy(state = PendState.DONE, txnId = list.first().id, cardId = cardId) }
+        val msg = when {
+            p.isInst -> "已記 ${p.merchant.ifEmpty { "刷卡" }} 分 ${list.size} 期，每期約 ${formatMoney(p.amount / list.size)}"
+            p.kind == PendKind.PREAUTH -> "已記成預估 ${pendTitle(p)}，請款時再改"
+            else -> "已記 ${pendTitle(p)}"
+        }
+        _messages.tryEmit(UiMsg(msg, "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.filter { it.id !in ids }))
+            setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) }
+        })
+        return true
+    }
+
+    /** 「退款」分類（沒有就建一個，見 ensureRefundCat）；回傳分類 id */
+    fun ensureRefundCat(): Long {
+        val (nd, id) = data.ensureRefundCat()
+        if (nd !== data) commit(nd)
+        return id
+    }
+
+    /**
+     * 刷卡退款：記成那張卡的收入、分類「退款」（不算收入），自動連到原本那筆（找不到就只是不算收入）。
+     * 外幣記在台幣卡：twd 是台幣金額，沒給就用目前匯率，沒有匯率回傳 false。可以復原。
+     */
+    fun recordRefund(id: Long, cardId: Long, twd: Long? = null): Boolean {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return false
+        val before = data
+        val (d, catId) = before.ensureRefundCat()
+        val link = d.pendRefundOf(p, cardId)
+        val t = d.pendRefundTxn(p, d.nextId, d.currentBook.id, cardId, catId, link?.id ?: 0L, twd)
             ?: run { toast("還沒有 ${p.cur} 的匯率，請先設定匯率"); return false }
         commit(d.copy(txns = sortTxns(d.txns + t), nextId = d.nextId + 1))
         setPend(id) { it.copy(state = PendState.DONE, txnId = t.id, cardId = cardId) }
-        _messages.tryEmit(UiMsg("已記 ${pendTitle(p)}", "復原") {
+        val catName = link?.categoryId?.let { d.catMap[it]?.name }
+        val amt = if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur)
+        _messages.tryEmit(UiMsg(if (link != null) "已記 退款 $amt，統計從${catName ?: "原本那筆"}扣掉" else "已記 退款 $amt（不算收入）", "復原") {
             val now = data
             commit(now.copy(txns = now.txns.filter { it.id != t.id }))
             setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) }
         })
         return true
+    }
+
+    /** 預先授權的請款：預估那筆改成實際金額（請款落在下一期就改入帳月份），這筆刷卡算記好了。可以復原 */
+    fun settlePreauthPend(id: Long, txnId: Long) {
+        val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return
+        val d = data
+        val old = d.txnMap[txnId] ?: return
+        commit(d.settlePreauth(txnId, p.amount, p.day))
+        setPend(id) { it.copy(state = PendState.DONE, txnId = txnId) }
+        _messages.tryEmit(UiMsg("已改成 ${formatMoney(p.amount)}（原本預估 ${formatMoney(old.amount)}）", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { if (it.id == txnId) old else it }))
+            setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) }
+        })
+    }
+
+    /** 「是另一筆」：不是預先授權的請款，變回一般的刷卡；可以復原 */
+    fun notPrePend(id: Long) {
+        setPend(id) { it.copy(notPre = true) }
+        _messages.tryEmit(UiMsg("已改成一般的刷卡", "復原") { setPend(id) { it.copy(notPre = false) } })
     }
 
     /**
