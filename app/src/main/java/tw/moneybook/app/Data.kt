@@ -78,6 +78,8 @@ data class Category(
     val order: Int,
     /** 預算外（見 Budget.kt）：0＝跟著大分類（大分類的 0＝算預算）、1＝預算外、2＝算預算 */
     val budgetMode: Int = 0,
+    /** 收入分類：不算收入（退款這種，見 Refund.kt）；記在這個分類的收入不算進收入統計 */
+    val noIncome: Boolean = false,
 )
 
 /**
@@ -186,6 +188,10 @@ data class Txn(
     val budgetOut: Int = 0,
     /** 從刷卡通知記的：是哪則通知（App、標題、末四碼）。事後在修改頁改卡時用它問「以後也記到這張嗎」；舊資料沒有 */
     val noti: NotiSrc? = null,
+    /** 收入不算收入（記在「不算收入」的分類，見 Refund.kt）；分類的設定改了會跟著改 */
+    val noIncome: Boolean = false,
+    /** 退款：退的是哪一筆支出（id；0＝不是退款或沒選）。統計、預算從那筆的分類扣回，扣在退款這天的月份 */
+    val refundOf: Long = 0L,
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -233,12 +239,18 @@ data class Txn(
     /** 報銷收到的錢比實付多（例如刷卡有優惠），多出來的算收入 */
     val reimbGain: Long get() = if (type == TxType.EXPENSE && reimb == 2 && reimbAmount > paid) reimbAmount - paid else 0L
 
-    /** 算進支出統計的金額（報銷的不算，轉帳只算手續費） */
+    /** 退款：選了退的是哪一筆的收入（統計當成負的支出） */
+    val isRefund: Boolean get() = type == TxType.INCOME && refundOf != 0L && !adjust
+
+    /** 算進收入統計：收入、不是餘額調整、不是不算收入（退款） */
+    val countsAsIncome: Boolean get() = type == TxType.INCOME && !adjust && !noIncome && refundOf == 0L
+
+    /** 算進支出統計的金額（報銷的不算，轉帳只算手續費；退款是負的，從原本那筆的分類扣回） */
     val spent: Long
         get() = if (adjust) 0L else when (type) {
             TxType.EXPENSE -> if (reimb == 0) paid else (paid - reimbAmount).coerceAtLeast(0L)
             TxType.TRANSFER -> fee
-            TxType.INCOME -> 0L
+            TxType.INCOME -> if (refundOf != 0L) -paid else 0L
         }
 }
 
@@ -311,6 +323,7 @@ data class AppData(
 ) {
     val catMap: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val accMap: Map<Long, Account> by lazy { accounts.associateBy { it.id } }
+    val txnMap: Map<Long, Txn> by lazy { txns.associateBy { it.id } }
 
     val currentBook: Book
         get() = books.firstOrNull { it.id == prefs.bookId } ?: books.first()
@@ -462,9 +475,9 @@ data class AppData(
 fun List<Txn>.inMonth(m: YearMonth): List<Txn> = filter { it.month == m }
 fun List<Txn>.inYear(y: Int): List<Txn> = filter { it.date.year == y }
 fun List<Txn>.expenseSum(): Long = sumOf { it.spent }
-fun List<Txn>.incomeSum(): Long = filter { it.type == TxType.INCOME && !it.adjust }.sumOf { it.paid } + sumOf { it.reimbGain }
-/** 統計用金額：支出扣掉報銷的部分，收入用實收 */
-val Txn.statAmount: Long get() = if (adjust) 0L else if (type == TxType.EXPENSE) spent else paid
+fun List<Txn>.incomeSum(): Long = filter { it.countsAsIncome }.sumOf { it.paid } + sumOf { it.reimbGain }
+/** 統計用金額：支出扣掉報銷的部分，收入用實收；退款是負的支出 */
+val Txn.statAmount: Long get() = if (adjust) 0L else if (type == TxType.EXPENSE || isRefund) spent else paid
 
 /** 信用卡帳單週期 */
 data class CardCycle(

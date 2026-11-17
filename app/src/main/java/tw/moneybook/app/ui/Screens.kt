@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tw.moneybook.app.isOutOfBudget
+import tw.moneybook.app.refundLabel
 import tw.moneybook.app.budgetSpent
 import tw.moneybook.app.outOfBudgetSpent
 import tw.moneybook.app.AppData
@@ -364,7 +365,12 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     // 標題列的狀態標籤（待請款、欠款、報銷）：完整寫法和放不下時的短寫法（拿掉金額，金額在下面那行小字或右邊都看得到）
     val tags = ArrayList<StatusTag>()
     // 預算外（分類預設或這筆自己設的）：實心的小標籤，和其他狀態分得出來
-    if (!t.adjust && d.isOutOfBudget(t)) tags.add(StatusTag("預算外", "預算外", cute.onOut, cute.out))
+    if (!t.adjust && t.type == TxType.EXPENSE && d.isOutOfBudget(t)) tags.add(StatusTag("預算外", "預算外", cute.onOut, cute.out))
+    // 退款：退的是哪一筆（統計從那筆的分類扣掉）；沒選的寫「不算收入」
+    if (t.type == TxType.INCOME && t.noIncome && !t.adjust) {
+        val o = if (t.refundOf != 0L) d.txnMap[t.refundOf] else null
+        tags.add(StatusTag(o?.let { "退 ${d.refundLabel(it)}" } ?: "不算收入", if (o != null) "退款" else "不算收入", cute.income, cute.income.copy(alpha = 0.14f)))
+    }
     if (t.fxPending && t.isFxSpend) {
         // 外幣刷卡還沒請款：金額是預估的
         tags.add(StatusTag("待請款", "待請款", cute.ink, cute.accent2.copy(alpha = 0.4f)))

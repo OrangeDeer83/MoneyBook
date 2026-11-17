@@ -59,6 +59,7 @@ import tw.moneybook.app.inMonth
 import tw.moneybook.app.inYear
 import tw.moneybook.app.incomeSum
 import tw.moneybook.app.statAmount
+import tw.moneybook.app.statCat
 import java.time.YearMonth
 import java.time.LocalDate
 
@@ -88,31 +89,34 @@ private fun recolor(list: List<Slice>): List<Slice> =
         sl.copy(color = c, children = sl.children.map { ch -> ch.copy(color = c) })
     }
 
+/** 依分類分組：退款算在原本那筆的分類（statCat），扣完沒有花的分類不列 */
 private fun byCategory(d: AppData, list: List<Txn>, amt: (Txn) -> Long): List<Slice> {
-    val groups = list.groupBy { t -> t.categoryId?.let { d.catMap[it] }?.let { d.topOf(it).id } ?: -1L }
+    val groups = list.groupBy { t -> d.statCat(t)?.let { d.catMap[it] }?.let { d.topOf(it).id } ?: -1L }
     return groups.map { (topId, ts) ->
         val top = d.catMap[topId]
         val kidIds = d.childrenOf(topId).map { it.id }.toSet()
-        val subs = ts.groupBy { it.categoryId ?: -1L }
+        val subs = ts.groupBy { d.statCat(it) ?: -1L }
             .filter { (cid, _) -> cid != topId }
             .map { (cid, sts) ->
                 val c = d.catMap[cid]
                 Slice("c$cid", c?.name ?: "未分類", c?.emoji ?: "img:cat_box", Color.Gray, sts.sumOf { amt(it) }, sts.size,
-                    { t -> t.categoryId == cid }, emptyList())
+                    { t -> d.statCat(t) == cid }, emptyList())
             }
-        val directList = ts.filter { it.categoryId == topId }
+            .filter { it.amount > 0L }
+        val directList = ts.filter { d.statCat(it) == topId }
+        val directSum = directList.sumOf { amt(it) }
         val children = if (subs.isEmpty()) emptyList() else {
             val all = subs.toMutableList()
-            if (directList.isNotEmpty()) {
-                all.add(Slice("d$topId", "未細分", top?.emoji ?: "img:cat_box", Color.Gray, directList.sumOf { amt(it) }, directList.size,
-                    { t -> t.categoryId == topId }, emptyList()))
+            if (directList.isNotEmpty() && directSum > 0L) {
+                all.add(Slice("d$topId", "未細分", top?.emoji ?: "img:cat_box", Color.Gray, directSum, directList.size,
+                    { t -> d.statCat(t) == topId }, emptyList()))
             }
             all.sortedByDescending { it.amount }
         }
-        val pred: (Txn) -> Boolean = if (topId == -1L) ({ t -> t.categoryId == null || d.catMap[t.categoryId] == null })
-        else ({ t -> t.categoryId == topId || (t.categoryId != null && t.categoryId in kidIds) })
+        val pred: (Txn) -> Boolean = if (topId == -1L) ({ t -> d.statCat(t).let { it == null || d.catMap[it] == null } })
+        else ({ t -> d.statCat(t).let { it == topId || (it != null && it in kidIds) } })
         Slice("t$topId", top?.name ?: "未分類", top?.emoji ?: "img:cat_box", Color.Gray, ts.sumOf { amt(it) }, ts.size, pred, children)
-    }
+    }.filter { it.amount > 0L }
 }
 
 private fun byTag(list: List<Txn>, amt: (Txn) -> Long): List<Slice> {
@@ -383,7 +387,9 @@ private fun CategoryCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, onDril
     var selected by vm::statSelected
     val type = if (kind == 0) TxType.EXPENSE else TxType.INCOME
     val amt: (Txn) -> Long = { t -> if (t.adjust) 0L else if (gross && t.type == TxType.EXPENSE) t.paid else t.statAmount }
-    val list = scope.filter { it.type == type && amt(it) > 0 }
+    // 支出含退款（負的，從原本那筆的分類扣回）；收入不算「不算收入」的
+    val typeOk: (Txn) -> Boolean = { t -> if (type == TxType.EXPENSE) (t.type == TxType.EXPENSE && amt(t) > 0) || t.isRefund else t.countsAsIncome && amt(t) > 0 }
+    val list = scope.filter(typeOk)
     val transferFees = if (type == TxType.EXPENSE) scope.filter { it.type == TxType.TRANSFER }.sumOf { it.fee } else 0L
     val reimbGain = if (type == TxType.INCOME) scope.sumOf { it.reimbGain } else 0L
     val total = list.sumOf { amt(it) } + transferFees + reimbGain
@@ -413,11 +419,10 @@ private fun CategoryCard(vm: MoneyViewModel, mode: Int, scope: List<Txn>, onDril
             }
         }
 
-        if (total == 0L) {
+        if (total <= 0L) {
             EmptyHint(d.prefs.mascot, "這段期間沒有${if (kind == 0) "支出" else "收入"}記錄")
             return@CuteCard
         }
-        val typeOk: (Txn) -> Boolean = { t -> t.type == type && amt(t) > 0 }
         val base = if (group == 0) byCategory(d, list, amt) else byTag(list, amt)
         val extra = ArrayList<Slice>()
         if (transferFees > 0) {

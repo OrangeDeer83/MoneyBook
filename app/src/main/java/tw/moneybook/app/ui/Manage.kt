@@ -52,6 +52,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +65,7 @@ import tw.moneybook.app.BadgePresets
 import tw.moneybook.app.Book
 import tw.moneybook.app.Category
 import tw.moneybook.app.categoryOutOfBudget
+import tw.moneybook.app.catNoIncome
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.bookSubs
 import tw.moneybook.app.subsMonthly
@@ -986,11 +989,11 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
                 ReorderColumn(d.topCategories(kind), { it.id }, { vm.reorderCategories(it) }, scroll = dragScroll) { c, handle, _ ->
                     val kids = d.childrenOf(c.id)
                     CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
-                        CatLine(c, onClick = { edit = CatEdit(c, kind, null) }, handle = handle, out = d.categoryOutOfBudget(c.id))
+                        CatLine(c, onClick = { edit = CatEdit(c, kind, null) }, handle = handle, out = d.categoryOutOfBudget(c.id), noInc = d.catNoIncome(c.id))
                         if (kids.isNotEmpty()) {
                             Box(Modifier.padding(start = 28.dp)) {
                                 ReorderColumn(kids, { it.id }, { vm.reorderCategories(it) }, spacing = 2.dp, scroll = dragScroll) { k, kHandle, _ ->
-                                    CatLine(k, onClick = { edit = CatEdit(k, kind, c.id) }, handle = kHandle, small = true, out = d.categoryOutOfBudget(k.id))
+                                    CatLine(k, onClick = { edit = CatEdit(k, kind, c.id) }, handle = kHandle, small = true, out = d.categoryOutOfBudget(k.id), noInc = d.catNoIncome(k.id))
                                 }
                             }
                         }
@@ -1025,7 +1028,9 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             parent = parent,
             kind = e.kind,
             onSave = { name, emoji, color, mode ->
-                vm.saveCategory(e.cat?.id, name, emoji, color, e.kind, e.parentId, mode)
+                // 收入分類的 mode 是「不算收入」（1＝打開）
+                if (e.kind == TxType.INCOME) vm.saveCategory(e.cat?.id, name, emoji, color, e.kind, e.parentId, 0, noIncome = mode == 1)
+                else vm.saveCategory(e.cat?.id, name, emoji, color, e.kind, e.parentId, mode)
                 edit = null
             },
             onDelete = if (e.cat != null) ({ if (vm.deleteCategory(e.cat.id)) edit = null }) else null,
@@ -1036,7 +1041,7 @@ fun CategoriesScreen(vm: MoneyViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: Boolean = false, out: Boolean = false) {
+private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: Boolean = false, out: Boolean = false, noInc: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(LocalCute.current.card)
             .clickable(onClick = onClick).padding(vertical = 2.dp),
@@ -1050,6 +1055,13 @@ private fun CatLine(c: Category, onClick: () -> Unit, handle: Modifier, small: B
             if (out) {
                 Spacer(Modifier.width(6.dp))
                 OutTag()
+            }
+            if (noInc) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "不算收入", style = MaterialTheme.typography.labelSmall, color = LocalCute.current.sub, maxLines = 1,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(LocalCute.current.soft).padding(horizontal = 5.dp, vertical = 1.dp),
+                )
             }
         }
         DragHandle(handle)
@@ -1072,7 +1084,8 @@ private fun CategoryDialog(
     var color by remember { mutableStateOf(cat?.color ?: parent?.color ?: 0) }
     var pick by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf(false) }
-    var mode by remember { mutableStateOf(cat?.budgetMode ?: 0) }
+    // 支出分類：預算外設定；收入分類：1＝不算收入
+    var mode by remember { mutableStateOf(if (kind == TxType.INCOME) (if (cat?.noIncome == true) 1 else 0) else cat?.budgetMode ?: 0) }
     // 自己的圖片：選好 → 調整位置 → 去背（可以不去背）→ 加貼紙、文字（可以略過）
     val picFlow = rememberOwnPicFlow(0.36f, cutout = true)
     val tries = rememberNeedTries()
@@ -1124,6 +1137,24 @@ private fun CategoryDialog(
                     }
                 }
                 if (kind == TxType.EXPENSE) BudgetModeSetting(parent, mode) { mode = it }
+                if (kind == TxType.INCOME) {
+                    val cute = LocalCute.current
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("不算收入", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                if (parent?.noIncome == true) "大分類已經是不算收入，這個小分類也不算"
+                                else "退款這種：收入統計看不到；記一筆時可以選退的是哪一筆，統計會從那筆的分類扣掉",
+                                style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                            )
+                        }
+                        androidx.compose.material3.Switch(
+                            checked = mode == 1 || parent?.noIncome == true, enabled = parent?.noIncome != true,
+                            onCheckedChange = { mode = if (it) 1 else 0 },
+                            modifier = Modifier.semantics { contentDescription = "不算收入" },
+                        )
+                    }
+                }
                 if (onDelete != null) {
                     SoftButton("刪除分類", { confirmDel = true }, Modifier.fillMaxWidth(), danger = true)
                 }

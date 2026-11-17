@@ -44,6 +44,8 @@ import tw.moneybook.app.budgetRankCats
 import tw.moneybook.app.budgetTopTxns
 import tw.moneybook.app.catAndKids
 import tw.moneybook.app.countsInBudget
+import tw.moneybook.app.refundInBudget
+import tw.moneybook.app.statCat
 import tw.moneybook.app.firstMonthOf
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.monthlySums
@@ -69,7 +71,7 @@ fun BudgetRankDialog(
     val d = vm.data
     val cute = LocalCute.current
     val budget = d.currentBook.budgetFor(month)
-    val spent = remember(d, list) { list.filter { d.countsInBudget(it) }.sumOf { it.spent } }
+    val spent = remember(d, list) { list.filter { d.countsInBudget(it) || d.refundInBudget(it) }.sumOf { it.spent } }
     var open by rememberSaveable { mutableStateOf<Long?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -167,7 +169,7 @@ fun BudgetRankDialog(
 /** 這個分類（含子分類）算預算的支出 */
 private fun rankPred(d: AppData, id: Long): (Txn) -> Boolean {
     val ids = d.catAndKids(id)
-    return { t -> t.categoryId?.let { it in ids } == true && d.countsInBudget(t) }
+    return { t -> d.statCat(t)?.let { it in ids } == true && (d.countsInBudget(t) || d.refundInBudget(t)) }
 }
 
 /** 排行裡展開的近 6 個月折線：跟統計下鑽頁一樣（虛線平均、比平均多 30% 以上紅點、長按看那個月） */

@@ -16,12 +16,14 @@ fun AppData.categoryOutOfBudget(catId: Long?): Boolean {
     }
 }
 
-/** 這筆是不是預算外（單筆設定優先，沒設就看分類） */
-fun AppData.isOutOfBudget(t: Txn): Boolean = t.type == TxType.EXPENSE && when (t.budgetOut) {
-    1 -> true
-    2 -> false
-    else -> categoryOutOfBudget(t.categoryId)
-}
+/** 這筆是不是預算外（單筆設定優先，沒設就看分類）；退款跟著原本那筆（原本是預算外就從預算外扣） */
+fun AppData.isOutOfBudget(t: Txn): Boolean =
+    if (t.isRefund) txnMap[t.refundOf]?.let { it.type == TxType.EXPENSE && isOutOfBudget(it) } ?: false
+    else t.type == TxType.EXPENSE && when (t.budgetOut) {
+        1 -> true
+        2 -> false
+        else -> categoryOutOfBudget(t.categoryId)
+    }
 
 /** 這些記錄算預算的支出（首頁預算、吉祥物、本月重點的預算都用它） */
 fun AppData.budgetSpent(list: List<Txn>): Long = list.filter { !isOutOfBudget(it) }.sumOf { it.spent }
@@ -32,11 +34,15 @@ fun AppData.outOfBudgetSpent(list: List<Txn>): Long = list.filter { isOutOfBudge
 /** 算預算的支出這一筆（首頁預算排行用）：支出、不是預算外、真的有花錢 */
 fun AppData.countsInBudget(t: Txn): Boolean = t.type == TxType.EXPENSE && !t.adjust && !isOutOfBudget(t) && t.spent > 0L
 
-/** 預算排行「依分類」：算預算的支出照大分類（含子分類）加總，由多到少；沒有分類的是 null */
+/** 算預算的退款（從原本那筆的分類扣回） */
+fun AppData.refundInBudget(t: Txn): Boolean = t.isRefund && !isOutOfBudget(t)
+
+/** 預算排行「依分類」：算預算的支出照大分類（含子分類）加總（扣掉退款），由多到少；沒有分類的是 null，扣完沒有花的不列 */
 fun AppData.budgetRankCats(list: List<Txn>): List<Pair<Long?, Long>> =
-    list.filter { countsInBudget(it) }
-        .groupBy { t -> t.categoryId?.let { catMap[it] }?.let { topOf(it).id } }
+    list.filter { countsInBudget(it) || refundInBudget(it) }
+        .groupBy { t -> statCat(t)?.let { catMap[it] }?.let { topOf(it).id } }
         .map { (k, v) -> k to v.sumOf { it.spent } }
+        .filter { it.second > 0L }
         .sortedWith(compareByDescending<Pair<Long?, Long>> { it.second }.thenBy { it.first ?: Long.MAX_VALUE })
 
 /** 預算排行「單筆最大」：算預算的支出由大到小前 n 筆（一樣大的新的在前） */

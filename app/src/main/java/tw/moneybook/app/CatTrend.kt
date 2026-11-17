@@ -30,7 +30,7 @@ fun monthlySums(txns: List<Txn>, months: List<YearMonth>, pred: (Txn) -> Boolean
 /** 某個支出分類（大分類含子分類）每個月花多少 */
 fun AppData.catMonthly(id: Long, months: List<YearMonth>): List<Long> {
     val ids = catAndKids(id)
-    return monthlySums(bookTxns, months, { t -> t.type == TxType.EXPENSE && t.categoryId?.let { it in ids } == true }, { it.statAmount })
+    return monthlySums(bookTxns, months, { t -> t.countsAsExpense && statCat(t)?.let { it in ids } == true }, { it.statAmount })
 }
 
 /** 趨勢頁一開始挑的分類：到 end 為止 12 個月支出最多的 3 個大分類（沒花過的不挑） */
@@ -38,8 +38,8 @@ fun AppData.topTrendCats(end: YearMonth, n: Int = 3): List<Long> {
     val months = monthsEnding(end, 12).toSet()
     val sums = HashMap<Long, Long>()
     for (t in bookTxns) {
-        if (t.type != TxType.EXPENSE || t.month !in months) continue
-        val c = t.categoryId?.let { catMap[it] } ?: continue
+        if (!t.countsAsExpense || t.month !in months) continue
+        val c = statCat(t)?.let { catMap[it] } ?: continue
         val top = topOf(c).id
         sums[top] = (sums[top] ?: 0L) + t.statAmount
     }

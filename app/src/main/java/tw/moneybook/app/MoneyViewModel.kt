@@ -62,6 +62,8 @@ data class TxnDraft(
     val offsetWho: List<String> = emptyList(),
     /** 從刷卡通知「改一下」記的：是哪則通知（只有新增時用；修改時留著原本的） */
     val noti: NotiSrc? = null,
+    /** 退款：退的是哪一筆支出（只有記在「不算收入」分類的收入有用；0＝沒選，見 Refund.kt） */
+    val refundOf: Long = 0L,
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -262,7 +264,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 
-    private fun commit(d: AppData) {
+    private fun commit(d0: AppData) {
+        // 原本那筆刪掉了：退款的連結拿掉（變成只是不算收入）
+        val d = d0.dropDanglingRefunds()
         Money.sync(d)
         tw.moneybook.app.ui.UserPics.sync(d.pics)
         data = d
@@ -306,7 +310,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 billMonth = dr.billMonth,
                 fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                 budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
-            )
+            ).withRefund(d, dr.refundOf)
             t = if (locked) {
                 t.copy(
                     amount = old.amount, fee = old.fee, discount = old.discount, accountId = old.accountId,
@@ -338,7 +342,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                     budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
                     noti = dr.noti,
-                ).let { withDebt(it, dr.debtItems) }.let {
+                ).withRefund(d, dr.refundOf).let { withDebt(it, dr.debtItems) }.let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
                         else emptyList()
@@ -422,10 +426,14 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         }
         val d = data
         val t = d.txns.firstOrNull { it.id == id } ?: return
+        // 退這筆的退款：刪掉時連結會拿掉，復原時接回去
+        val refunds = d.txns.filter { it.refundOf == id }.map { it.id }.toSet()
         commit(d.copy(txns = d.txns.filter { it.id != id }))
         _messages.tryEmit(UiMsg("已刪除「${if (t.adjust) "餘額調整" else t.categoryId?.let { d.catMap[it]?.name } ?: "轉帳"}」", "復原") {
             val now = data
-            if (now.txns.none { it.id == t.id }) commit(now.copy(txns = sortTxns(now.txns + t)))
+            if (now.txns.none { it.id == t.id }) commit(now.copy(txns = sortTxns(now.txns.map { r ->
+                if (r.id in refunds && r.refundOf == 0L && r.noIncome) r.copy(refundOf = t.id) else r
+            } + t)))
         })
     }
 
@@ -1053,17 +1061,21 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     // ───────── 分類 ─────────
 
-    fun saveCategory(id: Long?, name: String, emoji: String, color: Int, kind: TxType, parentId: Long?, budgetMode: Int = 0) {
+    /** noIncome：收入分類「不算收入」（改了的話，記在這個分類的收入跟著改，見 Refund.kt） */
+    fun saveCategory(id: Long?, name: String, emoji: String, color: Int, kind: TxType, parentId: Long?, budgetMode: Int = 0, noIncome: Boolean = false) {
+        val ni = noIncome && kind == TxType.INCOME
         update { d ->
             if (id == null) {
                 val order = d.categories.count { it.kind == kind && it.parentId == parentId }
-                val c = Category(d.nextId, name, emoji, color, kind, parentId, order, budgetMode = budgetMode)
+                val c = Category(d.nextId, name, emoji, color, kind, parentId, order, budgetMode = budgetMode, noIncome = ni)
                 d.copy(categories = d.categories + c, nextId = d.nextId + 1)
             } else {
-                d.copy(categories = d.categories.map {
+                val was = d.catMap[id]?.noIncome ?: false
+                val nd = d.copy(categories = d.categories.map {
                     if (it.id == id) it.copy(name = name, emoji = emoji, color = color, budgetMode = budgetMode)
                     else if (it.parentId == id) it.copy(color = color) else it
                 })
+                if (was != ni) nd.withCatNoIncome(id, ni) else nd
             }
         }
     }
