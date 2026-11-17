@@ -6792,7 +6792,7 @@ def t_card_shop_memo():
     d.time.sleep(1.5)
     ns = d.shot("照上次的記法")
     d.check("待確認：名稱「7-11・雙蔬鮪魚飯糰」、寫「照 … 的記法」、分類早餐、第二行有 OP錢包",
-            d.has(ns, "7-11・雙蔬鮪魚飯糰", True) and any(n.text.startswith("照 ") and n.text.endswith("的記法") for n in ns)
+            d.has(ns, "7-11・雙蔬鮪魚飯糰", True) and any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns)
             and any("OP錢包" in n.text and "早餐" in n.text for n in ns), pend_texts(ns))
     d.tap(d.wait(lambda n: n.desc == "記 統一超商", 8, "記 統一超商"))
     wait_toast("已記 7-11・雙蔬鮪魚飯糰 $45", "提示「已記 7-11・雙蔬鮪魚飯糰 $45」")
@@ -6805,7 +6805,7 @@ def t_card_shop_memo():
     f.tab("明細")
     d.time.sleep(1.5)
     ns = d.shot("別的金額")
-    d.check("$35：名稱「7-11」、沒有「照 … 的記法」", d.has(ns, "7-11", True) and not any(n.text.startswith("照 ") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
+    d.check("$35：名稱「7-11」、沒有「照 … 的記法」", d.has(ns, "7-11", True) and not any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
 
 
 @case(D, "確認已經有一筆時補上銀行寫的：修改頁寫「銀行寫的：統一超商」，按「不是這家」拿掉後下次不照它帶", visual=True)
@@ -6842,4 +6842,4 @@ def t_card_shop_had():
     ns = d.shot("下一則通知")
     d.check("下一則統一超商 $45 不照那筆帶：名稱是「統一超商」、沒有「照 … 的記法」",
             d.first(ns, "記 統一超商", True) is not None and not d.has(ns, "統一超商・雙蔬鮪魚飯糰・", False)
-            and not any(n.text.startswith("照 ") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
+            and not any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
