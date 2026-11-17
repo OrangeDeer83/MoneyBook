@@ -32,6 +32,8 @@ object Codec {
     fun encode(d: AppData): String {
         val root = JSONObject()
         root.put("version", 2)
+        // 有店家欄位的版本：讀舊資料時才把刷卡通知記的備註搬到店家（見 migrateCardShops）
+        root.put("shopV", 1)
         root.put("nextId", d.nextId)
 
         root.put("books", JSONArray().apply {
@@ -84,6 +86,7 @@ object Codec {
                         .put("debtItems", DebtCodec.itemsToJson(t.debtItems)).put("debtSelf", t.debtSelf).put("budgetOut", t.budgetOut)
                         .apply { t.noti?.let { put("noti", NotiSrcCodec.toJson(it)) } }
                         .apply { if (t.noIncome) put("noIncome", true); if (t.refundOf != 0L) put("refundOf", t.refundOf); if (t.est) put("est", true) }
+                        .apply { if (t.shop.isNotEmpty()) put("shop", t.shop); if (t.bankShop.isNotEmpty()) put("bankShop", t.bankShop) }
                 )
             }
         })
@@ -94,7 +97,7 @@ object Codec {
                         .put("amount", t.amount).put("categoryId", nullable(t.categoryId))
                         .put("accountId", nullable(t.accountId)).put("note", t.note)
                         .put("tags", JSONArray(t.tags))
-                        .apply { if (t.icon.isNotEmpty()) put("icon", t.icon) }
+                        .apply { if (t.icon.isNotEmpty()) put("icon", t.icon); if (t.shop.isNotEmpty()) put("shop", t.shop) }
                 )
             }
         })
@@ -153,7 +156,7 @@ object Codec {
                 .put("trendCats", JSONArray(p.trendCats))
                 .put("subNotify", p.subNotify).put("subNotifyTime", p.subNotifyTime)
                 .put("subNotifyRepeat", p.subNotifyRepeat).put("subNotifyAhead", p.subNotifyAhead)
-                .put("cardNotify", p.cardNotify)
+                .put("cardNotify", p.cardNotify).put("shopOpen", p.shopOpen)
         )
         return root.toString()
     }
@@ -244,6 +247,8 @@ object Codec {
                 noIncome = o.optBoolean("noIncome", false),
                 refundOf = o.optLong("refundOf", 0L),
                 est = o.optBoolean("est", false),
+                shop = o.optString("shop", ""),
+                bankShop = o.optString("bankShop", ""),
             ).let { t0 -> DebtCodec.migrateV1(t0, o) }
             // 舊資料沒有報銷金額時視為全額
             if (t.reimbAmount < 0) t.copy(reimbAmount = if (t.reimb != 0) t.paid else 0L) else t
@@ -259,6 +264,7 @@ object Codec {
                 note = o.optString("note", ""),
                 tags = strings(o.optJSONArray("tags")),
                 icon = o.optString("icon", ""),
+                shop = o.optString("shop", ""),
             )
         }
         val trades = objects(root.optJSONArray("trades")) { o ->
@@ -307,6 +313,7 @@ object Codec {
             subNotifyRepeat = po.optInt("subNotifyRepeat", 2),
             subNotifyAhead = po.optInt("subNotifyAhead", 0),
             cardNotify = po.optBoolean("cardNotify", true),
+            shopOpen = po.optBoolean("shopOpen", true),
         )
         val settles = objects(root.optJSONArray("settles")) { o ->
             Settle(
@@ -328,7 +335,8 @@ object Codec {
             books = books,
             accounts = accounts,
             categories = categories,
-            txns = sortTxns(txns),
+            // 沒有店家欄位的舊資料：刷卡通知記的那些，備註就是商店，搬到店家
+            txns = sortTxns(if (root.has("shopV")) txns else migrateCardShops(txns)),
             templates = templates,
             prefs = prefs,
             nextId = maxOf(root.optLong("nextId", 1L), maxId + 1),
@@ -580,7 +588,7 @@ object Calc {
 
 /** CSV 匯出與匯入 */
 object CsvIO {
-    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "備註", "標籤", "時間", "外幣金額", "外幣幣別", "入帳月份", "刷外幣金額", "刷外幣幣別", "待請款", "欠款對象", "欠款狀態")
+    private val header = listOf("日期", "類型", "金額", "手續費", "優惠", "實際金額", "分類", "子分類", "帳戶", "轉入帳戶", "帳本", "報銷", "報銷金額", "店家", "備註", "標籤", "時間", "外幣金額", "外幣幣別", "入帳月份", "刷外幣金額", "刷外幣幣別", "待請款", "欠款對象", "欠款狀態")
 
     private fun esc(s: String): String =
         if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + s.replace("\"", "\"\"") + "\"" else s
@@ -632,6 +640,7 @@ object CsvIO {
                 txt(bookName[t.bookId] ?: ""),
                 when (t.reimb) { 1 -> "待報銷"; 2 -> "已報銷"; else -> "" },
                 if (t.reimb != 0) t.reimbAmount.toString() else "",
+                txt(t.shop),
                 txt(t.note),
                 txt(t.tags.joinToString(" ")),
                 formatTime(t.time),
@@ -709,6 +718,7 @@ object CsvIO {
         val cAcc = col("帳戶", "Account")
         val cTo = col("轉入帳戶")
         val cNote = col("備註", "Note", "note", "描述")
+        val cShop = col("店家", "商店", "Shop", "Merchant")
         val cTags = col("標籤", "Tags")
         val cTime = col("時間", "Time")
         val cFee = col("手續費")
@@ -805,6 +815,7 @@ object CsvIO {
                     toAccountId = toId,
                     day = date.toEpochDay(),
                     note = get(cNote),
+                    shop = if (type == TxType.TRANSFER || isAdjust) "" else get(cShop).trim(),
                     tags = parseTags(get(cTags)),
                     time = parseTime(get(cTime)),
                     fee = get(cFee).replace(",", "").toDoubleOrNull()?.let { kotlin.math.abs(Math.round(it)) } ?: 0L,

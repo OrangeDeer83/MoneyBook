@@ -9,7 +9,7 @@ package tw.moneybook.app
 data class ShopKind(val name: String, val cats: List<String>, val shops: List<String>)
 
 val SHOP_KINDS = listOf(
-    ShopKind("超商", listOf("超商", "便利商店"), listOf("7eleven", "統一超商", "全家", "familymart", "萊爾富", "hilife", "ok超商", "okmart")),
+    ShopKind("超商", listOf("超商", "便利商店"), listOf("7eleven", "711", "統一超商", "全家", "familymart", "萊爾富", "hilife", "ok超商", "okmart")),
     ShopKind(
         "超市", listOf("超市", "日用", "日用品", "生活用品"),
         listOf("全聯", "pxmart", "家樂福", "carrefour", "美廉社", "頂好", "wellcome", "楓康", "愛買", "大潤發", "好市多", "costco", "喜互惠"),

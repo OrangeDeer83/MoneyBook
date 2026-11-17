@@ -54,6 +54,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tw.moneybook.app.shopNote
 import tw.moneybook.app.isOutOfBudget
 import tw.moneybook.app.refundLabel
 import tw.moneybook.app.budgetSpent
@@ -341,7 +342,8 @@ fun TxnRow(d: AppData, t: Txn, signedFor: Long? = null, balance: Long? = null, h
     val signedAcc = signedFor?.let { d.accMap[it] }
     val inForeign = signedAcc?.isForeign == true
     val notes = ArrayList<String>()
-    if (t.note.isNotBlank()) notes.add(t.note.lineSequence().first())
+    // 店家・備註
+    t.shopNote().takeIf { it.isNotEmpty() }?.let { notes.add(it) }
     d.fxNote(t, inForeign)?.let { notes.add(it) }
     // 欠款：列裡多一行寫分配（我付多少、欠誰多少…），帳戶明細不顯示
     val info: String? = if (t.isDebt && signedFor == null) debtInfo(d, t) else null

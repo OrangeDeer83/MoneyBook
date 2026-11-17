@@ -194,6 +194,13 @@ data class Txn(
     val refundOf: Long = 0L,
     /** 預先授權記的：金額是預估的，還沒請款（見 CardPendKinds.kt）；請款通知來了改金額、或自己在修改頁關掉 */
     val est: Boolean = false,
+    /** 店家（選填）：刷卡通知記的先填銀行寫的商店（或上次的叫法），使用者可以改成自己的叫法 */
+    val shop: String = "",
+    /**
+     * 銀行寫的商店名稱：跟刷卡通知連起來過才有（通知記的、或確認「已經有一筆」的），畫面上不能改、只能拿掉。
+     * 下次同一家店的通知用它對到這筆，照這筆的店家、備註、分類帶（見 Shop.kt）
+     */
+    val bankShop: String = "",
 ) {
     val date: LocalDate get() = LocalDate.ofEpochDay(day)
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
@@ -267,6 +274,8 @@ data class Template(
     val tags: List<String>,
     /** 自己換的圖示；空白＝用分類的圖示 */
     val icon: String = "",
+    /** 店家（選填） */
+    val shop: String = "",
 )
 
 data class Prefs(
@@ -295,6 +304,8 @@ data class Prefs(
     val subNotifyAhead: Int = 0,
     /** 刷卡有待確認時，吉祥物發手機通知（預設開） */
     val cardNotify: Boolean = true,
+    /** 記一筆的店家格打開（true）或收起來；記一筆、修改、常用記帳共用，重開 App 後保留 */
+    val shopOpen: Boolean = true,
 )
 
 data class AppData(

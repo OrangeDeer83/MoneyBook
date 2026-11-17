@@ -50,6 +50,8 @@ private fun matches(d: AppData, t: Txn, kw: String): Boolean {
     val parent = c?.let { d.topOf(it) }
     val fields = listOfNotNull(
         t.note,
+        t.shop,
+        t.bankShop,
         c?.name,
         parent?.name,
         t.accountId?.let { d.accMap[it]?.name },

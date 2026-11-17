@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -121,6 +122,7 @@ import tw.moneybook.app.formatMoney
 import tw.moneybook.app.resolveCard
 import tw.moneybook.app.guessCat
 import tw.moneybook.app.pendNote
+import tw.moneybook.app.shopSuggestions
 import tw.moneybook.app.NotiSrc
 import tw.moneybook.app.mainSrc
 import tw.moneybook.app.relearnAsk
@@ -240,6 +242,10 @@ fun EditScreen(
         )
     }
     var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: pend?.let { pendNote(it) } ?: "") }
+    var shop by rememberSaveable { mutableStateOf(orig?.shop ?: tpl?.shop ?: "") }
+    // 銀行寫的：看得到、不能改，按「不是這家」拿掉
+    var bankShop by rememberSaveable { mutableStateOf(orig?.bankShop ?: "") }
+    var shopFocused by remember { mutableStateOf(false) }
     var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
     // 刷卡通知寫「分 N 期」的：帶好期數
     var inst by rememberSaveable { mutableIntStateOf(if (pend != null && pend.isInst) pend.inst else 1) }
@@ -451,6 +457,8 @@ fun EditScreen(
         noti = if (orig == null) pend?.mainSrc else null,
         refundOf = if (refundOn) refundOf else 0L,
         est = estChip && est,
+        shop = if (type == TxType.TRANSFER) "" else shop.trim(),
+        bankShop = if (type == TxType.TRANSFER) "" else bankShop,
     )
 
     val initialDraft = remember { draft() }
@@ -479,6 +487,7 @@ fun EditScreen(
         tp.categoryId?.let { c -> if (d.catMap[c] != null) catId = c }
         tp.accountId?.let { a -> if (d.accMap[a]?.hidden == false) accId = a }
         if (tp.note.isNotBlank()) note = tp.note
+        if (tp.shop.isNotBlank()) shop = tp.shop
         if (tp.tags.isNotEmpty()) tagsText = tp.tags.joinToString("\n")
         showTpl = false
     }
@@ -608,6 +617,59 @@ fun EditScreen(
                     listOfNotNull(on.label.ifEmpty { null }, on.last4.takeIf { it.isNotEmpty() }?.let { "末四碼 $it" } ?: on.title.ifEmpty { null }).joinToString("・"),
                     style = MaterialTheme.typography.labelSmall, color = cute.sub,
                 )
+            }
+        }
+        // 店家（選填）：在備註上面；可以收起來，收起來或打開存在設定裡（記一筆、修改、常用記帳共用）
+        if (type != TxType.TRANSFER) {
+            val shopOpen = d.prefs.shopOpen
+            if (shopOpen) {
+                OutlinedTextField(
+                    value = shop,
+                    onValueChange = { shop = it.replace("\n", "").take(40) },
+                    placeholder = { Text("店家（選填）") },
+                    leadingIcon = { IconGlyph("vec:shop", 18.sp) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp),
+                    trailingIcon = {
+                        if (shopFocused) TextButton(onClick = { focus.clearFocus() }) { Text("完成") }
+                        else IconButton(onClick = { vm.setShopOpen(false) }) { Icon(AppIcons.ChevronUp, contentDescription = "收起店家") }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = if (bankShop.isNotEmpty()) 2.dp else 8.dp).onFocusChanged { shopFocused = it.isFocused },
+                )
+                if (bankShop.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().padding(start = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "銀行寫的：$bankShop", style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "不是這家", style = MaterialTheme.typography.labelSmall, color = cute.expense,
+                            modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(10.dp)).background(cute.card)
+                                .border(1.dp, cute.soft, RoundedCornerShape(10.dp)).clickable { bankShop = "" }.padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+                // 點店家格：用過的店家，打字時跟著篩選，點一下填上
+                if (shopFocused) {
+                    val sugg = remember(d) { d.shopSuggestions() }
+                    SuggestRow("用過的店家", filterSuggestions(sugg, shop).take(8), shop, { s -> shop = s; focus.clearFocus() }, Modifier.padding(bottom = 8.dp))
+                }
+            } else {
+                // 收起來：只剩一個小按鈕（這筆有店家時寫店名）
+                Row(
+                    Modifier.padding(bottom = 8.dp).clip(RoundedCornerShape(14.dp)).background(cute.soft.copy(alpha = 0.6f))
+                        .clickable { vm.setShopOpen(true) }.semantics { contentDescription = "打開店家" }
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph("vec:shop", 15.sp) }
+                    Text(
+                        shop.trim().ifEmpty { "店家" }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 6.dp).widthIn(max = 200.dp),
+                    )
+                    Icon(AppIcons.ChevronDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                }
             }
         }
         // 備註：放在最上面，鍵盤開關時不會跟著移動

@@ -63,7 +63,7 @@ const val REFUND_DAYS = 60
 fun AppData.refundCands(accId: Long?, day: Long, amount: Long, shop: String): List<Txn> {
     if (accId == null) return emptyList()
     val key = shopKey(shop)
-    fun same(t: Txn) = key.length >= 2 && sameShop(key, shopKey(t.note.lineSequence().firstOrNull() ?: ""))
+    fun same(t: Txn) = t.isShop(key)
     return txns.filter { t ->
         t.accountId == accId && t.type == TxType.EXPENSE && !t.adjust && t.day <= day && t.day >= day - REFUND_DAYS
     }.sortedWith(
@@ -79,14 +79,14 @@ fun AppData.refundCands(accId: Long?, day: Long, amount: Long, shop: String): Li
 fun AppData.refundGuess(accId: Long?, day: Long, amount: Long, shop: String): Txn? {
     val cands = refundCands(accId, day, amount, shop).filter { refundedOf(it.id) + amount <= it.recorded }
     val key = shopKey(shop)
-    if (key.length >= 2) return cands.firstOrNull { sameShop(key, shopKey(it.note.lineSequence().firstOrNull() ?: "")) }
+    if (key.length >= 2) return cands.firstOrNull { it.isShop(key) }
     return cands.filter { it.recorded == amount }.singleOrNull()
 }
 
 /** 「11/14 全聯福利中心 $350」：退款連到的那筆的簡短說明 */
 fun AppData.refundLabel(t: Txn): String {
     val d = t.date
-    val name = t.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() } ?: t.categoryId?.let { catMap[it]?.name } ?: "支出"
+    val name = t.shopNote().ifEmpty { null } ?: t.categoryId?.let { catMap[it]?.name } ?: "支出"
     return "${d.monthValue}/${d.dayOfMonth} $name ${formatMoney(t.recorded)}"
 }
 

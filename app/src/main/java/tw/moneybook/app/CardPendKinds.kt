@@ -46,7 +46,7 @@ fun AppData.preauthFor(p: CardPend, cardId: Long?): Txn? {
     if (key.length < 2) return null
     return txns.filter { t ->
         t.est && t.type == TxType.EXPENSE && t.accountId == cardId && p.day >= t.day && p.day - t.day <= PREAUTH_DAYS &&
-            sameShop(key, shopKey(t.note.lineSequence().firstOrNull() ?: ""))
+            t.isShop(key)
     }.minByOrNull { kotlin.math.abs(it.amount - p.amount) }
 }
 

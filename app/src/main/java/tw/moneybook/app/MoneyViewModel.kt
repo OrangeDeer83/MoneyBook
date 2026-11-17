@@ -66,6 +66,10 @@ data class TxnDraft(
     val refundOf: Long = 0L,
     /** 預估金額（預先授權記的，還沒請款；只有支出） */
     val est: Boolean = false,
+    /** 店家（選填，轉帳沒有） */
+    val shop: String = "",
+    /** 銀行寫的商店（刷卡通知連起來的才有；按「不是這家」清掉） */
+    val bankShop: String = "",
 )
 
 /** 一次收款：第 index 個報銷對象收到 amount；chase = 收得比剩下的少時，是否繼續追 */
@@ -157,6 +161,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     val accListState = androidx.compose.foundation.lazy.LazyListState()
     // 帳戶分頁：是否顯示已隱藏的帳戶（每次開 App 都先隱藏）
     var accShowHidden by mutableStateOf(false)
+
+    /** 記一筆的店家格打開或收起來；存在設定裡，重開 App 後保留 */
+    fun setShopOpen(open: Boolean) {
+        if (data.prefs.shopOpen != open) update { d -> d.copy(prefs = d.prefs.copy(shopOpen = open)) }
+    }
 
     /** 收折或展開帳戶分頁的某個類型；狀態存在設定裡，重開 App 後保留 */
     fun toggleAccGroup(type: AccountType) {
@@ -312,6 +321,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 billMonth = dr.billMonth,
                 fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                 budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
+                shop = if (dr.type == TxType.TRANSFER) "" else dr.shop, bankShop = if (dr.type == TxType.TRANSFER) "" else dr.bankShop,
             ).withRefund(d, dr.refundOf).copy(est = dr.est && dr.type == TxType.EXPENSE)
             t = if (locked) {
                 t.copy(
@@ -344,6 +354,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                     fxSpendAmount = dr.fxSpendAmount, fxSpendCur = dr.fxSpendCur, fxPending = dr.fxPending && dr.fxSpendAmount > 0L,
                     budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
                     noti = dr.noti,
+                    shop = if (dr.type == TxType.TRANSFER) "" else dr.shop, bankShop = if (dr.type == TxType.TRANSFER) "" else dr.bankShop,
                 ).withRefund(d, dr.refundOf).copy(est = dr.est && dr.type == TxType.EXPENSE).let { withDebt(it, dr.debtItems) }.let {
                     it.withItems(
                         if (dr.type == TxType.EXPENSE) capItems(it, dr.reimbItems.map { i -> i.copy(pays = emptyList(), closed = false) })
@@ -371,6 +382,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                         discount = if (i == 0) dr.discount else 0L,
                         budgetOut = if (dr.type == TxType.EXPENSE) dr.budgetOut else 0,
                         noti = dr.noti,
+                        shop = dr.shop, bankShop = dr.bankShop,
                     ).let {
                         // 每個報銷對象的金額也平均分到每一期
                         val shares = dr.reimbItems.map { r ->
@@ -1575,7 +1587,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addTemplate(name: String, dr: TxnDraft) {
         update { d ->
-            val t = Template(d.nextId, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags)
+            val t = Template(d.nextId, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags, shop = if (dr.type == TxType.TRANSFER) "" else dr.shop)
             d.copy(templates = d.templates + t, nextId = d.nextId + 1)
         }
         toast("已存成常用：$name")
@@ -1585,11 +1597,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     fun saveTemplate(id: Long?, name: String, dr: TxnDraft, icon: String = "") {
         update { d ->
             if (id == null) {
-                val t = Template(d.nextId, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags, icon)
+                val t = Template(d.nextId, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags, icon, if (dr.type == TxType.TRANSFER) "" else dr.shop)
                 d.copy(templates = d.templates + t, nextId = d.nextId + 1)
             } else {
                 d.copy(templates = d.templates.map {
-                    if (it.id == id) Template(id, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags, icon) else it
+                    if (it.id == id) Template(id, name, dr.type, dr.amount, dr.categoryId, dr.accountId, dr.note, dr.tags, icon, if (dr.type == TxType.TRANSFER) "" else dr.shop) else it
                 })
             }
         }
