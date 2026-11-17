@@ -42,6 +42,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -125,6 +127,10 @@ import tw.moneybook.app.relearnAsk
 import tw.moneybook.app.relearnWhat
 import tw.moneybook.app.matchCard
 import tw.moneybook.app.CARD_NOTI_TAG
+import tw.moneybook.app.catNoIncome
+import tw.moneybook.app.refundCands
+import tw.moneybook.app.refundLabel
+import tw.moneybook.app.refundedOf
 import java.time.LocalDate
 
 private fun defaultCat(d: AppData, type: TxType): Long? =
@@ -355,6 +361,9 @@ fun EditScreen(
     val parent = cat?.let { d.topOf(it) }
     // 預算外：0＝跟著分類、1＝這筆預算外、2＝這筆算預算（見 Budget.kt）；和分類預設一樣時存 0
     var budgetOut by rememberSaveable { mutableIntStateOf(orig?.budgetOut ?: 0) }
+    // 退款：記在「不算收入」分類的收入可以選退的是哪一筆支出（選填，見 Refund.kt）
+    var refundOf by rememberSaveable { mutableLongStateOf(orig?.refundOf ?: 0L) }
+    val refundOn = type == TxType.INCOME && !tplMode && d.catNoIncome(catId)
     val catOut = d.categoryOutOfBudget(catId)
     val outEff = when (budgetOut) { 1 -> true; 2 -> false; else -> catOut }
     // 外幣消費：一般（非外幣、非投資）帳戶的支出才有，分期不支援
@@ -423,6 +432,7 @@ fun EditScreen(
         budgetOut = if (type == TxType.EXPENSE) budgetOut else 0,
         offsetWho = offsets.map { it.who },
         noti = if (orig == null) pend?.mainSrc else null,
+        refundOf = if (refundOn) refundOf else 0L,
     )
 
     val initialDraft = remember { draft() }
@@ -716,6 +726,30 @@ fun EditScreen(
 
         nv.Message("target")
 
+        // 不算收入的分類：退的是哪一筆（選填）
+        if (refundOn) {
+            val r = refundOf.takeIf { it != 0L }?.let { d.txnMap[it] }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(12.dp)).background(cute.soft)
+                    .clickable { dialog = "refund" }.padding(horizontal = 12.dp, vertical = 8.dp)
+                    .semantics { contentDescription = "退的是哪一筆" },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("退的是哪一筆（選填）", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    Text(
+                        r?.let { d.refundLabel(it) + (it.categoryId?.let { c -> d.catMap[c]?.name }?.let { n -> "（$n）" } ?: "") } ?: "點這裡選",
+                        style = MaterialTheme.typography.bodyMedium, color = if (r != null) cute.ink else cute.sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text("›", style = MaterialTheme.typography.titleMedium, color = cute.sub)
+            }
+            Text(
+                if (r != null) "統計時從${r.categoryId?.let { d.catMap[it]?.name } ?: "那筆的分類"}扣掉這筆退款" else "不選也可以存：只是不算收入，不會從支出扣",
+                style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+            )
+        }
+
         // 附加資訊
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -959,6 +993,46 @@ fun EditScreen(
             onGo = { w -> goPending = w },
             onClose = { dialog = "" },
         )
+        "refund" -> {
+            val cands = remember(accId, day) { d.refundCands(accId, day, actual, note.lineSequence().firstOrNull() ?: "").filter { it.id != orig?.id } }
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = { Text("退的是哪一筆？") },
+                text = {
+                    Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "${accId?.let { d.accMap[it]?.name } ?: "這個帳戶"} ${tw.moneybook.app.REFUND_DAYS} 天內的支出，金額一樣、同一家店的排上面",
+                            style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                        )
+                        if (cands.isEmpty()) Text("這個帳戶 ${tw.moneybook.app.REFUND_DAYS} 天內沒有支出", style = MaterialTheme.typography.bodyMedium)
+                        cands.forEach { t ->
+                            val on = t.id == refundOf
+                            val done = d.refundedOf(t.id) - (orig?.takeIf { it.refundOf == t.id }?.paid ?: 0L)
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                    .background(if (on) cute.income.copy(alpha = 0.22f) else cute.soft.copy(alpha = 0.6f))
+                                    .clickable { refundOf = t.id; dialog = "" }.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "${t.date.monthValue}/${t.date.dayOfMonth} " + (t.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() } ?: t.categoryId?.let { d.catMap[it]?.name } ?: "支出"),
+                                        style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        listOfNotNull(t.categoryId?.let { d.catMap[it]?.name }, if (done > 0L) "已退 ${formatMoney(done)}" else null).joinToString("・"),
+                                        style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                                    )
+                                }
+                                Text(formatMoney(t.recorded), color = cute.expense)
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { dialog = "" }) { Text("取消") } },
+                dismissButton = if (refundOf != 0L) ({ TextButton(onClick = { refundOf = 0L; dialog = "" }) { Text("不選") } }) else null,
+            )
+        }
         "relearn" -> {
             val s = relearnSrc
             val newName = d.accMap[accId]?.name ?: ""
