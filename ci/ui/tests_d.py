@@ -4651,6 +4651,12 @@ def t_card_edit_autoscroll():
         d.time.sleep(3)
         f.tab("統計")
         d.time.sleep(2)
+        # 字放大時「本月重點」可能佔滿一整個畫面：往下捲到看得到「收支」的 •••
+        for _ in range(4):
+            if card_menu(d.nodes(), "收支") is not None:
+                break
+            d.swipe(540, 1600, 540, 1000, 600)
+            d.time.sleep(0.8)
         open_card_menu("收支", "調整排版…")
         ns = d.shot("調整排版（字放大）")
         d.check("一個畫面放不下（看不到隱藏區）", not d.has(ns, "隱藏的卡片（0）", True), order(ns))
