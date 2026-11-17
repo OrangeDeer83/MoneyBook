@@ -6585,3 +6585,141 @@ def t_card_tpl():
     ns = d.shot("待確認重讀")
     d.check("首頁待確認：COSTCO $2,350（重讀）、UNIQLO $990（用範本讀）", d.has(ns, "COSTCO", True) and d.has(ns, "UNIQLO", True)
             and d.has(ns, "有 2 筆刷卡等你確認", True), pend_texts(ns))
+
+
+def wait_toast(text, what, timeout=6):
+    """提示只停 4 秒：等它出現就算過"""
+    try:
+        d.wait_text(text, timeout=timeout)
+        d.check(what, True)
+        return True
+    except TimeoutError:
+        d.check(what, False, pend_texts(d.nodes()))
+        return False
+
+
+@case(D, "刷卡通知退款：待確認寫退的是哪一筆，按記記成不算收入的退款，本月支出扣掉、明細標退哪一筆", visual=True)
+def t_card_refund():
+    s = S.Seed(f.today())
+    s.expense(s.back(2), 350, S.C_SHOP, acc=S.CARD, note="全聯福利中心")
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    bank_post("r1", f"末四碼1234於{today_slash()}在全聯福利中心之消費退款NT$350")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("待確認的退款")
+    d.check("待確認：標「退款」、金額 +$350、寫「退的是 … 全聯福利中心 $350」和從購物扣掉",
+            d.has(ns, "退款", True) and d.has(ns, "+$350", True) and any(n.text.startswith("退的是") and "全聯福利中心 $350" in n.text for n in ns)
+            and d.has(ns, "（購物，統計時從購物扣掉）", True), pend_texts(ns))
+    d.check("按鈕是「記」「改一下」「不用記」", d.first(ns, "記 全聯福利中心", True) is not None and d.has(ns, "不用記", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "記 全聯福利中心", 8, "記 全聯福利中心"))
+    wait_toast("已記 退款 $350，統計從購物扣掉", "提示「已記 退款 $350，統計從購物扣掉」")
+    d.time.sleep(4)
+    ns = d.shot("記好退款")
+    d.check("待確認不見；明細的退款標「退 … 全聯福利中心 $350」",
+            not d.has(ns, "刷卡等你確認") and any(n.text.startswith("退 ") and "全聯福利中心 $350" in n.text for n in ns), pend_texts(ns))
+    d.check("本月支出扣掉退款變 $0、收入還是 $0", value_below(ns, "本月支出") == "$0" and value_below(ns, "收入") == "$0",
+            (value_below(ns, "本月支出"), value_below(ns, "收入")))
+
+
+@case(D, "手動記退款：收入選不算收入的分類，選退的是哪一筆，明細標退哪一筆、本月支出扣掉", visual=True)
+def t_manual_refund():
+    s = S.Seed(f.today())
+    s.extra_cats.append(dict(id=90, name="退款", emoji="img:cat_box", color=7, kind="INCOME", parentId=None, order=3, noIncome=True))
+    s.expense(s.back(2), 350, S.C_SHOP, acc=S.CARD, note="UNIQLO")
+    s.expense(s.back(1), 100, S.C_FOOD, note="早餐")
+    d.fresh(s.json())
+    f.open_acc("測試信用卡")
+    d.tap_text("記一筆", exact=True)
+    d.wait_text("備註（選填）", timeout=10)
+    d.tap_text("收入", exact=True, nth=0)
+    d.time.sleep(0.8)
+    d.tap_text("退款", exact=True)
+    d.time.sleep(0.8)
+    f.keypad("350")
+    ns = d.shot("選了不算收入的分類")
+    field = d.first(ns, "退的是哪一筆", True)
+    d.check("多一格「退的是哪一筆（選填）」，還沒選寫「點這裡選」",
+            field is not None and d.has(ns, "退的是哪一筆（選填）", True) and d.has(ns, "點這裡選", True), pend_texts(ns))
+    if field is None:
+        return
+    d.tap(field)
+    d.wait_text("退的是哪一筆？", timeout=8)
+    d.time.sleep(0.6)
+    ns = d.shot("選退的是哪一筆")
+    d.check("列出測試信用卡的支出 UNIQLO $350（現金的早餐不列）", d.has(ns, "UNIQLO", False) and not d.has(ns, "早餐", False), pend_texts(ns))
+    d.tap(d.first(ns, "UNIQLO", False))
+    d.time.sleep(0.8)
+    ns = d.shot("選好了")
+    d.check("那格寫「… UNIQLO $350（購物）」、下面寫統計時從購物扣掉",
+            any("UNIQLO $350（購物）" in n.text for n in ns) and d.has(ns, "統計時從購物扣掉這筆退款", True), pend_texts(ns))
+    f.save_edit_to_account()
+    ns = d.shot("帳戶明細")
+    d.check("帳戶明細的退款標「退 … UNIQLO $350」", any(n.text.startswith("退 ") and "UNIQLO $350" in n.text for n in ns), pend_texts(ns))
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1)
+    ns = d.shot("首頁")
+    d.check("本月支出 $450 − $350 = $100，收入 $0", value_below(ns, "本月支出") == "$100" and value_below(ns, "收入") == "$0",
+            (value_below(ns, "本月支出"), value_below(ns, "收入")))
+
+
+@case(D, "刷卡通知預先授權：記成預估、明細標預估；同一家店請款通知來了問改成實際金額，按了金額改好、預估拿掉", visual=True)
+def t_card_preauth():
+    s = S.Seed(f.today())
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    bank_post("p1", f"末四碼1234於{today_slash()} 15:10在福華飯店預先授權NT$10,000")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("待確認的預先授權")
+    d.check("待確認：標「預先授權」、寫「實際金額請款時才知道」，按鈕「記成預估」",
+            d.has(ns, "預先授權", True) and d.has(ns, "預先授權：實際金額請款時才知道", True) and d.first(ns, "記成預估 福華飯店", True) is not None, pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "記成預估 福華飯店", 8, "記成預估 福華飯店"))
+    try:
+        d.wait_text("選擇分類", timeout=8)
+        d.tap_text("居住", exact=True)
+    except TimeoutError:
+        d.check("沒有分類：先選分類", False, pend_texts(d.nodes()))
+        return
+    wait_toast("已記成預估 福華飯店 $10,000，請款時再改", "提示「已記成預估 福華飯店 $10,000，請款時再改」")
+    d.time.sleep(4)
+    ns = d.shot("記成預估")
+    d.check("明細有福華飯店 -$10,000、標「預估」", d.has(ns, "-$10,000", True) and d.has(ns, "預估", True), pend_texts(ns))
+    bank_post("p2", f"末四碼1234於{today_slash()}在福華飯店消費NT$8,200")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("請款通知")
+    d.check("待確認：標「請款」、寫「… 記的預估是 $10,000」，按鈕「改成 $8,200」「是另一筆」",
+            d.has(ns, "請款", True) and any(n.text.endswith("記的預估是 $10,000") for n in ns)
+            and d.first(ns, "改成 $8,200 福華飯店", True) is not None and d.has(ns, "是另一筆", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "改成 $8,200 福華飯店", 8, "改成 $8,200"))
+    wait_toast("已改成 $8,200（原本預估 $10,000）", "提示「已改成 $8,200（原本預估 $10,000）」")
+    d.time.sleep(4)
+    ns = d.shot("改好了")
+    d.check("待確認不見；明細福華飯店 -$8,200、沒有「預估」；本月支出 $8,200",
+            not d.has(ns, "刷卡等你確認") and d.has(ns, "-$8,200", True) and not d.has(ns, "預估", True) and value_below(ns, "本月支出") == "$8,200",
+            pend_texts(ns))
+
+
+@case(D, "刷卡通知分期：寫「分 12 期」的待確認標分期、寫每期多少，按記直接記成 12 期", visual=True)
+def t_card_inst():
+    s = S.Seed(f.today())
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    bank_post("i1", f"末四碼1234於{today_slash()}在燦坤消費NT$12,000，分12期")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("待確認的分期")
+    d.check("待確認：標「分 12 期」、寫「每期約 $1,000」，分類照同名分類帶「3C」",
+            d.has(ns, "分 12 期", True) and d.has(ns, "分 12 期，每期約 $1,000", True) and any(n.text.endswith("・3C") for n in ns), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "記 燦坤", 8, "記 燦坤"))
+    wait_toast("已記 燦坤 分 12 期，每期約 $1,000", "提示「已記 燦坤 分 12 期，每期約 $1,000」")
+    d.time.sleep(4)
+    ns = d.shot("記成分期")
+    d.check("明細有燦坤 -$1,000、標「分期 1/12」；本月支出 $1,000",
+            d.has(ns, "-$1,000", True) and d.has(ns, "分期 1/12", False) and value_below(ns, "本月支出") == "$1,000", pend_texts(ns))
