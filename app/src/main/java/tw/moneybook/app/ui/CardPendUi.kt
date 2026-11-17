@@ -51,11 +51,13 @@ import tw.moneybook.app.formatFx
 import tw.moneybook.app.isForeign
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.fxPlain
-import tw.moneybook.app.guessCat
 import tw.moneybook.app.possibleHad
 import tw.moneybook.app.rateOf
 import tw.moneybook.app.resolveCard
 import tw.moneybook.app.PendKind
+import tw.moneybook.app.pendCat
+import tw.moneybook.app.pendShop
+import tw.moneybook.app.shopNote
 import tw.moneybook.app.isInst
 import tw.moneybook.app.pendRefundOf
 import tw.moneybook.app.preauthFor
@@ -108,7 +110,9 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
         shown.forEach { p ->
             val cardId = d.resolveCard(p)
             val card = cardId?.let { d.accMap[it] }
-            val catId = d.guessCat(p.merchant, cardId)
+            val catId = d.pendCat(p, cardId)
+            // 照上次的記法（同一家店、金額一樣）：名稱寫店家・備註
+            val ps = d.pendShop(p, p.kind == PendKind.SPEND && !p.isInst)
             val cat = catId?.let { d.catMap[it] }
             val sm = d.pendSub(p, cardId)?.takeIf { !it.done }
             // 預先授權的請款（之前記成預估的那筆）、退款連到的那筆
@@ -141,7 +145,11 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (sm != null && sm.exact) sm.sub.name else p.merchant.ifEmpty { "（通知沒寫商店）" },
+                                when {
+                                    sm != null && sm.exact -> sm.sub.name
+                                    p.merchant.isEmpty() -> "（通知沒寫商店）"
+                                    else -> ps.name
+                                },
                                 style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                             )
                             if (badge != null) {
@@ -155,7 +163,7 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                         val fxNote = if (p.cur.isNotEmpty() && !(card?.isForeign == true && card.currency == p.cur)) "外幣消費（待請款）" else null
                         Text(
                             listOfNotNull(
-                                where, pendWhen(p, today),
+                                where, p.wallet.ifEmpty { null }, pendWhen(p, today),
                                 when {
                                     card == null -> null
                                     sm != null && sm.exact -> subCat?.name ?: "還沒有分類"
@@ -167,6 +175,11 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                             ).joinToString("・"),
                             style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 2,
                         )
+                        // 帶了上次的備註，或店家換成你的叫法：說一下是照哪一天的記法
+                        val memo = ps.memo
+                        if (memo != null && sm == null && pre == null && !refund && (memo.note.isNotBlank() || ps.shop != p.merchant)) {
+                            Text("照 ${shortDay(memo.day, today)} 的記法", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                     Text(
                         (if (refund) "+" else "") + pendAmountText(p), color = if (refund) cute.income else cute.expense,
@@ -187,7 +200,7 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                     p.kind == PendKind.PREAUTH -> "預先授權：實際金額請款時才知道" to "先記成預估，請款時再改"
                     p.isInst -> "分 ${p.inst} 期，每期約 ${formatMoney(p.amount / p.inst)}" to "按「記」會記成 ${p.inst} 期，第 1 期入這期帳單"
                     had != null -> "${shortDay(had.day, today)} ${card.name} 已經有一筆 ${formatMoney(had.recorded)}" to
-                        "（" + listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.note.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() }).distinct().joinToString("，") + "）"
+                        "（" + listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.shopNote().takeIf { it.isNotBlank() }).distinct().joinToString("，") + "）"
                     else -> null
                 }
                 if (hint != null) {
@@ -247,7 +260,7 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
         CardPickDialog(d, p, onDismiss = { pickCard = null }) { cardId, remember ->
             pickCard = null
             vm.pickPendCard(p.id, cardId, remember)
-            record(p, cardId, vm.data.guessCat(p.merchant, cardId))
+            record(p, cardId, vm.data.pendCat(p, cardId))
         }
     }
     subFx?.let { p ->

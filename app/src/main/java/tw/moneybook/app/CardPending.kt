@@ -294,7 +294,7 @@ fun AppData.possibleHad(p: CardPend, cardId: Long?, claimed: Set<Long>): Txn? {
     }
 }
 
-/** 記成那一筆的備註：商店（有錢包加在後面）；都沒有就空白 */
+/** 商店（有錢包加在後面）；都沒有就空白（以前記成那一筆的備註，現在店家另外存，見 Shop.kt） */
 fun pendNote(p: CardPend): String = when {
     p.merchant.isNotEmpty() && p.wallet.isNotEmpty() -> "${p.merchant}（${p.wallet}）"
     else -> p.merchant.ifEmpty { p.wallet }
@@ -306,9 +306,10 @@ fun pendNote(p: CardPend): String = when {
  */
 fun AppData.pendTxn(p: CardPend, id: Long, bookId: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true): Txn? {
     val acc = accMap[cardId] ?: return null
+    val ps = pendShop(p)
     val base = Txn(
         id = id, bookId = bookId, type = TxType.EXPENSE, amount = p.amount, categoryId = catId, accountId = cardId, toAccountId = null,
-        day = p.day, note = pendNote(p), tags = listOf(CARD_NOTI_TAG), time = p.minute, noti = p.mainSrc,
+        day = p.day, note = ps.note, tags = listOf(CARD_NOTI_TAG), time = p.minute, noti = p.mainSrc, shop = ps.shop, bankShop = ps.bankShop,
     )
     if (p.cur.isEmpty()) return base
     val dec = Currencies.of(p.cur).decimals
@@ -454,9 +455,9 @@ fun AppData.pendNotice(list: List<CardPend>, name: String): PendNotice? {
             val ok = pendSubTxn(p, sm, 0L) != null
             return PendNotice(title, listOfNotNull("訂閱：${sm.sub.name}", cardName).joinToString("・"), emptyList(), if (ok) p.id else null)
         }
-        val cat = guessCat(p.merchant, card)?.let { catMap[it] }
+        val cat = pendCat(p, card)?.let { catMap[it] }
         val where = cardName ?: (p.label + if (p.last4.isNotEmpty()) " 末四碼 ${p.last4}" else "")
-        val body = listOfNotNull(p.merchant.ifEmpty { null }, where, if (card != null) cat?.name ?: "還沒有分類" else "點開來選是哪張卡").joinToString("・")
+        val body = listOfNotNull(pendName(p).takeIf { p.merchant.isNotEmpty() }, where, if (card != null) cat?.name ?: "還沒有分類" else "點開來選是哪張卡").joinToString("・")
         val ok = card != null && cat != null && sm == null && pendTxn(p, 0L, currentBook.id, card, cat.id) != null &&
             possibleHad(p, card, claimedTxns(list)) == null
         return PendNotice(title, body, emptyList(), if (ok) p.id else null)

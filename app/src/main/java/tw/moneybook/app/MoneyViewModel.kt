@@ -1282,7 +1282,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun pendTitle(p: CardPend): String =
-        p.merchant.ifEmpty { "刷卡" } + " " + if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur)
+        data.pendName(p) + " " + if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur)
 
     /**
      * 記下一筆刷卡（記在目前的帳本；卡、分類由畫面決定）。外幣記在台幣卡：twd 是台幣金額，沒給就用目前匯率，
@@ -1407,7 +1407,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val d = data
         val card = d.resolveCard(p) ?: return
         val sm = d.pendSub(p, card)?.takeIf { !it.done && it.exact }
-        if (sm != null) recordPendSub(id) else recordPend(id, card, d.guessCat(p.merchant, card))
+        if (sm != null) recordPendSub(id) else recordPend(id, card, d.pendCat(p, card))
     }
 
     /**
@@ -1468,11 +1468,23 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         _messages.tryEmit(UiMsg("已拿掉 ${pendTitle(p)}", "復原") { setPend(id) { it.copy(state = PendState.WAIT) } })
     }
 
-    /** 「已經記過了」：認走 txnId 那一筆，不記新的，可以復原 */
+    /** 「已經記過了」：認走 txnId 那一筆，不記新的；那筆補上銀行寫的商店（下次照它的記法帶），可以復原 */
     fun hadPend(id: Long, txnId: Long) {
         val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id } ?: return
+        val title = pendTitle(p)
+        val old = data.txnMap[txnId]
+        if (old != null && p.merchant.isNotBlank()) {
+            val d = data
+            commit(d.copy(txns = d.txns.map { if (it.id == txnId) it.linkBankShop(p.merchant) else it }))
+        }
         setPend(id) { it.copy(state = PendState.HAD, txnId = txnId) }
-        _messages.tryEmit(UiMsg("${pendTitle(p)} 已經記過了", "復原") { setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) } })
+        _messages.tryEmit(UiMsg("$title 已經記過了", "復原") {
+            if (old != null) {
+                val now = data
+                commit(now.copy(txns = now.txns.map { if (it.id == txnId) it.copy(shop = old.shop, bankShop = old.bankShop) else it }))
+            }
+            setPend(id) { it.copy(state = PendState.WAIT, txnId = 0L) }
+        })
     }
 
     /**

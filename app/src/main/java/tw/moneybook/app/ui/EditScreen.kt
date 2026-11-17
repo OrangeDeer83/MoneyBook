@@ -120,8 +120,8 @@ import tw.moneybook.app.ReimbItem
 import tw.moneybook.app.TxnDraft
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.resolveCard
-import tw.moneybook.app.guessCat
-import tw.moneybook.app.pendNote
+import tw.moneybook.app.pendCat
+import tw.moneybook.app.pendShop
 import tw.moneybook.app.shopSuggestions
 import tw.moneybook.app.NotiSrc
 import tw.moneybook.app.mainSrc
@@ -206,7 +206,7 @@ fun EditScreen(
                 // 退款：「退款」分類（按「改一下」時已經建好）
                 pend?.kind == tw.moneybook.app.PendKind.REFUND ->
                     (d.categories.firstOrNull { it.kind == TxType.INCOME && it.name == tw.moneybook.app.REFUND_CAT } ?: d.categories.firstOrNull { it.kind == TxType.INCOME && it.noIncome })?.id
-                pend != null -> d.guessCat(pend.merchant, pendCard)
+                pend != null -> d.pendCat(pend, pendCard)
                 else -> defaultCat(d, type)
             }
         )
@@ -241,10 +241,12 @@ fun EditScreen(
             }
         )
     }
-    var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: pend?.let { pendNote(it) } ?: "") }
-    var shop by rememberSaveable { mutableStateOf(orig?.shop ?: tpl?.shop ?: "") }
+    // 刷卡通知帶入：店家照你的叫法（沒有就銀行寫的），同一家店、金額一樣的照上次帶備註
+    val pendShop = remember { pend?.let { d.pendShop(it, it.kind == tw.moneybook.app.PendKind.SPEND && !it.isInst) } }
+    var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: pendShop?.note ?: "") }
+    var shop by rememberSaveable { mutableStateOf(orig?.shop ?: tpl?.shop ?: pendShop?.shop ?: "") }
     // 銀行寫的：看得到、不能改，按「不是這家」拿掉
-    var bankShop by rememberSaveable { mutableStateOf(orig?.bankShop ?: "") }
+    var bankShop by rememberSaveable { mutableStateOf(orig?.bankShop ?: pendShop?.bankShop ?: "") }
     var shopFocused by remember { mutableStateOf(false) }
     var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
     // 刷卡通知寫「分 N 期」的：帶好期數

@@ -107,7 +107,10 @@ class CardGuessTest {
         val tx = d.pendTxn(p, 77, book, 9001, food)!!
         assertEquals(85L, tx.amount)
         assertEquals(9001L, tx.accountId)
-        assertEquals("統一超商（OP錢包）", tx.note)
+        // 店家另外存：店家和銀行寫的是商店，備註空著（錢包不放進店家）
+        assertEquals("統一超商", tx.shop)
+        assertEquals("統一超商", tx.bankShop)
+        assertEquals("", tx.note)
         assertEquals(listOf(CARD_NOTI_TAG), tx.tags)
         assertEquals(20406L, tx.day)
         assertEquals(551, tx.time)

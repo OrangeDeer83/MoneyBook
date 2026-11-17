@@ -66,6 +66,50 @@ class ShopTest {
     }
 
     @Test
+    fun followsLastWay() {
+        // 11/17 自己記：店家 7-11、備註飯糰，確認「已經有一筆」後補上銀行寫的
+        val mine = t(food, "雙蔬鮪魚飯糰", day = 20405, shop = "7-11").linkBankShop("統一超商")
+        assertEquals("統一超商", mine.bankShop)
+        assertEquals("7-11", mine.shop)
+        // 店家空著時也填上
+        assertEquals("統一超商", t(food, "飯糰").linkBankShop("統一超商").shop)
+        val d = data(mine, t(shopCat, "衛生紙", amount = 120, day = 20300, shop = "全聯", bank = "全聯福利中心"))
+        // 同一家店、金額一樣：店家、備註、分類照上次
+        val ps = d.pendShop(pend())
+        assertEquals("7-11", ps.shop)
+        assertEquals("統一超商", ps.bankShop)
+        assertEquals("雙蔬鮪魚飯糰", ps.note)
+        assertEquals(mine.id, ps.memo?.id)
+        assertEquals("7-11・雙蔬鮪魚飯糰", d.pendName(pend()))
+        assertEquals(food, d.pendCat(pend(), 9001))
+        val tx = d.pendTxn(pend(), 77, book, 9001, food)!!
+        assertEquals("7-11", tx.shop)
+        assertEquals("統一超商", tx.bankShop)
+        assertEquals("雙蔬鮪魚飯糰", tx.note)
+        // 別的金額：只帶店家的叫法
+        val other = d.pendShop(pend(35))
+        assertEquals("7-11", other.shop)
+        assertEquals("", other.note)
+        assertNull(other.memo)
+        // 門市名稱不一樣也算同一家
+        assertEquals("雙蔬鮪魚飯糰", d.pendShop(pend(merchant = "統一超商信義門市")).note)
+        // 退款、分期只帶店家
+        assertEquals("", d.pendShop(pend(), false).note)
+        // 沒連過的店：照銀行寫的
+        val none = d.pendShop(pend(merchant = "鼎泰豐"))
+        assertEquals("鼎泰豐", none.shop)
+        assertEquals("", none.note)
+        // 通知沒寫商店：店家寫錢包，沒有銀行寫的
+        val w = d.pendShop(pend(merchant = ""))
+        assertEquals("OP錢包", w.shop)
+        assertEquals("", w.bankShop)
+        // 按了「不是這家」（銀行寫的拿掉）：不再照它帶
+        val off = data(mine.copy(bankShop = ""))
+        assertEquals("統一超商", off.pendShop(pend()).shop)
+        assertEquals("", off.pendShop(pend()).note)
+    }
+
+    @Test
     fun shopFieldHelpsMatching() {
         // 猜分類：店家是全聯、備註寫買了什麼
         val buy = t(shopCat, "衛生紙", amount = 120, shop = "全聯")

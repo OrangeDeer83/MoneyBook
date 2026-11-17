@@ -16,6 +16,7 @@ import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import tw.moneybook.app.pendCat
 import tw.moneybook.app.AppData
 import tw.moneybook.app.MainActivity
 import tw.moneybook.app.MoneyViewModel
@@ -179,8 +180,8 @@ class CardPendReceiver : BroadcastReceiver() {
                 listOfNotNull(d.pendRefundTxn(p, d.nextId, d.currentBook.id, card, cat, d.pendRefundOf(p, card)?.id ?: 0L))
             }
             sm != null -> listOfNotNull(d.pendSubTxn(p, sm, d.nextId))
-            p.isInst -> d.pendInstTxns(p, d.nextId, d.currentBook.id, card, d.guessCat(p.merchant, card))
-            else -> listOfNotNull(d.pendTxn(p, d.nextId, d.currentBook.id, card, d.guessCat(p.merchant, card))?.let { if (p.kind == PendKind.PREAUTH) it.copy(est = true) else it })
+            p.isInst -> d.pendInstTxns(p, d.nextId, d.currentBook.id, card, d.pendCat(p, card))
+            else -> listOfNotNull(d.pendTxn(p, d.nextId, d.currentBook.id, card, d.pendCat(p, card))?.let { if (p.kind == PendKind.PREAUTH) it.copy(est = true) else it })
         }
         val t = list.firstOrNull() ?: return
         d = d.copy(

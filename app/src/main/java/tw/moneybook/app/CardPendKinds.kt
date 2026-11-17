@@ -24,7 +24,8 @@ fun AppData.pendRefundTxn(p: CardPend, id: Long, bookId: Long, cardId: Long, cat
     val acc = accMap[cardId] ?: return null
     val base = Txn(
         id = id, bookId = bookId, type = TxType.INCOME, amount = p.amount, categoryId = catId, accountId = cardId, toAccountId = null,
-        day = p.day, note = pendNote(p), tags = listOf(CARD_NOTI_TAG), time = p.minute, noti = p.mainSrc, noIncome = true, refundOf = link,
+        day = p.day, note = "", tags = listOf(CARD_NOTI_TAG), time = p.minute, noti = p.mainSrc, noIncome = true, refundOf = link,
+        shop = pendShop(p, false).shop, bankShop = p.merchant,
     )
     if (p.cur.isEmpty()) return base
     val est = twd ?: rateOf(p.cur)?.let { fxToTwd(p.amount, Currencies.of(p.cur).decimals, it) } ?: return null
@@ -77,12 +78,13 @@ fun AppData.pendInstTxns(p: CardPend, startId: Long, bookId: Long, cardId: Long,
     val base = p.amount / n
     val rest = p.amount - base * n
     val start = LocalDate.ofEpochDay(p.day)
+    val ps = pendShop(p, false)
     return (0 until n).map { i ->
         Txn(
             id = startId + i, bookId = bookId, type = TxType.EXPENSE, amount = base + if (i == 0) rest else 0L,
             categoryId = catId, accountId = cardId, toAccountId = null, day = start.plusMonths(i.toLong()).toEpochDay(),
-            note = pendNote(p), tags = listOf(CARD_NOTI_TAG), time = p.minute, instGroup = startId, instIndex = i + 1, instTotal = n,
-            noti = p.mainSrc,
+            note = "", tags = listOf(CARD_NOTI_TAG), time = p.minute, instGroup = startId, instIndex = i + 1, instTotal = n,
+            noti = p.mainSrc, shop = ps.shop, bankShop = ps.bankShop,
         )
     }
 }
