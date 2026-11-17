@@ -52,7 +52,7 @@ class CardGuessTest {
     @Test
     fun cardHabitNeedsMoreThanHalfAndFiveRecords() {
         val six = (1..6).map { t(traffic, "加油$it", acc = 9002, day = 20390L + it) }
-        assertEquals(traffic, data(*six.toTypedArray()).guessCat("台塑石化", 9002))
+        assertEquals(traffic, data(*six.toTypedArray()).guessCat("大雅商行", 9002))
         // 剛好一半不算
         val half = (1..3).map { t(traffic, "a$it", acc = 9002) } + (1..3).map { t(food, "b$it", acc = 9002) }
         assertNull(data(*half.toTypedArray()).guessCat("某商店", 9002))
@@ -61,6 +61,25 @@ class CardGuessTest {
         // 訂閱記的不算
         val subs = (1..6).map { t(food, "s$it", acc = 9002, tags = listOf(Sub.TAG)) }
         assertNull(data(*subs.toTypedArray()).guessCat("某商店", 9002))
+    }
+
+    @Test
+    fun sameKindOtherShopThenSameNameCategory() {
+        val fuel = base.categories.first { it.name == "加油" }.id
+        // 7-ELEVEN 沒記過：看同種類（超商）的別家店記最多次的；一樣多取最近記的
+        val d = data(t(food, "全家", day = 20400), t(shop, "全家 松仁店", day = 20401), t(food, "萊爾富", day = 20402), t(traffic, "台鐵", day = 20403))
+        assertEquals(food, d.guessCat("7-ELEVEN", 9001))
+        assertEquals(shop, data(t(food, "全家", day = 20400), t(shop, "萊爾富", day = 20401)).guessCat("7-ELEVEN", 9001))
+        // 同種類都沒記過：跟種類同名的分類（台灣中油 → 加油）
+        assertEquals(fuel, data().guessCat("台灣中油 文心站", 9001))
+        // 同名的分類也沒有（超商）：照這張卡的習慣，沒有就不帶
+        assertNull(data().guessCat("7-ELEVEN", 9001))
+        // Uber Eats 是外送、不是計程車
+        assertEquals("外送", shopKindOf("Uber Eats")?.name)
+        assertEquals("計程車", shopKindOf("UBER TRIP")?.name)
+        assertNull(shopKindOf("鼎泰豐"))
+        // 同一家店記過的優先
+        assertEquals(traffic, data(t(food, "全家"), t(traffic, "7-ELEVEN 信義門市")).guessCat("7-ELEVEN", 9001))
     }
 
     @Test

@@ -218,7 +218,9 @@ fun sameShop(a: String, b: String): Boolean {
 /**
  * 自動帶的分類（找不到回傳 null，要使用者選）：
  * 1. 同一家商店上次記成什麼：記錄從新到舊，第一筆「支出、有分類、不是餘額調整、備註和商店是同一家」的分類
- * 2. 這張卡最常記的分類：這張卡最近 30 筆有分類的支出（不算餘額調整、#訂閱），至少 5 筆，最多的那個分類超過一半才算
+ * 2. 同種類的別家店記最多次的分類（種類看內建的常見商店表 SHOP_KINDS；一樣多的取最近記的）：7-ELEVEN 沒記過 → 看全家
+ * 3. 有跟種類同名的分類（台灣中油 → 「加油」）
+ * 4. 這張卡最常記的分類：這張卡最近 30 筆有分類的支出（不算餘額調整、#訂閱），至少 5 筆，最多的那個分類超過一半才算
  */
 fun AppData.guessCat(merchant: String, cardId: Long?): Long? {
     fun ok(id: Long?) = id?.let { catMap[it] }?.takeIf { it.kind == TxType.EXPENSE }?.id
@@ -229,6 +231,17 @@ fun AppData.guessCat(merchant: String, cardId: Long?): Long? {
             if (t.type != TxType.EXPENSE || t.adjust || t.categoryId == null) continue
             if (sameShop(key, shopKey(t.note.lineSequence().firstOrNull() ?: ""))) ok(t.categoryId)?.let { return it }
         }
+    }
+    shopKindOf(merchant)?.let { kind ->
+        // 新到舊數，一樣多的取先數到的（最近記的）
+        val count = LinkedHashMap<Long, Int>()
+        for (t in txns) {
+            val c = t.categoryId ?: continue
+            if (t.type != TxType.EXPENSE || t.adjust || ok(c) == null) continue
+            if (shopKindOf(t.note.lineSequence().firstOrNull() ?: "") == kind) count[c] = (count[c] ?: 0) + 1
+        }
+        count.entries.maxByOrNull { it.value }?.let { return it.key }
+        for (n in kind.cats) categories.firstOrNull { it.kind == TxType.EXPENSE && it.name.equals(n, ignoreCase = true) }?.let { return it.id }
     }
     if (cardId == null) return null
     val recent = txns.asSequence()
