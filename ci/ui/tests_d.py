@@ -6245,15 +6245,23 @@ def t_card_pend_more():
     # 改一下：打開記一筆、內容帶好
     d.tap_text("改一下", exact=True)
     try:
-        d.wait_text("從刷卡通知帶入", timeout=10)
+        d.wait(lambda n: n.desc == "刷卡通知寫的", 10, "右上角信用卡圖示")
     except TimeoutError:
-        d.check("改一下打開記一筆", False)
+        d.check("改一下打開記一筆、右上角有信用卡圖示", False)
         return
     d.time.sleep(1)
     ns = d.shot("改一下")
-    note = next((e for e in d.edits() if "誠品書店" in e.text), None)
-    d.check("改一下：上面寫從哪則通知帶入、備註是商店、金額 480",
-            d.has(ns, "X 銀行・末四碼 1234", False) and note is not None and d.has(ns, "480", False), pend_texts(ns))
+    shop = next((e for e in d.edits() if "誠品書店" in e.text), None)
+    d.check("改一下：右上角有信用卡圖示、店家是商店、金額 480、沒有藍框",
+            shop is not None and d.has(ns, "480", False) and not d.has(ns, "從刷卡通知帶入", False), pend_texts(ns))
+    d.tap(d.first(ns, "刷卡通知寫的", True))
+    d.time.sleep(1)
+    ns = d.shot("刷卡通知寫的")
+    d.check("點信用卡圖示：彈出通知原文、X 銀行、末四碼 1234、商店誠品書店",
+            d.has(ns, "在誠品書店消費NT$480", False) and d.has(ns, "X 銀行", False) and d.has(ns, "末四碼 1234", False)
+            and d.has(ns, "不是這家", True), pend_texts(ns))
+    d.tap_text("關閉", exact=True)
+    d.time.sleep(0.8)
     d.tap_text("購物", exact=True)
     d.time.sleep(0.6)
     f.save_edit()
@@ -6461,7 +6469,13 @@ def t_card_relearn():
     d.time.sleep(2)
     relearn_open("統一超商")
     ns = d.shot("修改刷卡通知記的那一筆")
-    d.check("修改頁上面寫「這筆是刷卡通知記的」、X 銀行・末四碼 1234", d.has(ns, "這筆是刷卡通知記的", True) and d.has(ns, "X 銀行・末四碼 1234", True), pend_texts(ns))
+    d.check("修改頁右上角有信用卡圖示、沒有藍框", d.first(ns, "刷卡通知寫的", True) is not None and not d.has(ns, "這筆是刷卡通知記的", False), pend_texts(ns))
+    d.tap(d.first(ns, "刷卡通知寫的", True))
+    d.time.sleep(1)
+    ns = d.shot("刷卡通知寫的")
+    d.check("點信用卡圖示：X 銀行、末四碼 1234", d.has(ns, "X 銀行", False) and d.has(ns, "末四碼 1234", False), pend_texts(ns))
+    d.tap_text("關閉", exact=True)
+    d.time.sleep(0.8)
     d.tap(f.acc_button())
     d.wait_text("選擇帳戶", timeout=10)
     d.time.sleep(0.6)
@@ -6731,18 +6745,25 @@ def t_card_inst():
             d.has(ns, "-$1,000", True) and d.has(ns, "分期 1/12", False) and value_below(ns, "本月支出") == "$1,000", pend_texts(ns))
 
 
-@case(D, "店家欄位：記一筆的店家格在備註上面、用過的店家可以點；收起來變小按鈕，重開 App 還是收起來；明細寫「店家・備註」", visual=True)
+@case(D, "店家欄位：店家和備註同一列（店家在左、約 4 成寬）、點店家格變一整列和用過的店家；按「<」收成小圓鈕，重開 App 還是收起來；明細寫「店家・備註」", visual=True)
 def t_shop_field():
     d.fresh(f.base_seed())
     f.open_add()
     ns = d.shot("記一筆有店家格")
-    shop = d.first(ns, "店家（選填）", True)
+    shop = d.first(ns, "店家", True)
     note = d.first(ns, "備註（選填）", True)
-    d.check("店家格在備註上面", shop is not None and note is not None and shop.cy < note.cy, pend_texts(ns))
+    d.check("店家和備註同一列、店家在左邊而且比較窄",
+            shop is not None and note is not None and abs(shop.cy - note.cy) < 40 and shop.cx < note.cx, pend_texts(ns))
     if shop is None:
         return
     d.tap(shop)
+    d.time.sleep(0.6)
     d.type_text("7-11")
+    d.time.sleep(0.6)
+    ns = d.nodes()
+    wide = next((e for e in d.edits() if e.text == "7-11"), None)
+    note = d.first(ns, "備註（選填）", True)
+    d.check("打字時店家變一整列、備註到下一列", wide is not None and note is not None and wide.x2 - wide.x1 > 600 and note.cy > wide.cy + 40, pend_texts(ns))
     d.tap(d.first(d.nodes(), "備註（選填）", True))
     d.type_text("tuna rice")
     d.hide_ime()
@@ -6754,7 +6775,7 @@ def t_shop_field():
     d.check("明細那筆寫「7-11・tuna rice」", d.has(ns, "7-11・tuna rice", True), pend_texts(ns))
     # 再記一筆：點店家格列出用過的店家
     f.open_add()
-    d.tap(d.first(d.nodes(), "店家（選填）", True))
+    d.tap(d.first(d.nodes(), "店家", True))
     d.time.sleep(0.8)
     ns = d.shot("用過的店家")
     d.check("點店家格列出「用過的店家」7-11", d.has(ns, "用過的店家", True) and len(d.find(ns, "7-11", True)) >= 1, pend_texts(ns))
@@ -6765,17 +6786,20 @@ def t_shop_field():
     d.tap(d.wait(lambda n: n.desc == "收起店家", 8, "收起店家"))
     d.time.sleep(0.8)
     ns = d.shot("收起來")
-    d.check("收起來：店家格不見，剩「店家」小按鈕", not d.has(ns, "店家（選填）", True) and d.first(ns, "打開店家", True) is not None, pend_texts(ns))
+    btn = d.first(ns, "打開店家", True)
+    note = d.first(ns, "備註（選填）", True)
+    d.check("收起來：店家格不見，備註左邊剩一個小圓鈕",
+            d.first(ns, "店家", True) is None and btn is not None and note is not None and btn.cx < note.cx and abs(btn.cy - note.cy) < 40, pend_texts(ns))
     d.back()
     d.time.sleep(1)
     d.restart()
     f.open_add()
     ns = d.shot("重開 App 再記一筆")
-    d.check("重開 App 後還是收起來", not d.has(ns, "店家（選填）", True) and d.first(ns, "打開店家", True) is not None, pend_texts(ns))
+    d.check("重開 App 後還是收起來", d.first(ns, "店家", True) is None and d.first(ns, "打開店家", True) is not None, pend_texts(ns))
     d.tap(d.wait(lambda n: n.desc == "打開店家", 8, "打開店家"))
     d.time.sleep(0.8)
     ns = d.shot("打開")
-    d.check("點小按鈕打開店家格", d.has(ns, "店家（選填）", True), pend_texts(ns))
+    d.check("點小圓鈕打開店家格", d.first(ns, "店家", True) is not None, pend_texts(ns))
 
 
 @case(D, "刷卡通知照上次的記法：同一家店、金額一樣帶店家・備註和分類，寫「照 … 的記法」；別的金額只帶店家的叫法", visual=True)
@@ -6808,7 +6832,7 @@ def t_card_shop_memo():
     d.check("$35：名稱「7-11」、沒有「照 … 的記法」", d.has(ns, "7-11", True) and not any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
 
 
-@case(D, "確認已經有一筆時補上銀行寫的：修改頁寫「銀行寫的：統一超商」，按「不是這家」拿掉後下次不照它帶", visual=True)
+@case(D, "確認已經有一筆時補上銀行寫的：修改頁右上角有信用卡圖示，點開寫商店統一超商，按「不是這家」拿掉後圖示不見、下次不照它帶", visual=True)
 def t_card_shop_had():
     s = S.Seed(f.today())
     s.expense(0, 45, S.C_BREAKFAST, acc=S.CARD, note="雙蔬鮪魚飯糰", time=500)
@@ -6828,12 +6852,18 @@ def t_card_shop_had():
     d.tap(row)
     f.edit_open()
     ns = d.shot("修改頁")
-    d.check("修改頁店家是統一超商、下面寫「銀行寫的：統一超商」和「不是這家」",
-            d.has(ns, "統一超商", True) and d.has(ns, "銀行寫的：統一超商", True) and d.has(ns, "不是這家", True), pend_texts(ns))
+    icon = d.first(ns, "刷卡通知寫的", True)
+    d.check("修改頁店家是統一超商、右上角有信用卡圖示", d.has(ns, "統一超商", True) and icon is not None, pend_texts(ns))
+    if icon is None:
+        return
+    d.tap(icon)
+    d.time.sleep(1)
+    ns = d.shot("刷卡通知寫的")
+    d.check("彈出：商店統一超商、有「不是這家」", d.has(ns, "統一超商", True) and d.has(ns, "不是這家", True), pend_texts(ns))
     d.tap(d.first(ns, "不是這家", True))
     d.time.sleep(0.8)
     ns = d.shot("按了不是這家")
-    d.check("「銀行寫的」那行不見", not d.has(ns, "銀行寫的：統一超商", True), pend_texts(ns))
+    d.check("視窗關掉、信用卡圖示不見（這筆不是通知記的）", not d.has(ns, "不是這家", True) and d.first(ns, "刷卡通知寫的", True) is None, pend_texts(ns))
     f.save_edit()
     bank_post("h2", f"【刷卡通知】金額NT$45元 卡號末四碼1234於{today_slash()} 12:30在OP錢包統一超商刷卡")
     to_main()
