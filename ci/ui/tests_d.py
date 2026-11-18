@@ -6971,7 +6971,8 @@ def t_card_noti_tabs():
     d.fresh(card_noti_seed(s))
     card_noti_on()
     spend = f"您的信用卡末四碼1234於{today_slash()} 12:10在全聯福利中心消費NT$350"
-    ad = "週末限定 回饋最高300元 立即登錄"
+    # 「立即登錄」加數字會被 Android 當成驗證碼藏起來（Sensitive notification content hidden），用 TC300 那則
+    ad = "冬天來吃築間集團燒肉/鍋物/銅盤/港點品牌，TWQR條碼付最高拿500元！"
     pts = "您已獲得 2 點"
     bank_post("tb1", spend)
     bank_post("tb2", ad)
