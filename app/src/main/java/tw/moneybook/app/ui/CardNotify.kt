@@ -55,6 +55,11 @@ import tw.moneybook.app.AccountType
 import tw.moneybook.app.CapturedNoti
 import tw.moneybook.app.NotiTagKind
 import tw.moneybook.app.notiTag
+import tw.moneybook.app.NotiTab
+import tw.moneybook.app.notiTab
+import tw.moneybook.app.groupNotis
+import tw.moneybook.app.formatMoney
+import tw.moneybook.app.formatFx
 import tw.moneybook.app.mascotTitle
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.NotiApp
@@ -377,6 +382,22 @@ private fun CardMapStep(vm: MoneyViewModel, onDone: () -> Unit) {
     }
 }
 
+/** 收到的通知旁邊的標籤（讀對了、用範本、少了商店、不是消費…） */
+@Composable
+private fun NotiTagChip(kind: NotiTagKind, tag: String) {
+    val cute = LocalCute.current
+    val col = when (kind) {
+        NotiTagKind.GOOD -> cute.income
+        NotiTagKind.TPL -> cute.out
+        NotiTagKind.PART -> cute.accent2
+        NotiTagKind.OFF -> cute.sub
+    }
+    Text(
+        tag, style = MaterialTheme.typography.labelSmall, color = if (kind == NotiTagKind.PART) cute.ink else col,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(col.copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
 @Composable
 private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit, onTeach: (TplTeach) -> Unit) {
     val ctx = LocalContext.current
@@ -388,6 +409,8 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit, onTeach: (T
     val pendVer by tw.moneybook.app.notify.CardPendLog.version.collectAsState()
     val pends = remember(pendVer) { tw.moneybook.app.notify.CardPendLog.load(ctx) }
     var ask by remember { mutableStateOf("") }
+    // 收到的通知在哪一頁（0 刷卡紀錄、1 廣告、2 其他）
+    var tabSel by rememberSaveable { mutableIntStateOf(0) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             CuteCard(Modifier.fillMaxWidth()) {
@@ -482,29 +505,70 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit, onTeach: (T
         item { Text("收到的通知（最近 7 天）", style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.padding(start = 4.dp, top = 8.dp)) }
         if (list.isEmpty()) {
             item { EmptyHint(d.prefs.mascot, "還沒收到通知\n刷一筆小額試試看") }
-        }
-        items(list, key = { it.id }) { n ->
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cute.card).clickable { onTeach(d.teachOf(n)) }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                val (kind, tag) = remember(n, pends, d) { d.notiTag(n, pends) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${n.label}・${notiTime(n.time)}", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.weight(1f))
-                    val col = when (kind) {
-                        NotiTagKind.GOOD -> cute.income
-                        NotiTagKind.TPL -> cute.out
-                        NotiTagKind.PART -> cute.accent2
-                        NotiTagKind.OFF -> cute.sub
-                    }
+        } else {
+            // 分成刷卡紀錄、廣告、其他；同一筆的好幾則（例如玉山＋Samsung Wallet）併成一張
+            val groups = groupNotis(list, pends)
+            val tabOf = groups.map { g -> d.notiTab(g.notis.first(), pends) }
+            item {
+                PillSegment(
+                    NotiTab.entries.map { t -> listOf("刷卡紀錄", "廣告", "其他")[t.ordinal] + " " + tabOf.count { it == t } },
+                    tabSel, { tabSel = it }, Modifier.fillMaxWidth(), equal = true,
+                )
+            }
+            val shown = groups.filterIndexed { i, _ -> tabOf[i].ordinal == tabSel }
+            if (shown.isEmpty()) {
+                item {
                     Text(
-                        tag, style = MaterialTheme.typography.labelSmall, color = if (kind == NotiTagKind.PART) cute.ink else col,
-                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(col.copy(alpha = 0.18f)).padding(horizontal = 8.dp, vertical = 2.dp),
+                        listOf("沒有刷卡紀錄", "沒有被當成廣告的通知", "沒有其他通知")[tabSel],
+                        style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.padding(start = 4.dp, top = 4.dp),
                     )
                 }
-                if (n.title.isNotEmpty()) Text(n.title, style = MaterialTheme.typography.titleSmall)
-                if (n.text.isNotEmpty()) Text(n.text, style = MaterialTheme.typography.bodySmall)
+            }
+            items(shown, key = { g -> g.notis.first().id }) { g ->
+                val (kind, tag) = remember(g, pends, d) { d.notiTag(g.notis.first(), pends) }
+                if (g.notis.size == 1) {
+                    val n = g.notis.first()
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cute.card).clickable { onTeach(d.teachOf(n)) }
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${n.label}・${notiTime(n.time)}", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.weight(1f))
+                            NotiTagChip(kind, tag)
+                        }
+                        if (n.title.isNotEmpty()) Text(n.title, style = MaterialTheme.typography.titleSmall)
+                        if (n.text.isNotEmpty()) Text(n.text, style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    // 同一筆：一張卡片裡上下列每一則（點哪一則教的就是那一則），下面寫只記一筆
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cute.card).padding(vertical = 6.dp)) {
+                        Row(Modifier.padding(horizontal = 14.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "同一筆・${g.notis.size} 則通知・${notiTime(g.notis.first().time)}",
+                                style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.weight(1f),
+                            )
+                            NotiTagChip(kind, tag)
+                        }
+                        g.notis.forEachIndexed { i, n ->
+                            if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = cute.soft)
+                            Column(
+                                Modifier.fillMaxWidth().clickable { onTeach(d.teachOf(n)) }.padding(horizontal = 14.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(listOf(n.label, n.title).filter { it.isNotEmpty() }.distinct().joinToString("・"), style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                                if (n.text.isNotEmpty()) Text(n.text, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        g.pend?.let { p ->
+                            Text(
+                                "只記一筆 " + if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
         item {

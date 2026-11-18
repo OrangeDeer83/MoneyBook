@@ -422,6 +422,45 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
     }
 }
 
+/** 「收到的通知」的分頁：刷卡紀錄、廣告、其他 */
+enum class NotiTab { CARD, AD, OTHER }
+
+/**
+ * 一則通知在哪一頁：放進過待確認的（包括按了「不是消費」、已經記過的）和讀成消費、退款、預先授權的是刷卡紀錄；
+ * 像廣告的是廣告；點數、繳款、取消、分期請款、讀不到金額的是其他
+ */
+fun AppData.notiTab(n: CapturedNoti, pends: List<CardPend>): NotiTab {
+    if (pends.any { p -> p.src.any { it.notiId == n.id } }) return NotiTab.CARD
+    return when (readNoti(n).kind) {
+        NotiKind.SPEND, NotiKind.REFUND, NotiKind.PREAUTH -> NotiTab.CARD
+        NotiKind.AD -> NotiTab.AD
+        else -> NotiTab.OTHER
+    }
+}
+
+/** 收到的通知裡的一組：同一筆待確認的好幾則（pend 有值，照收到的順序）或單獨一則 */
+data class NotiGroup(val notis: List<CapturedNoti>, val pend: CardPend?)
+
+/** 把收到的通知（新的在前）分組：同一筆的併成一組、放在最新那則的位置 */
+fun groupNotis(list: List<CapturedNoti>, pends: List<CardPend>): List<NotiGroup> {
+    val byId = list.associateBy { it.id }
+    val done = HashSet<Long>()
+    val out = ArrayList<NotiGroup>()
+    for (n in list) {
+        if (n.id in done) continue
+        val p = pends.firstOrNull { pp -> pp.src.any { it.notiId == n.id } }
+        val members = p?.src?.mapNotNull { byId[it.notiId] }?.distinctBy { it.id }?.sortedBy { it.time }.orEmpty()
+        if (p != null && members.size > 1) {
+            members.forEach { done.add(it.id) }
+            out.add(NotiGroup(members, p))
+        } else {
+            done.add(n.id)
+            out.add(NotiGroup(listOf(n), p))
+        }
+    }
+    return out
+}
+
 // ───────── 首頁、手機通知要列的 ─────────
 
 /** 首頁要列的待確認：還沒處理、也不是已經記過的那次訂閱（照收到的時間，早的在前） */

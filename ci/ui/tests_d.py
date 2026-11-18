@@ -6175,7 +6175,11 @@ def t_card_pend():
             break
         d.scroll_down(1)
     ns = d.shot("收到的通知標籤")
-    d.check("收到的通知：記了的標「已記」、點數通知標「不是消費」", len(d.find(ns, "已記", True)) >= 1 and d.has(ns, "不是消費", True), pend_texts(ns))
+    d.check("收到的通知（刷卡紀錄）：記了的標「已記」", len(d.find(ns, "已記", True)) >= 1, pend_texts(ns))
+    noti_tab("其他")
+    ns = d.shot("其他分頁")
+    d.check("其他分頁：點數通知標「不是消費」", d.has(ns, "不是消費", True), pend_texts(ns))
+    noti_tab("刷卡紀錄")
     # 吉祥物通知：收到 1 分鐘後才發；只有一筆、卡和分類都有，通知上可以直接記
     to_main()
     f.tab("明細")
@@ -6524,10 +6528,25 @@ def t_card_relearn():
     d.check("只改這一筆：待確認的全聯還是第二張卡", d.has(ns, "第二張卡・今天 12:31", False) and not d.has(ns, "以後 1234 記到測試信用卡"), pend_texts(ns))
 
 
-def to_noti(text):
-    """我的 → 刷卡通知，捲到收到的那則通知"""
+def noti_tab(name):
+    """收到的通知切到那一頁（「刷卡紀錄 3」這種，比開頭）"""
+    for _ in range(4):
+        ns = d.nodes()
+        t = next((n for n in ns if n.text.startswith(name + " ")), None)
+        if t is not None:
+            d.tap(t)
+            d.time.sleep(0.8)
+            return t
+        d.scroll_down(1)
+    raise TimeoutError(f"找不到「{name}」分頁")
+
+
+def to_noti(text, tab=None):
+    """我的 → 刷卡通知，（切到那一頁）捲到收到的那則通知"""
     f.me_page("刷卡通知")
     d.time.sleep(1)
+    if tab:
+        noti_tab(tab)
     for _ in range(4):
         ns = d.nodes()
         if d.has(ns, text, True):
@@ -6912,7 +6931,7 @@ def t_card_ad():
     ns = d.shot("收到廣告")
     d.check("廣告沒放進待確認：首頁沒有「刷卡等你確認」、沒有 $500", not d.has(ns, "刷卡等你確認") and not d.has(ns, "$500", True), pend_texts(ns))
     try:
-        row = to_noti(ad)
+        row = to_noti(ad, tab="廣告")
     except TimeoutError as e:
         d.check("收到的通知裡有那則廣告", False, str(e))
         return
@@ -6944,3 +6963,37 @@ def t_card_ad():
     d.time.sleep(1.5)
     ns = d.shot("放回待確認")
     d.check("首頁待確認有那筆 $500", d.has(ns, "刷卡等你確認", False) and d.has(ns, "$500", True), pend_texts(ns))
+
+
+@case(D, "收到的通知分成刷卡紀錄／廣告／其他三頁，旁邊寫幾則，預設在刷卡紀錄", visual=True)
+def t_card_noti_tabs():
+    s = S.Seed(f.today())
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    spend = f"您的信用卡末四碼1234於{today_slash()} 12:10在全聯福利中心消費NT$350"
+    ad = "週末限定 回饋最高300元 立即登錄"
+    pts = "您已獲得 2 點"
+    bank_post("tb1", spend)
+    bank_post("tb2", ad)
+    bank_post("tb3", pts)
+    to_main()
+    f.me_page("刷卡通知")
+    d.time.sleep(1)
+    for _ in range(4):
+        ns = d.nodes()
+        if any(n.text.startswith("刷卡紀錄 ") for n in ns):
+            break
+        d.scroll_down(1)
+    ns = d.shot("三個分頁")
+    d.check("三個分頁：刷卡紀錄 1、廣告 1、其他 1",
+            d.has(ns, "刷卡紀錄 1", True) and d.has(ns, "廣告 1", True) and d.has(ns, "其他 1", True), pend_texts(ns))
+    d.check("預設在刷卡紀錄：看得到全聯那則，看不到廣告和點數",
+            d.has(ns, spend, True) and not d.has(ns, ad, True) and not d.has(ns, pts, True), pend_texts(ns))
+    noti_tab("廣告")
+    ns = d.shot("廣告分頁")
+    d.check("廣告分頁：只有那則廣告、標「像廣告，不記」",
+            d.has(ns, ad, True) and d.has(ns, "像廣告，不記", True) and not d.has(ns, spend, True), pend_texts(ns))
+    noti_tab("其他")
+    ns = d.shot("其他分頁")
+    d.check("其他分頁：只有點數通知、標「不是消費」",
+            d.has(ns, pts, True) and d.has(ns, "不是消費", True) and not d.has(ns, ad, True), pend_texts(ns))
