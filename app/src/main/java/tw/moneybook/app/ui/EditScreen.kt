@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -85,6 +84,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -122,6 +124,7 @@ import tw.moneybook.app.formatMoney
 import tw.moneybook.app.resolveCard
 import tw.moneybook.app.pendCat
 import tw.moneybook.app.pendShop
+import tw.moneybook.app.readNoti
 import tw.moneybook.app.shopSuggestions
 import tw.moneybook.app.NotiSrc
 import tw.moneybook.app.mainSrc
@@ -247,6 +250,8 @@ fun EditScreen(
     var shop by rememberSaveable { mutableStateOf(orig?.shop ?: tpl?.shop ?: pendShop?.shop ?: "") }
     // 銀行寫的：看得到、不能改，按「不是這家」拿掉
     var bankShop by rememberSaveable { mutableStateOf(orig?.bankShop ?: pendShop?.bankShop ?: "") }
+    // 這筆是哪則刷卡通知來的（待確認「改一下」、或刷卡通知記的那一筆）：右上角信用卡圖示點開看
+    val notiSrc = pend?.mainSrc ?: orig?.noti
     var shopFocused by remember { mutableStateOf(false) }
     var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
     // 刷卡通知寫「分 N 期」的：帶好期數
@@ -575,6 +580,18 @@ fun EditScreen(
                 { i -> setType(listOf(TxType.EXPENSE, TxType.INCOME, TxType.TRANSFER)[i]) },
             )
             Spacer(Modifier.weight(1f))
+            // 刷卡通知記的、連過銀行寫的商店：信用卡圖示，點了看通知寫了什麼
+            if (notiSrc != null || (bankShop.isNotEmpty() && type != TxType.TRANSFER)) {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(cute.soft).clickable { focus.clearFocus(); dialog = "noti" }
+                        .semantics { contentDescription = "刷卡通知寫的" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph("vec:card", 20.sp) }
+                }
+            } else if (orig == null && !(tplMode && tplId != null)) {
+                Spacer(Modifier.width(40.dp))
+            }
             if (orig != null || (tplMode && tplId != null)) {
                 // 刪除是紅色的（記錄和常用記帳都一樣）
                 IconButton(onClick = { dialog = "delete" }) { Icon(Icons.Filled.Delete, contentDescription = "刪除", tint = cute.expense) }
@@ -589,106 +606,56 @@ fun EditScreen(
                     }
                 }
             } else {
-                Spacer(Modifier.width(48.dp))
+                Spacer(Modifier.width(8.dp))
             }
         }
 
-        // 從刷卡通知帶入：這筆是從哪則通知來的
-        if (pend != null) {
-            Column(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(cute.accent2.copy(alpha = 0.18f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Text("從刷卡通知帶入", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                val at = LocalDate.ofEpochDay(pend.day).let { "${it.monthValue}/${it.dayOfMonth}" } + if (pend.minute >= 0) " %02d:%02d".format(pend.minute / 60, pend.minute % 60) else ""
-                Text(
-                    listOfNotNull(pend.label, pend.last4.takeIf { it.isNotEmpty() }?.let { "末四碼 $it" }, at).joinToString("・"),
-                    style = MaterialTheme.typography.labelSmall, color = cute.sub,
-                )
-            }
+        // 備註：放在上面，鍵盤開關時不會跟著移動
+        val noteField: @Composable (Modifier) -> Unit = { m ->
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it.take(300) },
+                placeholder = { Text("備註（選填）") },
+                leadingIcon = { IconGlyph("vec:pencil", 18.sp) },
+                minLines = 1,
+                maxLines = if (noteFocused) 3 else 1,
+                shape = RoundedCornerShape(18.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                trailingIcon = if (noteFocused) {
+                    { TextButton(onClick = { focus.clearFocus() }) { Text("完成") } }
+                } else null,
+                modifier = m.onFocusChanged { noteFocused = it.isFocused },
+            )
         }
-        // 刷卡通知記的那一筆：寫是從哪則通知來的（改卡時會問以後要不要也記到新的卡）
-        val on = orig?.noti
-        if (pend == null && on != null) {
-            Column(
-                Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(cute.accent2.copy(alpha = 0.18f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Text("這筆是刷卡通知記的", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Text(
-                    listOfNotNull(on.label.ifEmpty { null }, on.last4.takeIf { it.isNotEmpty() }?.let { "末四碼 $it" } ?: on.title.ifEmpty { null }).joinToString("・"),
-                    style = MaterialTheme.typography.labelSmall, color = cute.sub,
-                )
-            }
-        }
-        // 店家（選填）：在備註上面；可以收起來，收起來或打開存在設定裡（記一筆、修改、常用記帳共用）
         if (type != TxType.TRANSFER) {
+            // 店家（選填）和備註同一列，店家約 4 成寬；點店家格時店家變一整列、下面是用過的店家，備註到下一列。
+            // 店家可以往左收成一個小圓鈕，收起來或打開存在設定裡（記一筆、修改、常用記帳共用）
             val shopOpen = d.prefs.shopOpen
-            if (shopOpen) {
-                OutlinedTextField(
-                    value = shop,
-                    onValueChange = { shop = it.replace("\n", "").take(40) },
-                    placeholder = { Text("店家（選填）") },
-                    leadingIcon = { IconGlyph("vec:shop", 18.sp) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(18.dp),
-                    trailingIcon = {
-                        if (shopFocused) TextButton(onClick = { focus.clearFocus() }) { Text("完成") }
-                        else IconButton(onClick = { vm.setShopOpen(false) }) { Icon(AppIcons.ChevronUp, contentDescription = "收起店家") }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(bottom = if (bankShop.isNotEmpty()) 2.dp else 8.dp).onFocusChanged { shopFocused = it.isFocused },
-                )
-                if (bankShop.isNotEmpty()) {
-                    Row(Modifier.fillMaxWidth().padding(start = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "銀行寫的：$bankShop", style = MaterialTheme.typography.labelSmall, color = cute.sub,
-                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            "不是這家", style = MaterialTheme.typography.labelSmall, color = cute.expense,
-                            modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(10.dp)).background(cute.card)
-                                .border(1.dp, cute.soft, RoundedCornerShape(10.dp)).clickable { bankShop = "" }.padding(horizontal = 8.dp, vertical = 3.dp),
-                        )
+            ShopNoteRow(wide = shopOpen && shopFocused, folded = !shopOpen, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                if (shopOpen) {
+                    ShopBox(
+                        shop, { shop = it.replace("\n", "").take(40) }, shopFocused, { shopFocused = it },
+                        onDone = { focus.clearFocus() }, onFold = { vm.setShopOpen(false) }, modifier = Modifier.layoutId("shop"),
+                    )
+                } else {
+                    Box(
+                        Modifier.layoutId("shop").size(44.dp).clip(CircleShape).background(cute.soft.copy(alpha = 0.6f))
+                            .clickable { vm.setShopOpen(true) }.semantics { contentDescription = "打開店家" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph("vec:shop", 18.sp) }
                     }
                 }
                 // 點店家格：用過的店家，打字時跟著篩選，點一下填上
-                if (shopFocused) {
+                if (shopOpen && shopFocused) {
                     val sugg = remember(d) { d.shopSuggestions() }
-                    SuggestRow("用過的店家", filterSuggestions(sugg, shop).take(8), shop, { s -> shop = s; focus.clearFocus() }, Modifier.padding(bottom = 8.dp))
+                    SuggestRow("用過的店家", filterSuggestions(sugg, shop).take(8), shop, { s -> shop = s; focus.clearFocus() }, Modifier.layoutId("sugg"))
                 }
-            } else {
-                // 收起來：只剩一個小按鈕（這筆有店家時寫店名）
-                Row(
-                    Modifier.padding(bottom = 8.dp).clip(RoundedCornerShape(14.dp)).background(cute.soft.copy(alpha = 0.6f))
-                        .clickable { vm.setShopOpen(true) }.semantics { contentDescription = "打開店家" }
-                        .padding(horizontal = 12.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph("vec:shop", 15.sp) }
-                    Text(
-                        shop.trim().ifEmpty { "店家" }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 6.dp).widthIn(max = 200.dp),
-                    )
-                    Icon(AppIcons.ChevronDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                }
+                noteField(Modifier.layoutId("note"))
             }
+        } else {
+            noteField(Modifier.fillMaxWidth().padding(bottom = 8.dp))
         }
-        // 備註：放在最上面，鍵盤開關時不會跟著移動
-        OutlinedTextField(
-            value = note,
-            onValueChange = { note = it.take(300) },
-            placeholder = { Text("備註（選填）") },
-            leadingIcon = { IconGlyph("vec:pencil", 18.sp) },
-            minLines = 1,
-            maxLines = if (noteFocused) 3 else 1,
-            shape = RoundedCornerShape(18.dp),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-            trailingIcon = if (noteFocused) {
-                { TextButton(onClick = { focus.clearFocus() }) { Text("完成") } }
-            } else null,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).onFocusChanged { noteFocused = it.isFocused },
-        )
         // 點備註時：這個分類用過 2 次以上的備註，打字時跟著篩選，點一下填上
         if (noteFocused) {
             val sugg = remember(d, catId, type) { d.noteSuggestions(if (type == TxType.TRANSFER) null else catId, type) }
@@ -1117,6 +1084,58 @@ fun EditScreen(
                 dismissButton = if (refundOf != 0L) ({ TextButton(onClick = { refundOf = 0L; dialog = "" }) { Text("不選") } }) else null,
             )
         }
+        "noti" -> {
+            // 刷卡通知寫的：原文（收到的通知只留 7 天）、卡號、銀行寫的商店、錢包；「不是這家」拿掉銀行寫的
+            val raw = remember(notiSrc) { notiSrc?.let { s -> tw.moneybook.app.notify.CardNotiLog.load(context).firstOrNull { it.id == s.notiId } } }
+            val wallet = pend?.wallet?.ifEmpty { null } ?: raw?.let { d.readNoti(it).wallet.ifEmpty { null } }
+            val bank0 = orig?.bankShop ?: pendShop?.bankShop ?: ""
+            AlertDialog(
+                onDismissRequest = { dialog = "" },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph("vec:card", 22.sp) }
+                        Text("刷卡通知寫的", modifier = Modifier.padding(start = 8.dp))
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (notiSrc != null) {
+                            val at = raw?.let {
+                                java.time.Instant.ofEpochMilli(it.time).atZone(java.time.ZoneId.systemDefault())
+                                    .let { z -> "${z.monthValue}/${z.dayOfMonth} %02d:%02d 收到".format(z.hour, z.minute) }
+                            }
+                            Text(listOfNotNull(notiSrc.label.ifEmpty { null }, at).joinToString("・"), style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            if (raw != null) {
+                                Text(
+                                    raw.text.ifBlank { raw.title }, style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cute.soft.copy(alpha = 0.6f)).padding(10.dp),
+                                )
+                            } else {
+                                Text("通知原文只留 7 天，已經看不到了", style = MaterialTheme.typography.labelMedium, color = cute.sub)
+                            }
+                            if (notiSrc.last4.isNotEmpty()) NotiInfoRow("卡號", "末四碼 ${notiSrc.last4}" + (accId?.let { d.accMap[it] }?.let { "（${it.name}）" } ?: ""))
+                        }
+                        when {
+                            bankShop.isNotEmpty() -> NotiInfoRow("商店", bankShop)
+                            bank0.isNotEmpty() -> NotiInfoRow("商店", "$bank0（已拿掉）")
+                        }
+                        if (wallet != null) NotiInfoRow("錢包", wallet)
+                        if (bankShop.isNotEmpty()) {
+                            Text(
+                                "下次「$bankShop」的通知會照這筆的記法帶。對錯店的話按「不是這家」。",
+                                style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                            )
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { dialog = "" }) { Text("關閉") } },
+                dismissButton = if (bankShop.isNotEmpty()) ({
+                    OutlinedButton(onClick = { bankShop = ""; dialog = "" }, border = androidx.compose.foundation.BorderStroke(1.dp, cute.expense)) {
+                        Text("不是這家", color = cute.expense)
+                    }
+                }) else null,
+            )
+        }
         "relearn" -> {
             val s = relearnSrc
             val newName = d.accMap[accId]?.name ?: ""
@@ -1499,5 +1518,96 @@ private fun AccountPick(label: String, value: String, compact: Boolean = false, 
             Text(balance, style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.padding(end = 10.dp))
         }
         Box(Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+    }
+}
+
+/** 刷卡通知寫的（彈出視窗）的一行：左邊小字標題、右邊內容 */
+@Composable
+private fun NotiInfoRow(k: String, v: String) {
+    Row {
+        Text(k, style = MaterialTheme.typography.labelMedium, color = LocalCute.current.sub, modifier = Modifier.width(44.dp).padding(top = 2.dp))
+        Text(v, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/**
+ * 店家和備註排同一列：店家（layoutId "shop"）約 4 成寬、備註（"note"）佔其餘。
+ * wide：點店家格時店家變一整列，下面是用過的店家（"sugg"），備註到下一列。
+ * folded：店家收起來，只剩一個小圓鈕（照它自己的大小，跟備註第一行對齊）。
+ * 用同一個 Layout 換排法，店家格不會因為換位置而失去焦點。
+ */
+@Composable
+private fun ShopNoteRow(wide: Boolean, folded: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content, modifier) { ms, c ->
+        val w = c.maxWidth
+        val gap = 8.dp.roundToPx()
+        val shop = ms.first { it.layoutId == "shop" }
+        val note = ms.first { it.layoutId == "note" }
+        val sugg = ms.firstOrNull { it.layoutId == "sugg" }
+        val full = Constraints(minWidth = w, maxWidth = w)
+        if (wide) {
+            val sp = shop.measure(full)
+            val gp = sugg?.measure(Constraints(maxWidth = w))
+            val np = note.measure(full)
+            val h = sp.height + gap + (gp?.let { it.height + gap } ?: 0) + np.height
+            layout(w, h) {
+                sp.place(0, 0)
+                var y = sp.height + gap
+                if (gp != null) { gp.place(0, y); y += gp.height + gap }
+                np.place(0, y)
+            }
+        } else {
+            val sp = if (folded) shop.measure(Constraints()) else (((w - gap) * 0.4f).toInt()).let { shop.measure(Constraints(minWidth = it, maxWidth = it)) }
+            val nw = (w - sp.width - gap).coerceAtLeast(0)
+            val np = note.measure(Constraints(minWidth = nw, maxWidth = nw))
+            val line = minOf(np.height, 56.dp.roundToPx())
+            val sy = if (folded) ((line - sp.height) / 2).coerceAtLeast(0) else 0
+            layout(w, maxOf(np.height, sp.height + sy)) {
+                sp.place(0, sy)
+                np.place(sp.width + gap, 0)
+            }
+        }
+    }
+}
+
+/**
+ * 店家格：跟備註框一樣的外框和高度，但左右圖示比較窄（只佔 4 成寬時字還放得下）。
+ * 沒在打字時店名太長後面變「…」；打字時右邊是「完成」，平常是「<」（往左收起來）。
+ */
+@Composable
+private fun ShopBox(
+    value: String, onChange: (String) -> Unit, focused: Boolean, onFocus: (Boolean) -> Unit,
+    onDone: () -> Unit, onFold: () -> Unit, modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(18.dp)
+    val style = MaterialTheme.typography.bodyLarge
+    Row(
+        modifier.heightIn(min = 56.dp).border(if (focused) 2.dp else 1.dp, if (focused) cs.primary else cs.outline, shape).padding(start = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides cs.onSurfaceVariant) { IconGlyph("vec:shop", 18.sp) }
+        Box(Modifier.weight(1f).padding(start = 10.dp), contentAlignment = Alignment.CenterStart) {
+            BasicTextField(
+                value = value,
+                onValueChange = onChange,
+                singleLine = true,
+                // 沒在打字時字藏起來，改用下面那個會變「…」的字
+                textStyle = style.copy(color = if (focused) cs.onSurface else Color.Transparent),
+                cursorBrush = SolidColor(cs.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onDone() }),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { onFocus(it.isFocused) }.semantics { contentDescription = "店家" },
+            )
+            if (!focused || value.isEmpty()) {
+                Text(
+                    value.ifEmpty { if (focused) "店家（選填）" else "店家" }, style = style,
+                    color = if (value.isEmpty()) cs.onSurfaceVariant else cs.onSurface,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (focused) TextButton(onClick = onDone) { Text("完成") }
+        else IconButton(onClick = onFold, modifier = Modifier.size(40.dp)) { Icon(AppIcons.ChevronLeft, contentDescription = "收起店家", tint = cs.onSurfaceVariant) }
     }
 }

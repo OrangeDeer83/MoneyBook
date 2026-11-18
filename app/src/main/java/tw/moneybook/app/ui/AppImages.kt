@@ -184,6 +184,7 @@ object AppLines {
         "vec:tag" to AppIcons.LTag,
         "vec:receipt" to AppIcons.LReceipt,
         "vec:shop" to AppIcons.LShop,
+        "vec:card" to AppIcons.LCard,
         "vec:coin" to AppIcons.LCoin,
         "vec:coin_yen" to AppIcons.LCoinYen,
         "vec:coin_dollar" to AppIcons.LCoinDollar,
