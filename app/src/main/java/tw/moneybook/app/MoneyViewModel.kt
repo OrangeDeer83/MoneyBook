@@ -1281,6 +1281,29 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         tw.moneybook.app.notify.CardPendNotifier.refreshShown(appContext)
     }
 
+    /** 「其實是刷卡」：被當成廣告的那則放回待確認（復原＝再拿掉） */
+    fun forceSpend(n: CapturedNoti) {
+        var added: CardPend? = null
+        tw.moneybook.app.notify.CardPendLog.update(appContext) { list ->
+            val out = forceSpendPend(list, n, data, System.currentTimeMillis()) ?: return@update list
+            added = out.firstOrNull { p -> p.src.any { it.notiId == n.id } }
+            out
+        }
+        val p = added ?: return
+        tw.moneybook.app.notify.CardPendNotifier.later(appContext)
+        _messages.tryEmit(UiMsg("放回待確認了：${pendTitle(p)}", "復原") {
+            tw.moneybook.app.notify.CardPendLog.update(appContext) { list ->
+                list.mapNotNull { q ->
+                    when {
+                        q.src.none { it.notiId == n.id } -> q
+                        q.src.size == 1 -> null
+                        else -> q.copy(src = q.src.filter { it.notiId != n.id })
+                    }
+                }
+            }
+        })
+    }
+
     private fun pendTitle(p: CardPend): String =
         data.pendName(p) + " " + if (p.cur.isEmpty()) formatMoney(p.amount) else formatFx(p.amount, p.cur)
 

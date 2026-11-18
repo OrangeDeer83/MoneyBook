@@ -151,6 +151,14 @@ fun pendOf(n: CapturedNoti, r: NotiRead): CardPend? {
     )
 }
 
+/** 「其實是刷卡」：被當成廣告的那則照一般刷卡放進待確認（已經在待確認裡的不動）；回傳新的清單，沒放進去回傳 null */
+fun forceSpendPend(list: List<CardPend>, n: CapturedNoti, d: AppData, now: Long): List<CardPend>? {
+    if (list.any { p -> p.src.any { it.notiId == n.id } }) return null
+    val r = d.readNoti(n)
+    val p = pendOf(n, if (r.kind == NotiKind.AD) r.copy(kind = NotiKind.SPEND) else r) ?: return null
+    return addPend(list, p, d, now)
+}
+
 /** 記成一筆時留著的來源：有末四碼的那則優先 */
 val CardPend.mainSrc: NotiSrc get() = src.firstOrNull { it.last4.isNotEmpty() } ?: src.first()
 
@@ -410,6 +418,7 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
         NotiKind.NO_AMOUNT -> NotiTagKind.OFF to "不是消費"
         NotiKind.INST_PAY -> NotiTagKind.OFF to "分期請款，不記"
         NotiKind.OTHER -> NotiTagKind.OFF to "還不會讀"
+        NotiKind.AD -> NotiTagKind.OFF to "像廣告，不記"
     }
 }
 

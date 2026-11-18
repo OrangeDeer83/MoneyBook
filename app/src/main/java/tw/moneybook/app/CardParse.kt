@@ -16,9 +16,10 @@ import java.time.ZoneId
 
 /**
  * 讀的結果：SPEND＝一筆消費；NO_AMOUNT＝讀不到金額（例如「您已獲得 2 點」）；REFUND＝退款；PREAUTH＝預先授權（金額是預估的）；
- * INST_PAY＝分期的每月請款（「第 1/12 期」，分期第一次刷的時候記過了，不記）；OTHER＝取消、繳款這種，不會讀
+ * INST_PAY＝分期的每月請款（「第 1/12 期」，分期第一次刷的時候記過了，不記）；OTHER＝取消、繳款這種，不會讀；
+ * AD＝像廣告（沒有末四碼、沒寫刷卡這類字、又有「最高」「回饋」這種字），不放進待確認，其他欄位照樣讀（「其實是刷卡」時用）
  */
-enum class NotiKind { SPEND, NO_AMOUNT, OTHER, REFUND, PREAUTH, INST_PAY }
+enum class NotiKind { SPEND, NO_AMOUNT, OTHER, REFUND, PREAUTH, INST_PAY, AD }
 
 data class NotiRead(
     val kind: NotiKind,
@@ -41,6 +42,8 @@ data class NotiRead(
     val spans: Map<TplField, IntRange> = emptyMap(),
     /** 分幾期（「分 12 期」）；0＝不是分期 */
     val inst: Int = 0,
+    /** 像廣告時找到的廣告字（AD 才有） */
+    val adWords: List<String> = emptyList(),
 )
 
 internal val WALLETS = listOf(
@@ -58,6 +61,11 @@ private val INST_PAY = Regex("""第\s*\d{1,2}\s*(?:/\s*\d{1,2}\s*)?期""")
 private val INST_COUNT = Regex("""分\s*(\d{1,2})\s*期""")
 /** 有這些字的不記 */
 private val OTHER_WORDS = listOf("取消", "繳款", "入帳", "核卡", "開卡", "失敗", "未成功", "拒絕", "交易不成功")
+/**
+ * 廣告常見字：沒有末四碼、也沒寫刷卡這類字（VERBS）時，有這些字就當廣告。
+ * 不放單一個字（拿、送、享、抽、券）：Samsung Wallet 只寫「店名 $金額」，「拿坡里」「外送」這種店名會被誤認
+ */
+internal val AD_WORDS = listOf("最高", "回饋", "優惠", "活動", "限時", "立即", "登錄", "加碼", "好禮", "抽獎", "現折", "免費")
 
 private val VERBS = listOf("刷卡", "消費", "交易", "支付", "付款", "扣款", "預先授權", "預授權", "授權", "退款", "退貨", "退刷")
 private val AMOUNT_WORDS = listOf("消費", "金額", "刷卡", "交易", "扣款", "支付", "付款", "簽帳", "退款", "授權", "退貨", "退刷")
@@ -280,7 +288,12 @@ fun parseCardNoti(title: String, text: String, postTime: Long, zone: ZoneId = Zo
     }
     if (merchant.isNotEmpty()) body.indexOf(merchant).takeIf { it >= 0 }?.let { spans[TplField.MERCHANT] = it until it + merchant.length }
     val (shop, wallet) = splitWallet(merchant, all)
-    return NotiRead(kind, best.value, best.cur, shop.take(30), wallet, last4, day, minute, sure && shop.isNotEmpty(), spans, inst)
+    // 像廣告：沒有末四碼、沒寫刷卡這類字，又有廣告常見字（「TWQR條碼付最高拿500元！」）
+    val ads = if (kind == NotiKind.SPEND && last4.isEmpty() && VERBS.none { it in all }) AD_WORDS.filter { it in all } else emptyList()
+    return NotiRead(
+        if (ads.isNotEmpty()) NotiKind.AD else kind, best.value, best.cur, shop.take(30), wallet, last4, day, minute,
+        sure && shop.isNotEmpty(), spans, inst, ads,
+    )
 }
 
 /** 金額的數字（「1,288」「30.00」）換成記帳的金額：台幣小數四捨五入（30.00 → 30），外幣是最小單位；讀不出來回傳 null */

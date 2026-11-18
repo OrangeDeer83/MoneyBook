@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,6 +77,8 @@ data class TplTeach(
     val time: Long,
     val marks: List<TplMark>,
     val editId: Long?,
+    /** 從收到的哪一則打開（像廣告時上面有「其實是刷卡」）；從範本清單打開是 null */
+    val noti: CapturedNoti? = null,
 )
 
 /** 從收到的一則通知打開：已經對得上範本的就改那個範本，沒有就照通用規則讀到的先標好 */
@@ -83,7 +86,7 @@ fun AppData.teachOf(n: CapturedNoti): TplTeach {
     val tpl = tplFor(n)
     val r = tpl?.read(n.title, n.text, n.time) ?: tw.moneybook.app.parseCardNoti(n.title, n.text, n.time)
     val marks = r.spans.map { (f, s) -> TplMark(f, s.first, s.last) }.sortedBy { it.start }
-    return TplTeach(n.pkg, n.label, normalizeNoti(n.text), n.time, marks, tpl?.id)
+    return TplTeach(n.pkg, n.label, normalizeNoti(n.text), n.time, marks, tpl?.id, n)
 }
 
 /** 從範本清單打開：用當初那則通知 */
@@ -134,12 +137,36 @@ fun TplTeachScreen(vm: MoneyViewModel, teach: TplTeach, onDone: () -> Unit) {
         },
     )
     val nv = NeedView(need, tries.count)
+    val ctx = LocalContext.current
+    val pendVer by tw.moneybook.app.notify.CardPendLog.version.collectAsState()
     if (stage == 2) {
         TplConfirm(vm, tpl, teach, onBack = { stage = 1 }, onSaved = onDone)
         return
     }
     SubPage("教它讀這種通知", onDone) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 被當成廣告的那則（還沒放進待確認）：上面一塊「其實是刷卡」
+            val ad = remember(teach, pendVer) {
+                teach.noti?.takeIf { n -> tw.moneybook.app.notify.CardPendLog.load(ctx).none { p -> p.src.any { it.notiId == n.id } } }
+                    ?.takeIf { d.readNoti(it).kind == NotiKind.AD }
+            }
+            if (ad != null) {
+                val words = remember(ad) { d.readNoti(ad).adWords }
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cute.soft.copy(alpha = 0.6f)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("這則看起來像廣告，沒放進待確認", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "沒有末四碼、沒寫刷卡或消費，又有" + words.take(3).joinToString("") { "「$it」" },
+                        style = MaterialTheme.typography.labelMedium, color = cute.sub,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = { vm.forceSpend(ad) }) { Text("其實是刷卡") }
+                        Text("→ 放回待確認", style = MaterialTheme.typography.labelMedium, color = cute.sub, modifier = Modifier.padding(start = 10.dp))
+                    }
+                }
+            }
             Text("1. 選要標的欄位", style = MaterialTheme.typography.labelLarge, color = cute.sub)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TplField.entries.forEach { f ->
@@ -265,7 +292,7 @@ private fun TplConfirm(vm: MoneyViewModel, tpl: NotiTpl, teach: TplTeach, onBack
                         } else {
                             val g = vm.data.readNoti(n)
                             Text(
-                                "（對不上，照通用規則：" + (if (g.kind == NotiKind.SPEND) "消費" else "不是消費") + "）",
+                                "（對不上，照通用規則：" + when (g.kind) { NotiKind.SPEND -> "消費"; NotiKind.AD -> "像廣告"; else -> "不是消費" } + "）",
                                 style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.weight(1f),
                             )
                         }

@@ -6897,3 +6897,50 @@ def t_card_shop_had():
     d.check("下一則統一超商 $45 不照那筆帶：名稱是「統一超商」、沒有「照 … 的記法」",
             d.first(ns, "記 統一超商", True) is not None and not d.has(ns, "統一超商・雙蔬鮪魚飯糰・", False)
             and not any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
+
+
+@case(D, "像廣告的通知：不放進待確認、收到的通知標「像廣告，不記」；點進去按「其實是刷卡」放回待確認", visual=True)
+def t_card_ad():
+    s = S.Seed(f.today())
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    ad = "冬天來吃築間集團燒肉/鍋物/銅盤/港點品牌，TWQR條碼付最高拿500元！"
+    bank_post("ad1", ad)
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("收到廣告")
+    d.check("廣告沒放進待確認：首頁沒有「刷卡等你確認」、沒有 $500", not d.has(ns, "刷卡等你確認") and not d.has(ns, "$500", True), pend_texts(ns))
+    try:
+        row = to_noti(ad)
+    except TimeoutError as e:
+        d.check("收到的通知裡有那則廣告", False, str(e))
+        return
+    ns = d.shot("收到的通知")
+    d.check("收到的通知標「像廣告，不記」", d.has(ns, "像廣告，不記", True), pend_texts(ns))
+    d.tap(row)
+    try:
+        d.wait_text("教它讀這種通知", timeout=8)
+    except TimeoutError:
+        d.check("點那則打開教範本", False, pend_texts(d.nodes()))
+        return
+    d.time.sleep(1)
+    ns = d.shot("教範本上面")
+    d.check("教範本上面寫「這則看起來像廣告，沒放進待確認」、理由有「最高」、有「其實是刷卡」",
+            d.has(ns, "這則看起來像廣告，沒放進待確認", True) and d.has(ns, "「最高」", False) and d.has(ns, "其實是刷卡", True), pend_texts(ns))
+    d.tap_text("其實是刷卡", exact=True)
+    try:
+        d.wait_text("放回待確認了", timeout=4, exact=False)
+        d.check("提示「放回待確認了」", True)
+    except (TimeoutError, TypeError):
+        d.check("提示「放回待確認了」", any("放回待確認了" in n.text for n in d.nodes()), pend_texts(d.nodes()))
+    d.time.sleep(1)
+    ns = d.shot("按了其實是刷卡")
+    d.check("那塊不見了", not d.has(ns, "其實是刷卡", True), pend_texts(ns))
+    d.back()
+    d.time.sleep(1)
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("放回待確認")
+    d.check("首頁待確認有那筆 $500", d.has(ns, "刷卡等你確認", False) and d.has(ns, "$500", True), pend_texts(ns))
