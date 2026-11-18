@@ -193,7 +193,7 @@ fun TplTeachScreen(vm: MoneyViewModel, teach: TplTeach, onDone: () -> Unit) {
                 TplField.entries.forEach { f ->
                     val v = when (f) {
                         TplField.AMOUNT -> read?.let { if (it.cur.isEmpty()) formatMoney(it.amount) else formatFx(it.amount, it.cur) }
-                        TplField.MERCHANT -> read?.merchant?.takeIf { it.isNotEmpty() }?.let { s -> s + (read.wallet.takeIf { it.isNotEmpty() }?.let { "（$it 放備註）" } ?: "") }
+                        TplField.MERCHANT -> read?.merchant?.takeIf { it.isNotEmpty() }?.let { s -> s + (read.wallet.takeIf { it.isNotEmpty() }?.let { "（$it 是付款方式，不算店名）" } ?: "") }
                         TplField.LAST4 -> read?.last4?.takeIf { it.isNotEmpty() }?.let { l ->
                             l + (d.matchCard(NotiSrc(0, teach.pkg, teach.label, "", l))?.let { id -> d.accMap[id]?.name }?.let { " → $it" } ?: "")
                         }
