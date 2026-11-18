@@ -6259,7 +6259,7 @@ def t_card_pend_more():
     ns = d.shot("刷卡通知寫的")
     d.check("點信用卡圖示：彈出通知原文、X 銀行、末四碼 1234、商店誠品書店",
             d.has(ns, "在誠品書店消費NT$480", False) and d.has(ns, "X 銀行", False) and d.has(ns, "末四碼 1234", False)
-            and d.has(ns, "不是這家", True), pend_texts(ns))
+            and d.has(ns, "商店對錯了", True) and not d.has(ns, "錢包", False), pend_texts(ns))
     d.tap_text("關閉", exact=True)
     d.time.sleep(0.8)
     d.tap_text("購物", exact=True)
@@ -6832,7 +6832,7 @@ def t_card_shop_memo():
     d.check("$35：名稱「7-11」、沒有「照 … 的記法」", d.has(ns, "7-11", True) and not any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
 
 
-@case(D, "確認已經有一筆時補上銀行寫的：修改頁右上角有信用卡圖示，點開寫商店統一超商，按「不是這家」拿掉後圖示不見、下次不照它帶", visual=True)
+@case(D, "確認已經有一筆時補上銀行寫的：修改頁右上角有信用卡圖示，點開寫商店統一超商，按「商店對錯了」視窗不關、變「復原」，按復原變回來；再按一次、存檔後圖示不見、下次不照它帶", visual=True)
 def t_card_shop_had():
     s = S.Seed(f.today())
     s.expense(0, 45, S.C_BREAKFAST, acc=S.CARD, note="雙蔬鮪魚飯糰", time=500)
@@ -6859,12 +6859,36 @@ def t_card_shop_had():
     d.tap(icon)
     d.time.sleep(1)
     ns = d.shot("刷卡通知寫的")
-    d.check("彈出：商店統一超商、有「不是這家」", d.has(ns, "統一超商", True) and d.has(ns, "不是這家", True), pend_texts(ns))
-    d.tap(d.first(ns, "不是這家", True))
+    d.check("彈出：商店統一超商、說明寫任何一張卡和 NT$45、有「商店對錯了」、沒有錢包那行",
+            d.has(ns, "統一超商", True) and d.has(ns, "任何一張卡", False) and d.has(ns, "45 的話", False)
+            and d.has(ns, "商店對錯了", True) and not d.has(ns, "錢包", True), pend_texts(ns))
+    d.tap(d.first(ns, "商店對錯了", True))
     d.time.sleep(0.8)
-    ns = d.shot("按了不是這家")
-    d.check("視窗關掉、信用卡圖示不見（這筆不是通知記的）", not d.has(ns, "不是這家", True) and d.first(ns, "刷卡通知寫的", True) is None, pend_texts(ns))
+    ns = d.shot("按了商店對錯了")
+    d.check("視窗不關：商店寫「統一超商（已拿掉）」、按鈕變「復原」",
+            d.has(ns, "統一超商（已拿掉）", True) and d.has(ns, "復原", True) and not d.has(ns, "商店對錯了", True), pend_texts(ns))
+    d.tap(d.first(ns, "復原", True))
+    d.time.sleep(0.8)
+    ns = d.shot("按了復原")
+    d.check("按復原：商店變回統一超商、按鈕變回「商店對錯了」",
+            d.has(ns, "商店對錯了", True) and not d.has(ns, "（已拿掉）", False), pend_texts(ns))
+    d.tap(d.first(ns, "商店對錯了", True))
+    d.time.sleep(0.6)
+    d.tap_text("關閉", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("拿掉後關閉")
+    gray = d.first(ns, "刷卡通知寫的", True)
+    d.check("關掉視窗：信用卡圖示還在（變灰，存檔前還能復原）", gray is not None, pend_texts(ns))
     f.save_edit()
+    d.time.sleep(1.5)
+    row = d.first(d.shot("存好"), "統一超商・雙蔬鮪魚飯糰", True)
+    if row is not None:
+        d.tap(row)
+        f.edit_open()
+        ns = d.shot("存檔後再打開")
+        d.check("存檔後再打開：信用卡圖示不見（這筆不是通知記的）", d.first(ns, "刷卡通知寫的", True) is None, pend_texts(ns))
+        d.back()
+        d.time.sleep(1)
     bank_post("h2", f"【刷卡通知】金額NT$45元 卡號末四碼1234於{today_slash()} 12:30在OP錢包統一超商刷卡")
     to_main()
     f.tab("明細")

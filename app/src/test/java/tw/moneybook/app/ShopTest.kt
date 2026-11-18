@@ -103,7 +103,7 @@ class ShopTest {
         val w = d.pendShop(pend(merchant = ""))
         assertEquals("OP錢包", w.shop)
         assertEquals("", w.bankShop)
-        // 按了「不是這家」（銀行寫的拿掉）：不再照它帶
+        // 按了「商店對錯了」（銀行寫的拿掉）：不再照它帶
         val off = data(mine.copy(bankShop = ""))
         assertEquals("統一超商", off.pendShop(pend()).shop)
         assertEquals("", off.pendShop(pend()).note)

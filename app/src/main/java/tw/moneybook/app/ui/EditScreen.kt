@@ -44,6 +44,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -124,7 +125,7 @@ import tw.moneybook.app.formatMoney
 import tw.moneybook.app.resolveCard
 import tw.moneybook.app.pendCat
 import tw.moneybook.app.pendShop
-import tw.moneybook.app.readNoti
+import tw.moneybook.app.isFxSpend
 import tw.moneybook.app.shopSuggestions
 import tw.moneybook.app.NotiSrc
 import tw.moneybook.app.mainSrc
@@ -248,10 +249,13 @@ fun EditScreen(
     val pendShop = remember { pend?.let { d.pendShop(it, it.kind == tw.moneybook.app.PendKind.SPEND && !it.isInst) } }
     var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: pendShop?.note ?: "") }
     var shop by rememberSaveable { mutableStateOf(orig?.shop ?: tpl?.shop ?: pendShop?.shop ?: "") }
-    // 銀行寫的：看得到、不能改，按「不是這家」拿掉
+    // 銀行寫的：看得到、不能改，按「商店對錯了」拿掉（存檔前可以復原）
     var bankShop by rememberSaveable { mutableStateOf(orig?.bankShop ?: pendShop?.bankShop ?: "") }
     // 這筆是哪則刷卡通知來的（待確認「改一下」、或刷卡通知記的那一筆）：右上角信用卡圖示點開看
     val notiSrc = pend?.mainSrc ?: orig?.noti
+    // 打開時銀行寫的商店：按了「商店對錯了」存檔前都能「復原」成這個
+    val bank0 = orig?.bankShop ?: pendShop?.bankShop ?: ""
+    val bankRemoved = bankShop.isEmpty() && bank0.isNotEmpty()
     var shopFocused by remember { mutableStateOf(false) }
     var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
     // 刷卡通知寫「分 N 期」的：帶好期數
@@ -580,14 +584,15 @@ fun EditScreen(
                 { i -> setType(listOf(TxType.EXPENSE, TxType.INCOME, TxType.TRANSFER)[i]) },
             )
             Spacer(Modifier.weight(1f))
-            // 刷卡通知記的、連過銀行寫的商店：信用卡圖示，點了看通知寫了什麼
-            if (notiSrc != null || (bankShop.isNotEmpty() && type != TxType.TRANSFER)) {
+            // 刷卡通知記的、連過銀行寫的商店：信用卡圖示，點了看通知寫了什麼；商店拿掉了（還沒存）變灰
+            if (notiSrc != null || ((bankShop.isNotEmpty() || bankRemoved) && type != TxType.TRANSFER)) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(cute.soft).clickable { focus.clearFocus(); dialog = "noti" }
-                        .semantics { contentDescription = "刷卡通知寫的" },
+                    Modifier.size(40.dp).clip(CircleShape).background(if (bankRemoved) cute.sub.copy(alpha = 0.15f) else cute.soft)
+                        .clickable { focus.clearFocus(); dialog = "noti" }
+                        .semantics { contentDescription = "刷卡通知寫的"; if (bankRemoved) stateDescription = "商店已拿掉" },
                     contentAlignment = Alignment.Center,
                 ) {
-                    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.primary) { IconGlyph("vec:card", 20.sp) }
+                    CompositionLocalProvider(LocalContentColor provides if (bankRemoved) cute.sub else MaterialTheme.colorScheme.primary) { IconGlyph("vec:card", 20.sp) }
                 }
             } else if (orig == null && !(tplMode && tplId != null)) {
                 Spacer(Modifier.width(40.dp))
@@ -1085,10 +1090,12 @@ fun EditScreen(
             )
         }
         "noti" -> {
-            // 刷卡通知寫的：原文（收到的通知只留 7 天）、卡號、銀行寫的商店、錢包；「不是這家」拿掉銀行寫的
+            // 刷卡通知寫的：原文（收到的通知只留 7 天）、卡號、銀行寫的商店；
+            // 「商店對錯了」拿掉銀行寫的（視窗不關），同一個位置變「復原」，存檔前都能改回來
             val raw = remember(notiSrc) { notiSrc?.let { s -> tw.moneybook.app.notify.CardNotiLog.load(context).firstOrNull { it.id == s.notiId } } }
-            val wallet = pend?.wallet?.ifEmpty { null } ?: raw?.let { d.readNoti(it).wallet.ifEmpty { null } }
-            val bank0 = orig?.bankShop ?: pendShop?.bankShop ?: ""
+            // 照這筆帶備註、分類要金額一樣（只看台幣）
+            val sameAmt = pend?.let { p -> p.amount.takeIf { p.cur.isEmpty() } }
+                ?: orig?.takeIf { !it.isFxSpend && it.fxAmount == 0L }?.recorded
             AlertDialog(
                 onDismissRequest = { dialog = "" },
                 title = {
@@ -1119,21 +1126,32 @@ fun EditScreen(
                             bankShop.isNotEmpty() -> NotiInfoRow("商店", bankShop)
                             bank0.isNotEmpty() -> NotiInfoRow("商店", "$bank0（已拿掉）")
                         }
-                        if (wallet != null) NotiInfoRow("錢包", wallet)
                         if (bankShop.isNotEmpty()) {
+                            val mine = shop.trim().ifEmpty { bankShop }
                             Text(
-                                "下次「$bankShop」的通知會照這筆的記法帶。對錯店的話按「不是這家」。",
+                                "之後任何一張卡收到「$bankShop」的通知，店家都會帶成「$mine」；" +
+                                    (sameAmt?.let { "金額也是 ${formatMoney(it)} 的話" } ?: "金額也一樣的話") + "，連備註和分類也照這筆帶。",
                                 style = MaterialTheme.typography.labelMedium, color = cute.sub,
                             )
+                        } else if (bankRemoved) {
+                            Text("存檔後，之後收到「$bank0」的通知就不會照這筆帶了。", style = MaterialTheme.typography.labelMedium, color = cute.sub)
                         }
                     }
                 },
                 confirmButton = { TextButton(onClick = { dialog = "" }) { Text("關閉") } },
-                dismissButton = if (bankShop.isNotEmpty()) ({
-                    OutlinedButton(onClick = { bankShop = ""; dialog = "" }, border = androidx.compose.foundation.BorderStroke(1.dp, cute.expense)) {
-                        Text("不是這家", color = cute.expense)
-                    }
-                }) else null,
+                dismissButton = when {
+                    bankShop.isNotEmpty() -> ({
+                        OutlinedButton(onClick = { bankShop = "" }, border = androidx.compose.foundation.BorderStroke(1.dp, cute.expense)) {
+                            Text("商店對錯了", color = cute.expense)
+                        }
+                    })
+                    bankRemoved -> ({
+                        OutlinedButton(onClick = { bankShop = bank0 }, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)) {
+                            Text("復原", color = MaterialTheme.colorScheme.primary)
+                        }
+                    })
+                    else -> null
+                },
             )
         }
         "relearn" -> {

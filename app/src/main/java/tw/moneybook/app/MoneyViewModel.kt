@@ -68,7 +68,7 @@ data class TxnDraft(
     val est: Boolean = false,
     /** 店家（選填，轉帳沒有） */
     val shop: String = "",
-    /** 銀行寫的商店（刷卡通知連起來的才有；按「不是這家」清掉） */
+    /** 銀行寫的商店（刷卡通知連起來的才有；按「商店對錯了」清掉） */
     val bankShop: String = "",
 )
 
