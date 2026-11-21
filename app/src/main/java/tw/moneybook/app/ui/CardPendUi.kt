@@ -222,7 +222,11 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                         if (hint.second.length > 2) Text(hint.second, style = MaterialTheme.typography.labelSmall, color = cute.sub)
                     }
                 }
-                Row(Modifier.padding(start = 44.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 按鈕多的時候（記、改一下、不是消費、是試刷）放不下就換到下一行，不會把字擠成直的
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.padding(start = 44.dp, top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     val name = p.merchant.ifEmpty { pendAmountText(p) }
                     when {
                         card == null -> {
