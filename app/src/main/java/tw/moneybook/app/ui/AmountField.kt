@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,9 +60,20 @@ internal fun AmountField(
     error: Boolean = false,
     /** 整數最多幾位（和原本輸入框的上限一樣），算出來超過就不能按完成 */
     maxDigits: Int = 9,
+    /**
+     * 小算盤除了「完成」（填好、關掉）之外的「下一步」按鈕，名字照用途取（例如快速加入庫存的「下一檔」）；
+     * 按了先填好（跟完成一樣），再呼叫 onNext。null＝沒有這顆
+     */
+    nextLabel: String? = null,
+    onNext: () -> Unit = {},
+    /** 從外面打開小算盤（例如股數按鍵盤「下一個」）：給了就由外面管開關 */
+    open: Boolean? = null,
+    onOpenChange: (Boolean) -> Unit = {},
 ) {
     val cute = LocalCute.current
-    var open by remember { mutableStateOf(false) }
+    var openSelf by remember { mutableStateOf(false) }
+    val isOpen = open ?: openSelf
+    fun setOpen(v: Boolean) { if (open == null) openSelf = v else onOpenChange(v) }
     // 別的輸入框正在打字時先收掉手機鍵盤，小算盤關掉後才不會又跳出來
     val focus = LocalFocusManager.current
     val shown = groupDigits(value).first
@@ -69,7 +81,7 @@ internal fun AmountField(
         modifier
             .clip(RoundedCornerShape(14.dp)).background(cute.soft)
             .then(if (error) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(14.dp)) else Modifier)
-            .clickable { focus.clearFocus(); open = true }
+            .clickable { focus.clearFocus(); setOpen(true) }
             // 畫面測試用描述找到金額欄位；文字只放數字（和輸入框一樣，提示字不算）
             .clearAndSetSemantics {
                 contentDescription = "金額欄位：$title"
@@ -88,19 +100,25 @@ internal fun AmountField(
             modifier = Modifier.weight(1f),
         )
     }
-    if (open) {
-        AmountKeypadDialog(title, value, prefix, dec, maxDigits, { v ->
-            // 沒改就不通知（onChange 可能會關掉自動分攤、清掉手動改的金額）；空的和 0 算一樣
+    if (isOpen) {
+        // 沒改就不通知（onChange 可能會關掉自動分攤、清掉手動改的金額）；空的和 0 算一樣
+        fun commit(v: String) {
             fun num(s: String) = s.filter { it.isDigit() || it == '.' }.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
             if (num(v).compareTo(num(value)) != 0) onChange(v)
-            open = false
-        }, { open = false })
+        }
+        AmountKeypadDialog(
+            title, value, prefix, dec, maxDigits, { v -> commit(v); setOpen(false) }, { setOpen(false) },
+            nextLabel = nextLabel, onNext = { v -> commit(v); setOpen(false); onNext() },
+        )
     }
 }
 
 /** 金額欄位的小算盤視窗：標題、算式、小算盤；左下角「貼上」（剪貼簿有數字才有），右下角「取消」 */
 @Composable
-private fun AmountKeypadDialog(title: String, initial: String, prefix: String, dec: Int, maxDigits: Int, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+private fun AmountKeypadDialog(
+    title: String, initial: String, prefix: String, dec: Int, maxDigits: Int, onDone: (String) -> Unit, onDismiss: () -> Unit,
+    nextLabel: String? = null, onNext: (String) -> Unit = {},
+) {
     val cute = LocalCute.current
     var expr by remember { mutableStateOf(initial.filter { it.isDigit() || it == '.' }) }
     val clipboard = LocalClipboardManager.current
@@ -155,6 +173,11 @@ private fun AmountKeypadDialog(title: String, initial: String, prefix: String, d
                 }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onDismiss) { Text("取消") }
+                // 「下一步」（草圖 ci-out/quick_cost_next.png A）：算式還沒算完就先算好，填好再跳下一格
+                if (nextLabel != null) {
+                    Spacer(Modifier.width(4.dp))
+                    Button(onClick = { if (!divZero && !tooBig) onNext(result()) }, enabled = !divZero && !tooBig) { Text("$nextLabel ›") }
+                }
             }
         }
     }

@@ -7237,3 +7237,62 @@ def t_stats_custom_range():
     d.time.sleep(1.5)
     ns = d.nodes()
     d.check("回到趨勢，自訂那顆還是趨勢自己的期間", d.has(ns, span, True), [n.text for n in ns if n.text][:20])
+
+
+@case(D, "快速加入庫存：股數按鍵盤「下一個」跳出成本的小算盤，「下一檔」跳到新一列的代號、「完成」只關掉", visual=True)
+def t_quick_holdings_next():
+    d.fresh(empty_seed(invest=True).json())
+    open_account("測試證券")
+    d.tap_text("已經有股票了？", exact=True)
+    d.wait_text("只記持股", exact=False, timeout=10)
+    d.time.sleep(0.8)
+
+    def kp(s):
+        for ch in s:
+            c = [x for x in d.nodes() if x.text == ch]
+            d.tap(max(c, key=lambda x: x.cy), settle=0.3)
+
+    def codes():
+        return [n.text for n in d.nodes() if n.cls.endswith("EditText") and n.cx < d._screen()[0] // 3]
+
+    ed = d.edits()
+    d.tap(ed[0])
+    d.type_text("2330")
+    d.sh("input keyevent 66")
+    d.time.sleep(0.8)
+    d.type_text("1000")
+    d.sh("input keyevent 66")
+    d.time.sleep(1)
+    ns = d.shot("股數按下一個：跳出小算盤")
+    d.check("代號按下一個跳到股數、股數按下一個跳出「2330 的每股均價」小算盤，有完成和下一檔",
+            d.has(ns, "÷", True) and d.has(ns, "2330 的每股均價", True) and d.has(ns, "下一檔 ›", True), [n.text for n in ns if n.text][:30])
+    kp("580")
+    d.tap_text("下一檔 ›", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("按下一檔：多一列、鍵盤跳到新的代號")
+    d.check("多了一列，鍵盤出來", len(codes()) == 2 and d.ime_shown(), codes())
+    d.type_text("0050")
+    d.sh("input keyevent 66")
+    d.time.sleep(0.8)
+    d.type_text("2000")
+    d.sh("input keyevent 66")
+    d.time.sleep(1)
+    d.check("第二列也跳出小算盤", d.has(d.nodes(), "0050 的每股均價", True), [n.text for n in d.nodes() if n.text][:30])
+    kp("152.3")
+    d.tap_text("完成", exact=True, lowest=True)
+    d.time.sleep(1)
+    ns = d.shot("按完成：只關掉")
+    d.check("按完成只關掉，沒有多一列、鍵盤沒出來", len(codes()) == 2 and not d.ime_shown() and not d.has(ns, "÷", True), codes())
+    d.check("代號、成本都填對：成本 $580,000、$304,600",
+            codes() == ["2330", "0050"] and d.has(ns, "成本 $580,000", False) and d.has(ns, "成本 $304,600", False), [n.text for n in ns if "成本" in n.text or n.text in ("2330", "0050")])
+    d.tap(next(n for n in d.nodes() if n.desc == "金額欄位：0050 的每股均價"))
+    d.wait_text("÷", timeout=8)
+    d.tap_text("下一檔 ›", exact=True)
+    d.time.sleep(1.5)
+    d.hide_ime()
+    d.check("最後一檔按下一檔：多一列", len(codes()) == 3, codes())
+    d.tap_text("全部加入（2 檔）", exact=True)
+    d.time.sleep(1.5)
+    ns = d.shot("加入之後")
+    d.check("空的那列不算：持股 1000 股・均價 580.00、2000 股・均價 152.30",
+            any("1000 股・均價 580.00" in n.text for n in ns) and any("2000 股・均價 152.30" in n.text for n in ns), [n.text for n in ns if "股" in n.text])

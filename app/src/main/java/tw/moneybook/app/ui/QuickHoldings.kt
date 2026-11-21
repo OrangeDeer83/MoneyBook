@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.FocusDirection
@@ -67,11 +69,14 @@ private class QRow(val key: Int) {
     /** null＝依代號自動判斷，點市場標籤換過就是使用者選的 */
     var market by mutableStateOf<String?>(null)
     val codeFocus = FocusRequester()
+    /** 成本的小算盤開著（點那格、或股數按鍵盤「下一個」） */
+    var costOpen by mutableStateOf(false)
     fun blank() = code.isBlank() && qty.isBlank() && cost.isBlank()
 }
 
 /**
- * 快速加入庫存：一次把現有的持股填進這個投資帳戶。一檔一列，鍵盤「下一個」依序跳代號→股數→成本→下一列，
+ * 快速加入庫存：一次把現有的持股填進這個投資帳戶。一檔一列，鍵盤「下一個」依序跳代號→股數，股數按「下一個」跳出成本的小算盤
+ * （草圖 ci-out/quick_cost_keypad.png、quick_cost_next.png A），小算盤按「完成」關掉、「下一檔」跳到下一檔的代號（最後一檔就多一列），
  * 市場依代號自動判斷（點標籤可換），只記持股，不動任何帳戶餘額（見 withQuickHoldings）。
  */
 @Composable
@@ -95,11 +100,23 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
         rows.add(r)
         focusKey = r.key
     }
+    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(focusKey) {
         val k = focusKey ?: return@LaunchedEffect
-        // 新的一列還沒排好版時 requestFocus 會丟例外，忽略就好
-        try { rows.firstOrNull { it.key == k }?.codeFocus?.requestFocus() } catch (_: IllegalStateException) {}
+        // 新的一列還沒排好版時 requestFocus 會丟例外（之前就是這樣跳不過去）：等下一個畫面再試，最多試 10 次
+        for (t in 0 until 10) {
+            withFrameNanos { }
+            val ok = try { rows.firstOrNull { it.key == k }?.codeFocus?.requestFocus(); true } catch (_: IllegalStateException) { false }
+            if (ok) { keyboard?.show(); break }
+        }
         focusKey = null
+    }
+
+    /** 小算盤按「下一檔」：跳到下一檔的代號；已經是最後一檔就多一列（這一列還空著就不加） */
+    fun goNext(r: QRow) {
+        val i = rows.indexOf(r)
+        if (i < 0) return
+        if (i == rows.lastIndex) { if (!r.blank()) addRow() } else focusKey = rows[i + 1].key
     }
 
     fun marketOf(r: QRow) = r.market ?: Markets.guess(r.code)
@@ -171,8 +188,7 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
                         )
                     }
                 }
-                rows.forEachIndexed { i, r ->
-                    val isLast = i == rows.lastIndex
+                rows.forEach { r ->
                     val market = marketOf(r)
                     val cur = Markets.currencyOf(market)
                     Column(
@@ -194,19 +210,28 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
                                 isError = nv.on("qty${r.key}"), supportingText = nv.supporting("qty${r.key}"),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
                                 visualTransformation = ThousandsVisual,
-                                keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) }),
+                                // 股數按「下一個」：收起鍵盤，直接跳出成本的小算盤
+                                keyboardActions = KeyboardActions(onNext = { focus.clearFocus(); r.costOpen = true }),
                                 modifier = Modifier.weight(1f).needInView(nv, "qty${r.key}"),
                             )
-                            OutlinedTextField(
-                                r.cost, { r.cost = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
-                                label = { Text(if (byTotal) "總成本" else "每股均價") }, singleLine = true,
-                                isError = nv.on("cost${r.key}"), supportingText = nv.supporting("cost${r.key}"),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
-                                visualTransformation = ThousandsVisual,
-                                // 最後一列填好成本再按「下一個」：自動多一列、游標跳到它的代號
-                                keyboardActions = KeyboardActions(onNext = { if (isLast && !r.blank()) addRow() else focus.moveFocus(FocusDirection.Next) }),
-                                modifier = Modifier.weight(1f).needInView(nv, "cost${r.key}"),
-                            )
+                            // 成本：小算盤（每股均價最多 4 位小數；總成本台幣整數、外幣照幣別的小數位數）
+                            val costLabel = if (byTotal) "總成本" else "每股均價"
+                            Column(Modifier.weight(1f).padding(top = 2.dp).needInView(nv, "cost${r.key}")) {
+                                Text(
+                                    costLabel, style = MaterialTheme.typography.labelSmall,
+                                    color = if (nv.on("cost${r.key}")) MaterialTheme.colorScheme.error else cute.sub,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+                                )
+                                AmountField(
+                                    r.cost, { r.cost = it }, "0", "${r.code.trim().ifEmpty { "這檔" }} 的$costLabel", Modifier.fillMaxWidth(),
+                                    prefix = if (cur.isEmpty()) tw.moneybook.app.Money.twd else Currencies.of(cur).symbol,
+                                    dec = if (!byTotal) 4 else if (cur.isEmpty()) 0 else Currencies.of(cur).decimals,
+                                    error = nv.on("cost${r.key}"), maxDigits = if (byTotal) 9 else 6,
+                                    nextLabel = "下一檔", onNext = { goNext(r) },
+                                    open = r.costOpen, onOpenChange = { r.costOpen = it },
+                                )
+                                nv.Message("cost${r.key}")
+                            }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             // 市場標籤：依代號自動判斷，點一下換下一個市場
