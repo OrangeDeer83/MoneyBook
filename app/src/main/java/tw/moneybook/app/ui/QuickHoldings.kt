@@ -38,6 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.focusRequester
@@ -202,7 +207,7 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
                                 isError = nv.on("code${r.key}"), supportingText = nv.supporting("code${r.key}"),
                                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Next),
                                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) }),
-                                modifier = Modifier.weight(1.1f).focusRequester(r.codeFocus).needInView(nv, "code${r.key}"),
+                                modifier = Modifier.weight(1.1f).focusRequester(r.codeFocus).onEnter { focus.moveFocus(FocusDirection.Next) }.needInView(nv, "code${r.key}"),
                             )
                             OutlinedTextField(
                                 r.qty, { r.qty = it.filter { c -> c.isDigit() || c == '.' }.take(12) },
@@ -212,7 +217,7 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
                                 visualTransformation = ThousandsVisual,
                                 // 股數按「下一個」：收起鍵盤，直接跳出成本的小算盤
                                 keyboardActions = KeyboardActions(onNext = { focus.clearFocus(); r.costOpen = true }),
-                                modifier = Modifier.weight(1f).needInView(nv, "qty${r.key}"),
+                                modifier = Modifier.weight(1f).onEnter { focus.clearFocus(); r.costOpen = true }.needInView(nv, "qty${r.key}"),
                             )
                             // 成本：小算盤（每股均價最多 4 位小數；總成本台幣整數、外幣照幣別的小數位數）
                             val costLabel = if (byTotal) "總成本" else "每股均價"
@@ -295,4 +300,11 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
     if (datePick) {
         CuteDatePickerDialog(initial = day, onPick = { day = it; datePick = false }, onDismiss = { datePick = false })
     }
+}
+
+/** 實體鍵盤（外接鍵盤、模擬器）按 Enter 跟手機鍵盤的「下一個」一樣 */
+private fun Modifier.onEnter(action: () -> Unit): Modifier = onPreviewKeyEvent { e ->
+    if (e.key != Key.Enter && e.key != Key.NumPadEnter) return@onPreviewKeyEvent false
+    if (e.type == KeyEventType.KeyUp) action()
+    true
 }

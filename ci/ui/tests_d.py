@@ -2656,6 +2656,11 @@ def t_quick_holdings_tw():
     ns = d.shot("加入之後")
     d.check("持股列：2330 與 0050 的股數與均價", any("1000 股・均價 580.00" in n.text for n in ns) and any("2000 股・均價 152.30" in n.text for n in ns), [n.text for n in ns if "股" in n.text])
     d.check("持股市值（用成本價）$884,600", d.has(ns, "$884,600", True), [n.text for n in ns if "$" in n.text][:12])
+    # 「已加入 2 檔持股」的提示會蓋住第二筆買賣記錄：等它消失、往下捲一點再看
+    d.gone("已加入 2 檔持股", timeout=8)
+    d.swipe(540, 1600, 540, 1100, 500)
+    d.time.sleep(1)
+    ns = d.nodes()
     d.check("沒有買賣記錄的連動轉帳：買賣記錄兩筆買進", sum(1 for n in ns if n.text.startswith("1000 股 @") or n.text.startswith("2000 股 @")) == 2, [n.text for n in ns if "@" in n.text])
     acc_tab()
     ns = d.shot("帳戶分頁")
