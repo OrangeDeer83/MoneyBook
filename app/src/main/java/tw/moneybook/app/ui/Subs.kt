@@ -131,7 +131,7 @@ fun SubsScreen(vm: MoneyViewModel, onOpen: (Long?) -> Unit, onBack: () -> Unit) 
 }
 
 /** 通知設定的時間文字：早上 9:00、下午 1:30、晚上 9:30 */
-private fun noticeTimeText(m: Int): String {
+internal fun noticeTimeText(m: Int): String {
     val h = m / 60
     val mm = (m % 60).toString().padStart(2, '0')
     return when {

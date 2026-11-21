@@ -59,6 +59,8 @@ import tw.moneybook.app.isOutOfBudget
 import tw.moneybook.app.refundLabel
 import tw.moneybook.app.budgetSpent
 import tw.moneybook.app.outOfBudgetSpent
+import tw.moneybook.app.preorderReserved
+import tw.moneybook.app.preordersDue
 import tw.moneybook.app.AppData
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.flowFor
@@ -626,6 +628,8 @@ fun HomeScreen(
     onDrill: () -> Unit = {},
     /** 刷卡待確認按「改一下」 */
     onEditPend: (Long) -> Unit = {},
+    /** 「該買了嗎」卡片：po-buy:<id> 買了、po-later:<id> 延後 */
+    onPreorder: (String) -> Unit = {},
 ) {
     val d = vm.data
     val cute = LocalCute.current
@@ -652,8 +656,10 @@ fun HomeScreen(
         val inPend = d.subsShownInPend(pends)
         d.subsDue(LocalDate.now().toEpochDay()).filter { (s, day) -> (s.id to day) !in inPend }
     }
-    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、刷卡待確認（有才有）、吉祥物（可以關）、預算、本月摘要
-    val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0) + (if (hasPend) 1 else 0)
+    // 預購到了預計那天還沒回答的（見 Preorder.kt）
+    val preDue = remember(d) { d.preordersDue(LocalDate.now().toEpochDay()) }
+    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、該買了嗎（有才有）、刷卡待確認（有才有）、吉祥物（可以關）、預算、本月摘要
+    val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0) + (if (preDue.isNotEmpty()) 1 else 0) + (if (hasPend) 1 else 0)
     // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排
     val settleIds = d.settles.map { it.id }.toSet()
     val homeRecvs = reimbRecvsOf(d.bookTxns, settleIds).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.pay.day)) == month }
@@ -693,6 +699,9 @@ fun HomeScreen(
         if (subsDue.isNotEmpty()) {
             item(key = "subsDue") { SubDueCard(vm, subsDue) }
         }
+        if (preDue.isNotEmpty()) {
+            item(key = "preDue") { PreorderDueCard(vm, preDue, onPreorder) }
+        }
         if (hasPend) {
             item(key = "cardPend") { CardPendCard(vm, pends, onEditPend) }
         }
@@ -720,10 +729,12 @@ fun HomeScreen(
         val budget = book.budgetFor(month)
         item {
             if (budget > 0) {
-                // 預算只算「算預算」的支出；預算外的另外寫一行
+                // 預算只算「算預算」的支出；預算外的另外寫一行。預購預留的錢先扣掉（見 Preorder.kt），條上淡色那段
                 val inBudget = d.budgetSpent(list)
+                val reserved = d.preorderReserved(month)
+                val used = inBudget + reserved
                 val outSpent = expense - inBudget
-                val frac = inBudget.toFloat() / budget.toFloat()
+                val frac = used.toFloat() / budget.toFloat()
                 val color = budgetColor(frac)
                 val level = when {
                     frac > 1f -> 2
@@ -775,15 +786,21 @@ fun HomeScreen(
                         )
                     }
                     Spacer(Modifier.height(6.dp))
-                    RatioBar(frac, color, thick = level > 0)
+                    RatioBar(inBudget.toFloat() / budget.toFloat(), color, thick = level > 0, reserved = reserved.toFloat() / budget.toFloat())
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        if (frac > 1f) "超出 ${formatMoney(inBudget - budget)}（預算 ${formatMoney(budget)}）"
-                        else "已花 ${formatMoney(inBudget)}・還剩 ${formatMoney(budget - inBudget)}（預算 ${formatMoney(budget)}）",
+                        if (frac > 1f) "超出 ${formatMoney(used - budget)}（預算 ${formatMoney(budget)}）"
+                        else "已花 ${formatMoney(inBudget)}・還剩 ${formatMoney(budget - used)}（預算 ${formatMoney(budget)}）",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (level == 2) cute.expense else cute.sub,
                         fontWeight = if (level == 2) FontWeight.SemiBold else FontWeight.Normal,
                     )
+                    if (reserved > 0) {
+                        Text(
+                            "其中預留給預購 ${formatMoney(reserved)}（還沒買）",
+                            style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
                     if (outSpent > 0) {
                         Text(
                             "另有預算外 ${formatMoney(outSpent)}（不算在預算裡）",

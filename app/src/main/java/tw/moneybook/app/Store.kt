@@ -148,6 +148,7 @@ object Codec {
                 )
             }
         })
+        if (d.preorders.isNotEmpty()) root.put("preorders", PreorderCodec.toJson(d.preorders))
         root.put("rates", JSONArray().apply {
             d.rates.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
         })
@@ -164,7 +165,7 @@ object Codec {
                 .put("cardLayouts", JSONObject().apply { p.cardLayouts.forEach { (k, v) -> put(k, JSONArray(v)) } })
                 .put("trendCats", JSONArray(p.trendCats))
                 .put("subNotify", p.subNotify).put("subNotifyTime", p.subNotifyTime)
-                .put("subNotifyRepeat", p.subNotifyRepeat).put("subNotifyAhead", p.subNotifyAhead)
+                .put("subNotifyRepeat", p.subNotifyRepeat).put("subNotifyAhead", p.subNotifyAhead).put("preorderNotify", p.preorderNotify)
                 .put("cardNotify", p.cardNotify).put("shopOpen", p.shopOpen)
         )
         return root.toString()
@@ -321,6 +322,7 @@ object Codec {
             subNotifyTime = po.optInt("subNotifyTime", 9 * 60).coerceIn(0, 24 * 60 - 1),
             subNotifyRepeat = po.optInt("subNotifyRepeat", 2),
             subNotifyAhead = po.optInt("subNotifyAhead", 0),
+            preorderNotify = po.optBoolean("preorderNotify", true),
             cardNotify = po.optBoolean("cardNotify", true),
             shopOpen = po.optBoolean("shopOpen", true),
         )
@@ -350,8 +352,9 @@ object Codec {
             )
         }
         val subs = SubCodec.fromJson(root.optJSONArray("subs"), books.first().id)
+        val preorders = PreorderCodec.fromJson(root.optJSONArray("preorders"), books.first().id)
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
-            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id } + waives.map { it.id } + subs.map { it.id }).maxOrNull() ?: 0L
+            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id } + waives.map { it.id } + subs.map { it.id } + preorders.map { it.id }).maxOrNull() ?: 0L
         return AppData(
             books = books,
             accounts = accounts,
@@ -380,6 +383,7 @@ object Codec {
             settles = settles,
             waives = waives,
             subs = subs,
+            preorders = preorders,
         )
     }
 

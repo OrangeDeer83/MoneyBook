@@ -96,6 +96,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tw.moneybook.app.categoryOutOfBudget
+import tw.moneybook.app.preorderName
 import tw.moneybook.app.AppData
 import tw.moneybook.app.Calc
 import tw.moneybook.app.FxMode
@@ -162,9 +163,15 @@ fun EditScreen(
     onMakeSub: (Long) -> Unit = {},
     /** 從刷卡待確認按「改一下」：內容照那一筆帶好，存好後那筆算記好了 */
     pendId: Long? = null,
+    /** 預購（見 Preorder.kt）：new＝新增預購、edit:<id>＝修改預購、buy:<id>＝買了（照那筆帶好，存好那筆算買了） */
+    preorder: String? = null,
     onClose: () -> Unit,
 ) {
     val d = vm.data
+    val todayEp = LocalDate.now().toEpochDay()
+    val poMode = preorder?.substringBefore(':')
+    val po = remember(preorder) { preorder?.substringAfter(':', "")?.toLongOrNull()?.let { id -> d.preorders.firstOrNull { it.id == id } } }
+    val poBuy = poMode == "buy" && po != null
     val cute = LocalCute.current
     val context = LocalContext.current
     val orig = remember(editId) { editId?.let { id -> d.txns.firstOrNull { it.id == id } } }
@@ -200,13 +207,13 @@ fun EditScreen(
                     if (pendFxs) d.rateOf(pend.cur)?.let { tw.moneybook.app.fxToTwd(pend.amount, tw.moneybook.app.Currencies.of(pend.cur).decimals, it).toString() } ?: ""
                     else fxExpr(pend.amount, tw.moneybook.app.Currencies.of(pend.cur).decimals)
                 pend != null -> pend.amount.toString()
-                else -> orig?.amount?.toString() ?: tpl?.amount?.takeIf { it > 0 }?.toString() ?: presetAmount?.takeIf { it > 0 }?.toString() ?: ""
+                else -> orig?.amount?.toString() ?: po?.amount?.takeIf { it > 0 }?.toString() ?: tpl?.amount?.takeIf { it > 0 }?.toString() ?: presetAmount?.takeIf { it > 0 }?.toString() ?: ""
             }
         )
     }
     var catId by rememberSaveable {
         mutableStateOf(
-            orig?.categoryId ?: tpl?.categoryId ?: when {
+            orig?.categoryId ?: po?.categoryId?.takeIf { d.catMap[it] != null } ?: tpl?.categoryId ?: when {
                 // 退款：「退款」分類（按「改一下」時已經建好）
                 pend?.kind == tw.moneybook.app.PendKind.REFUND ->
                     (d.categories.firstOrNull { it.kind == TxType.INCOME && it.name == tw.moneybook.app.REFUND_CAT } ?: d.categories.firstOrNull { it.kind == TxType.INCOME && it.noIncome })?.id
@@ -218,6 +225,7 @@ fun EditScreen(
     var accId by rememberSaveable {
         mutableStateOf(
             orig?.accountId
+                ?: po?.accountId?.takeIf { id -> accs.any { it.id == id } }
                 ?: tpl?.accountId
                 ?: pendCard
                 ?: presetFrom
@@ -233,7 +241,12 @@ fun EditScreen(
                 ?: accs.getOrNull(1)?.id
         )
     }
-    var day by rememberSaveable { mutableLongStateOf(orig?.day ?: pend?.day ?: presetDay ?: LocalDate.now().toEpochDay()) }
+    // 預購：修改照那筆的日期、買了是今天；新增預購預設一週後
+    var day by rememberSaveable {
+        mutableLongStateOf(
+            orig?.day ?: pend?.day ?: po?.let { if (poBuy) todayEp else it.day } ?: presetDay ?: (if (poMode == "new") todayEp + 7 else null) ?: todayEp
+        )
+    }
     // 時間：新增預設現在；編輯舊記錄沒有時間就是「未設定」（-1）
     var timeMin by rememberSaveable {
         mutableIntStateOf(
@@ -247,8 +260,8 @@ fun EditScreen(
     }
     // 刷卡通知帶入：店家照你的叫法（沒有就銀行寫的），同一家店、金額一樣的照上次帶備註
     val pendShop = remember { pend?.let { d.pendShop(it, it.kind == tw.moneybook.app.PendKind.SPEND && !it.isInst) } }
-    var note by rememberSaveable { mutableStateOf(orig?.note ?: tpl?.note ?: pendShop?.note ?: "") }
-    var shop by rememberSaveable { mutableStateOf(orig?.shop ?: tpl?.shop ?: pendShop?.shop ?: "") }
+    var note by rememberSaveable { mutableStateOf(orig?.note ?: po?.note ?: tpl?.note ?: pendShop?.note ?: "") }
+    var shop by rememberSaveable { mutableStateOf(orig?.shop ?: po?.shop ?: tpl?.shop ?: pendShop?.shop ?: "") }
     // 銀行寫的：看得到、不能改，按「商店對錯了」拿掉（存檔前可以復原）
     var bankShop by rememberSaveable { mutableStateOf(orig?.bankShop ?: pendShop?.bankShop ?: "") }
     // 這筆是哪則刷卡通知來的（待確認「改一下」、或刷卡通知記的那一筆）：右上角信用卡圖示點開看
@@ -257,7 +270,7 @@ fun EditScreen(
     val bank0 = orig?.bankShop ?: pendShop?.bankShop ?: ""
     val bankRemoved = bankShop.isEmpty() && bank0.isNotEmpty()
     var shopFocused by remember { mutableStateOf(false) }
-    var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
+    var tagsText by rememberSaveable { mutableStateOf((orig?.tags ?: po?.tags ?: tpl?.tags ?: pend?.let { listOf(CARD_NOTI_TAG) })?.joinToString("\n") ?: "") }
     // 刷卡通知寫「分 N 期」的：帶好期數
     var inst by rememberSaveable { mutableIntStateOf(if (pend != null && pend.isInst) pend.inst else 1) }
     var fee by rememberSaveable { mutableLongStateOf(orig?.fee ?: 0L) }
@@ -399,6 +412,10 @@ fun EditScreen(
     val estChip = type == TxType.EXPENSE && !tplMode && (orig?.est == true || pend?.kind == tw.moneybook.app.PendKind.PREAUTH)
     val refundOn = type == TxType.INCOME && !tplMode && d.catNoIncome(catId)
     val catOut = d.categoryOutOfBudget(catId)
+    // 預購（草圖 ci-out/preorder_plan.png ①）：支出、日期選以後才有「預購」；開著就存成預購（不動帳戶、從那個月的預算先扣）
+    var pre by rememberSaveable { mutableStateOf(poMode == "new" || poMode == "edit") }
+    val preChip = type == TxType.EXPENSE && !tplMode && orig == null && pend == null && !poBuy && (day > todayEp || poMode == "edit" || poMode == "new")
+    val preEff = pre && preChip
     val outEff = when (budgetOut) { 1 -> true; 2 -> false; else -> catOut }
     // 外幣消費：一般（非外幣、非投資）帳戶的支出才有，分期不支援
     val fxsAcc = accId?.let { d.accMap[it] }
@@ -436,7 +453,15 @@ fun EditScreen(
             else -> null
         },
     )
-    val nv = NeedView(need, tries.count)
+    // 預購：日期要是明天以後、只能台幣（外幣帳戶的消費等真的買了再記）
+    val preNeed = when {
+        !preEff -> null
+        day <= todayEp -> Need("pre", "預購要選明天以後的日期")
+        plan.mode != FxMode.NONE -> Need("pre", "預購只能記台幣，外幣的等真的買了再記")
+        else -> null
+    }
+    val needAll = need ?: preNeed
+    val nv = NeedView(needAll, tries.count)
 
     // 先填欠款、後填金額：只有一個人、金額是 0 時就是整筆
     val debtEff = if (debtList.size == 1 && debtList[0].amount <= 0L && debtList[0].pays.isEmpty()) listOf(debtList[0].copy(amount = actual)) else debtList
@@ -473,9 +498,10 @@ fun EditScreen(
     )
 
     val initialDraft = remember { draft() }
+    val initialPre = remember { pre }
     val initialName = remember { tplName }
     val initialIcon = remember { tplIcon }
-    val dirty = draft() != initialDraft || (tplMode && (tplName != initialName || tplIcon != initialIcon))
+    val dirty = draft() != initialDraft || pre != initialPre || (tplMode && (tplName != initialName || tplIcon != initialIcon))
     // 前往紀錄時算不算有沒存的修改：欠款鎖住時金額本來就存不進去，改了也不算
     // （一人・全額的報銷金額跟著金額走，也不算；存檔時會照原本的金額封頂）
     fun lockedNorm(x: TxnDraft) = if (debtLocked && type == TxType.EXPENSE) {
@@ -507,9 +533,23 @@ fun EditScreen(
     fun doSave(relearn: Boolean? = null): Boolean {
         // 快速連點時，換頁動畫還沒結束、畫面還能點，不能重複儲存
         if (saved) return true
-        if (need != null) {
+        if (needAll != null) {
             tries.count++
             return false
+        }
+        // 預購：存成預購清單的一筆（修改就是改那一筆）
+        if (preEff) {
+            saved = true
+            val dr = draft()
+            vm.savePreorder(
+                if (poMode == "edit") po?.id else null,
+                tw.moneybook.app.Preorder(
+                    id = 0L, bookId = 0L, amount = dr.amount, categoryId = dr.categoryId, accountId = dr.accountId, day = dr.day,
+                    note = dr.note, shop = dr.shop, tags = dr.tags, created = todayEp,
+                ),
+            )
+            onClose()
+            return true
         }
         if (tplMode) {
             if (tplName.isBlank()) {
@@ -531,6 +571,8 @@ fun EditScreen(
             val dr = draft()
             vm.saveTxn(editId, dr)
             if (pendId != null) vm.savedTxnId?.let { vm.pendSaved(pendId, it) }
+            // 買了（或修改預購時把「預購」關掉）：記成一般的一筆，那筆預購算買了
+            if (po != null && (poBuy || poMode == "edit")) vm.savedTxnId?.let { vm.preorderBought(po.id, it) }
             if (relearn == true) relearnSrc?.let { s -> dr.accountId?.let { vm.relearnCard(s, it) } }
         }
         onClose()
@@ -804,6 +846,20 @@ fun EditScreen(
             )
         }
 
+        // 預購：開著時寫清楚會怎麼算；買了：寫原本的預估
+        if (preEff) {
+            val dt = LocalDate.ofEpochDay(day)
+            Text(
+                "預購：先從 ${dt.monthValue} 月的預算扣掉，不動帳戶、不出現在明細；${dt.monthValue}/${dt.dayOfMonth} 會問你買了沒",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+            )
+        } else if (poBuy && po != null) {
+            Text(
+                "買了預購「${d.preorderName(po)}」（預估 ${formatMoney(po.amount)}）：金額照實際的改，存好後預留的拿掉",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+            )
+        }
+        nv.Message("pre")
         // 附加資訊
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
@@ -815,6 +871,8 @@ fun EditScreen(
                 false, { dialog = "tplicon" }, icon = tplIcon.ifEmpty { cat?.emoji ?: "vec:star" },
             )
             if (!tplMode) CuteChip(dayLabel(day), false, { dialog = "date" }, icon = "vec:calendar")
+            // 預購：日期選以後才出現，放在日期旁邊
+            if (preChip) CuteChip("預購", preEff, { pre = !pre }, icon = "vec:clock")
             if (!tplMode) CuteChip(if (timeMin >= 0) tw.moneybook.app.formatTime(timeMin) else "未設定時間", false, { dialog = "time" }, icon = "vec:clock")
             if (type != TxType.TRANSFER && accs.isNotEmpty()) {
                 if (debtAll) {

@@ -7302,3 +7302,76 @@ def t_quick_holdings_next():
     ns = d.shot("加入之後")
     d.check("空的那列不算：持股 1000 股・均價 580.00、2000 股・均價 152.30",
             any("1000 股・均價 580.00" in n.text for n in ns) and any("2000 股・均價 152.30" in n.text for n in ns), [n.text for n in ns if "股" in n.text])
+
+
+def preorder_seed():
+    """預算 $10,000、今天花了 $1,000；預購 headphone $2,980 預計今天買（還沒回答）"""
+    import json as _json
+    s = S.Seed(f.today(), budget=10000)
+    s.expense(0, 1000, S.C_FOOD, note="lunch")
+    root = _json.loads(s.json())
+    t = f.today().toordinal() - S.datetime.date(1970, 1, 1).toordinal()
+    root["preorders"] = [dict(id=9001, bookId=S.BOOK, amount=2980, categoryId=S.C_SHOP, accountId=S.CARD, day=t, note="headphone",
+                              shop="", tags=[], created=t - 10, status=0, txnId=0, doneDay=0)]
+    root["nextId"] = 9100
+    return _json.dumps(root, ensure_ascii=False)
+
+
+@case(D, "預購：首頁預算先扣預留、「該買了嗎」按買了照實際記；預購清單新增一筆（記一筆有預購按鈕）、按沒買放回預算", visual=True)
+def t_preorder():
+    d.fresh(preorder_seed())
+    d.time.sleep(2)
+    ns = d.shot("首頁：該買了嗎、預算扣預留")
+    d.check("首頁有「該買了嗎？」：headphone 預計今天、預估 $2,980",
+            d.has(ns, "該買了嗎？", True) and d.has(ns, "headphone", True) and d.has(ns, "預估 $2,980", True), [n.text for n in ns if n.text][:30])
+    d.check("預算：已花 $1,000・還剩 $6,020，其中預留給預購 $2,980",
+            d.has(ns, "已花 $1,000・還剩 $6,020（預算 $10,000）", True) and d.has(ns, "其中預留給預購 $2,980（還沒買）", True),
+            [n.text for n in ns if "預算" in n.text or "預留" in n.text])
+    d.tap(next(n for n in d.nodes() if n.desc == "買了 headphone"))
+    d.wait_text("備註（選填）", timeout=15)
+    d.time.sleep(1)
+    ns = d.shot("買了：記一筆帶好")
+    d.check("記一筆帶好 headphone、$2,980，寫「買了預購」",
+            any(n.text.startswith("買了預購「headphone」") for n in ns) and d.has(ns, "headphone", True) and d.has(ns, "2,980", False),
+            [n.text for n in ns if n.text][:30])
+    f.keypad("C")
+    f.keypad("2500")
+    f.save_edit()
+    d.time.sleep(1.5)
+    ns = d.shot("買好了")
+    d.check("該買了嗎不見了；預算照實際的：已花 $3,500・還剩 $6,500，沒有預留那行",
+            not d.has(ns, "該買了嗎？", True) and d.has(ns, "已花 $3,500・還剩 $6,500（預算 $10,000）", True) and not d.has(ns, "其中預留", False),
+            [n.text for n in ns if n.text][:30])
+    f.tab("我的")
+    d.time.sleep(1)
+    d.tap_text("預購清單", exact=True)
+    d.wait_text("已經預留", timeout=10)
+    d.tap_text("買了 1", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("買了分頁")
+    d.check("買了分頁：實際 $2,500（比預估少 $480）", any("實際 $2,500（比預估少 $480）" in n.text for n in ns), [n.text for n in ns if n.text][:30])
+    d.tap_text("＋ 新增預購", exact=True)
+    d.wait_text("備註（選填）", timeout=15)
+    d.time.sleep(1)
+    ns = d.shot("新增預購：預購已經開著")
+    week = f.today() + S.datetime.timedelta(days=7)
+    d.check(f"預購按鈕亮著、寫先從 {week.month} 月的預算扣掉、{week.month}/{week.day} 會問",
+            d.has(ns, "預購", True) and any(n.text.startswith(f"預購：先從 {week.month} 月的預算扣掉") and f"{week.month}/{week.day} 會問你買了沒" in n.text for n in ns),
+            [n.text for n in ns if n.text][:30])
+    d.tap_text("備註（選填）", exact=True)
+    d.type_text("switch")
+    d.hide_ime()
+    f.keypad("5000")
+    c = [n for n in d.nodes() if n.text == "完成"]
+    d.tap(max(c, key=lambda n: n.cy))
+    d.wait_text("已經預留", timeout=15)
+    d.time.sleep(0.5)
+    ns = d.shot("加入預購清單")
+    d.check("等著買：switch $5,000、還有 7 天；已經預留 $5,000",
+            d.has(ns, "switch", True) and any(n.text.endswith("還有 7 天") for n in ns) and d.has(ns, "$5,000", True), [n.text for n in ns if n.text][:30])
+    d.tap_text("switch", exact=True)
+    d.wait_text("延後", timeout=8)
+    d.tap_text("沒買", exact=True, lowest=True)
+    d.time.sleep(1)
+    ns = d.shot("沒買")
+    d.check("按沒買：提示預留的放回預算、沒買 1", d.has(ns, "沒買 1", True) and any("放回預算了" in n.text for n in ns), [n.text for n in ns if n.text][:30])

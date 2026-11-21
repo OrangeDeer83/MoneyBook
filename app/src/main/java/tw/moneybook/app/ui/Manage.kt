@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import tw.moneybook.app.Account
 import tw.moneybook.app.AccountType
 import tw.moneybook.app.debtOutstanding
+import tw.moneybook.app.bookPreorders
 import tw.moneybook.app.BadgePreset
 import tw.moneybook.app.BadgePresets
 import tw.moneybook.app.Book
@@ -150,6 +151,10 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
                     val n = d.bookSubs.size
                     if (n == 0) "每月固定的扣款，到期提醒你記" else "$n 個・每月 ${formatMoney(d.subsMonthly(java.time.LocalDate.now().toEpochDay()))}"
                 }) { open("subs") }
+                MenuRow("vec:clock", "預購清單", run {
+                    val w = d.bookPreorders.filter { it.waiting }
+                    if (w.isEmpty()) "以後要買的先記下來，預算先留起來" else "${w.size} 樣等著買・預留 ${formatMoney(w.sumOf { it.amount })}"
+                }) { open("preorders") }
                 MenuRow("vec:receipt", "刷卡通知", if (d.notiApps.isEmpty()) "讀銀行的刷卡通知，自動幫你記（先收集通知）" else "讀 ${d.notiApps.size} 個 App 的通知") { open("cardnoti") }
                 MenuRow(
                     "vec:target", "每月預算",

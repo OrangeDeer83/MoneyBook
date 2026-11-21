@@ -1,6 +1,7 @@
 package tw.moneybook.app.widget
 
 import tw.moneybook.app.budgetSpent
+import tw.moneybook.app.budgetUsed
 import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.graphics.Color
@@ -106,7 +107,7 @@ private fun monthInfo(d: AppData): MonthInfo {
     val m = YearMonth.now()
     val today = LocalDate.now()
     val list = d.bookTxns.inMonth(m)
-    return MonthInfo(list.expenseSum(), d.budgetSpent(list), d.currentBook.budgetFor(m), m.lengthOfMonth() - today.dayOfMonth + 1)
+    return MonthInfo(list.expenseSum(), d.budgetUsed(list, m), d.currentBook.budgetFor(m), m.lengthOfMonth() - today.dayOfMonth + 1)
 }
 
 /** 記帳後呼叫，讓桌面上的小工具跟著更新 */

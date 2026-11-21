@@ -293,6 +293,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 tw.moneybook.app.notify.SubNotifier.refreshShown(appContext, d)
             } catch (_: Exception) {
             }
+            // 預購的「買了嗎？」通知也一樣
+            try {
+                tw.moneybook.app.notify.PreorderNotifier.refreshShown(appContext, d)
+            } catch (_: Exception) {
+            }
             // 讓桌面上的小工具跟著更新
             viewModelScope.launch {
                 try {
@@ -658,6 +663,72 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 刪掉一次免除：那幾項恢復成沒結清；可以復原 */
+    // ───────── 預購清單（見 Preorder.kt）─────────
+
+    /** 通知按「延後」打開 App：預購清單那頁要先問延後到哪一天的那一筆 */
+    var preorderLater by mutableStateOf<Long?>(null)
+
+    private fun md(day: Long) = java.time.LocalDate.ofEpochDay(day).let { "${it.monthValue}/${it.dayOfMonth}" }
+
+    /** 新增或修改預購；新增的可以復原 */
+    fun savePreorder(id: Long?, p: Preorder) {
+        val (after, pid) = data.withPreorder(id, p)
+        commit(after)
+        if (id != null) {
+            toast("預購已儲存")
+            return
+        }
+        val name = after.preorderName(after.preorders.first { it.id == pid })
+        _messages.tryEmit(UiMsg("已加入預購清單：$name ${formatMoney(p.amount)}（${md(p.day)}）", "復原") { commit(data.withPreorderRemoved(pid)) })
+    }
+
+    private fun restorePreorder(before: Preorder) {
+        val n = data
+        commit(n.copy(preorders = if (n.preorders.any { it.id == before.id }) n.preorders.map { if (it.id == before.id) before else it } else n.preorders + before))
+    }
+
+    /** 買了：記成的那一筆是 txnId（記一筆存好後呼叫） */
+    fun preorderBought(id: Long, txnId: Long) {
+        val before = data.preorders.firstOrNull { it.id == id } ?: return
+        update { it.withPreorderBought(id, txnId, todayEpoch()) }
+        toast("${data.preorderName(before)} 買好了，預留的拿掉、照實際的算")
+    }
+
+    /** 沒買：預留的錢放回預算（可以復原） */
+    fun skipPreorder(id: Long) {
+        val before = data.preorders.firstOrNull { it.id == id } ?: return
+        update { it.withPreorderSkipped(id, todayEpoch()) }
+        _messages.tryEmit(UiMsg("沒買：${data.preorderName(before)} 預留的 ${formatMoney(before.amount)} 放回預算了", "復原") { restorePreorder(before) })
+    }
+
+    /** 延後到 day（可以復原） */
+    fun postponePreorder(id: Long, day: Long) {
+        val before = data.preorders.firstOrNull { it.id == id } ?: return
+        update { it.withPreorderDay(id, day) }
+        _messages.tryEmit(UiMsg("${data.preorderName(before)} 延後到 ${md(day)}", "復原") { restorePreorder(before) })
+    }
+
+    /** 沒買的放回等著買 */
+    fun unskipPreorder(id: Long) {
+        update { it.withPreorderWaiting(id) }
+        toast("放回等著買了")
+    }
+
+    /** 刪掉一筆預購（可以復原） */
+    fun deletePreorder(id: Long) {
+        val before = data.preorders.firstOrNull { it.id == id } ?: return
+        update { it.withPreorderRemoved(id) }
+        _messages.tryEmit(UiMsg("已刪除預購：${data.preorderName(before)}", "復原") { restorePreorder(before) })
+    }
+
+    fun setPreorderNotify(on: Boolean) {
+        update { it.copy(prefs = it.prefs.copy(preorderNotify = on)) }
+        try {
+            tw.moneybook.app.notify.SubNotifier.schedule(appContext, data.prefs)
+        } catch (_: Exception) {
+        }
+    }
+
     fun deleteWaive(id: Long) {
         val d = data
         val w = d.waives.firstOrNull { it.id == id } ?: return
@@ -1029,6 +1100,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 txns = d.txns.filter { it.bookId != id },
                 subs = d.subs.filter { it.bookId != id },
                 waives = d.waives.filter { it.bookId != id },
+                preorders = d.preorders.filter { it.bookId != id },
                 prefs = if (d.prefs.bookId == id) d.prefs.copy(bookId = books.first().id) else d.prefs,
             )
         }

@@ -712,11 +712,19 @@ internal fun formatMoneyShort(v: Long): String =
 
 /** 橫向比例條 */
 @Composable
-fun RatioBar(fraction: Float, color: Color, modifier: Modifier = Modifier, thick: Boolean = false) {
+fun RatioBar(
+    fraction: Float, color: Color, modifier: Modifier = Modifier, thick: Boolean = false,
+    /** 預購預留的部分：接在後面、同一個顏色淡一點（到 fraction＋reserved 為止） */
+    reserved: Float = 0f,
+) {
     val track = LocalCute.current.soft
     Canvas(modifier.fillMaxWidth().height(if (thick) 12.dp else 8.dp)) {
         val r = CornerRadius(size.height / 2f)
         drawRoundRect(track, cornerRadius = r)
+        if (reserved > 0f) {
+            val wr = size.width * (fraction + reserved).coerceIn(0f, 1f)
+            if (wr > 0f) drawRoundRect(color.copy(alpha = 0.4f), size = Size(wr.coerceAtLeast(size.height), size.height), cornerRadius = r)
+        }
         val w = size.width * fraction.coerceIn(0f, 1f)
         if (w > 0f) drawRoundRect(color, size = Size(w.coerceAtLeast(size.height), size.height), cornerRadius = r)
     }

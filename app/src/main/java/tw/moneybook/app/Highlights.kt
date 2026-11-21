@@ -92,7 +92,8 @@ fun AppData.highlights(p: HlPeriod): List<Highlight> {
 
     // 預算（只有月、有設預算）：只算「算預算」的支出，預算外的另外一句
     val budget = p.month?.let { currentBook.budgetFor(it) } ?: 0L
-    val bud = budgetSpent(scope)
+    // 預購預留的錢也算在預算裡（見 Preorder.kt）
+    val bud = budgetSpent(scope) + (p.month?.let { preorderReserved(it) } ?: 0L)
     if (budget > 0) {
         out.add(
             if (p.current) {

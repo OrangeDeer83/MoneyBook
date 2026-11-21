@@ -64,11 +64,11 @@ object SubNotifier {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** 排下一次檢查（開關關掉就取消）；App 打開、改設定、開機後都會重排 */
+    /** 排下一次檢查（訂閱、預購的通知都關掉就取消；預購的「買了嗎？」也用這個時間）；App 打開、改設定、開機後都會重排 */
     fun schedule(ctx: Context, p: Prefs) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
         val pi = checkIntent(ctx)
-        if (!p.subNotify) {
+        if (!p.subNotify && !p.preorderNotify) {
             am.cancel(pi)
             return
         }
@@ -91,7 +91,7 @@ object SubNotifier {
         if (isShown(ctx)) post(ctx, d, silent = true)
     }
 
-    private fun mascotIcon(ctx: Context, p: Prefs, worried: Boolean): Bitmap? {
+    internal fun mascotIcon(ctx: Context, p: Prefs, worried: Boolean): Bitmap? {
         if (p.mascot == "none") return null
         return try {
             val b = BitmapFactory.decodeResource(ctx.resources, mascotRes(p.mascot, if (worried) Mood.WORRIED else Mood.HAPPY)) ?: return null
@@ -158,6 +158,7 @@ class SubNotifyReceiver : BroadcastReceiver() {
             SubNotifier.ACTION_CHECK -> {
                 val d = SubNotifier.current(ctx)
                 SubNotifier.post(ctx, d, silent = false)
+                PreorderNotifier.post(ctx, d, silent = false)
                 SubNotifier.schedule(ctx, d.prefs)
             }
             SubNotifier.ACTION_RECORD, SubNotifier.ACTION_SKIP, SubNotifier.ACTION_ALL -> {
@@ -199,7 +200,10 @@ class SubNotifyReceiver : BroadcastReceiver() {
 class SubBootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val d = SubNotifier.current(ctx)
-        if (intent.action == SubNotifier.ACTION_CHECK) SubNotifier.post(ctx, d, silent = false)
+        if (intent.action == SubNotifier.ACTION_CHECK) {
+            SubNotifier.post(ctx, d, silent = false)
+            PreorderNotifier.post(ctx, d, silent = false)
+        }
         SubNotifier.schedule(ctx, d.prefs)
     }
 }

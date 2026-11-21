@@ -101,6 +101,10 @@
         <receiver
             android:name=".notify.SubNotifyReceiver"
             android:exported="false" />
+        <!-- 預購「買了嗎？」通知上的「沒買」（不對外） -->
+        <receiver
+            android:name=".notify.PreorderReceiver"
+            android:exported="false" />
         <!-- 刷卡待確認通知上的按鈕（不對外） -->
         <receiver
             android:name=".notify.CardPendReceiver"

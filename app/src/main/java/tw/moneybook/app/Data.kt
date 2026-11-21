@@ -302,6 +302,8 @@ data class Prefs(
     val subNotifyTime: Int = 9 * 60,
     val subNotifyRepeat: Int = 2,
     val subNotifyAhead: Int = 0,
+    /** 預購到了預計那天問「買了嗎？」（時間、再提醒天數跟訂閱的到期通知一樣） */
+    val preorderNotify: Boolean = true,
     /** 刷卡有待確認時，吉祥物發手機通知（預設開） */
     val cardNotify: Boolean = true,
     /** 記一筆的店家格打開（true）或收起來；記一筆、修改、常用記帳共用，重開 App 後保留 */
@@ -327,6 +329,8 @@ data class AppData(
     val waives: List<Waive> = emptyList(),
     /** 訂閱／固定扣款（見 Subs.kt），舊資料沒有這個欄位 */
     val subs: List<Sub> = emptyList(),
+    /** 預購清單（見 Preorder.kt），舊資料沒有這個欄位 */
+    val preorders: List<Preorder> = emptyList(),
     /** 外幣每天的歷史匯率（抓價時從 Yahoo 補抓的收盤匯率），投資成效的折線換台幣用；舊資料沒有這個欄位 */
     val rateHist: List<FxRate> = emptyList(),
     /** 刷卡通知要讀的 App 與對應的信用卡（見 CardNotiData.kt）；舊資料沒有這個欄位 */
