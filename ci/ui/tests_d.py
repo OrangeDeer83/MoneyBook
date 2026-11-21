@@ -7045,8 +7045,18 @@ def t_card_tpl_order():
             and d.has(ns, "最近 7 天用它讀了 0 則", False), pend_texts(ns))
     d.back()
     d.time.sleep(1)
+    # 回到刷卡通知總覽（沒有底部分頁），往下找那則
     try:
-        d.tap(to_noti(t1))
+        row = None
+        for _ in range(4):
+            ns = d.nodes()
+            row = d.first(ns, t1, True)
+            if row is not None:
+                break
+            d.scroll_down(1)
+        if row is None:
+            raise TimeoutError(f"收到的通知裡找不到「{t1}」")
+        d.tap(row)
         d.wait_text("教它讀這種通知", timeout=8)
     except TimeoutError as e:
         d.check("點那則打開教範本", False, str(e))
