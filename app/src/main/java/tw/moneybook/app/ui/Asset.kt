@@ -3,8 +3,6 @@ package tw.moneybook.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -74,6 +72,7 @@ fun AppData.assetSummary(today: LocalDate = LocalDate.now()): AssetSummary {
 }
 
 /** 總資產頁：最上面切換期間，下面是可以調整排版的卡片（現在的組成、總資產變化、變化的原因、投資佔資產的比例） */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Unit) {
     BackHandler { onBack() }
@@ -103,7 +102,8 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item {
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // 自訂那顆寫期間時比較長，放不下就換到下一行
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             CuteChip("近 6 個月", vm.assetRange == 6, { vm.assetRange = 6 })
                             CuteChip("近 12 個月", vm.assetRange == 12, { vm.assetRange = 12 })
                             CuteChip("全部", vm.assetRange == 0, { vm.assetRange = 0 })

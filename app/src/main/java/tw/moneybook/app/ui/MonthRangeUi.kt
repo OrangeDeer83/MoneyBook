@@ -99,12 +99,13 @@ fun MonthRangeDialog(initFrom: YearMonth, initTo: YearMonth, onPick: (YearMonth,
                             .then(if (end) Modifier.needFrame(nv, "end", shape) else Modifier)
                             .clickable { p = p.copy(editEnd = end); year = m.year }
                             .semantics { selected = on }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                     ) {
                         Text(if (end) "結束" else "開始", style = MaterialTheme.typography.labelMedium, color = cute.sub)
-                        Text("${m.year} 年 ${m.monthValue} 月", style = MaterialTheme.typography.titleMedium)
+                        // 窄螢幕也要一行寫完（「2026 年 11 月」）
+                        Text("${m.year} 年 ${m.monthValue} 月", style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false)
                     }
-                    if (!end) Text("～", color = cute.sub, modifier = Modifier.padding(horizontal = 6.dp))
+                    if (!end) Text("～", color = cute.sub, modifier = Modifier.padding(horizontal = 4.dp))
                 }
             }
             nv.Message("end")

@@ -4774,10 +4774,12 @@ def t_trend_cat_card():
     names = ("餐飲", "交通", "購物", "醫療", "早餐")
 
     def to_card():
-        for _ in range(6):
-            if d.has(d.nodes(), "切換分類", True):
+        # 「切換分類」要捲到畫面中間以上：太下面時卡片的分類標籤會被底部分頁、記一筆按鈕蓋住
+        for _ in range(8):
+            b = d.first(d.nodes(), "切換分類", True)
+            if b and b.cy < d._screen()[1] * 0.6:
                 break
-            d.swipe(540, 1700, 540, 1000, 500)
+            d.swipe(540, 1700, 540, 1100, 500)
         d.time.sleep(1)
 
     def card_chips():
@@ -7184,8 +7186,11 @@ def t_stats_custom_range():
     d.check(f"視窗有開始、結束、先點開始的月份、共 {n_all} 個月",
             d.has(ns, "開始", True) and d.has(ns, "結束", True) and d.has(ns, "先點開始的月份", True) and d.has(ns, f"共 {n_all} 個月", True),
             [n.text for n in ns if n.text][:30])
-    d.check("這個月以後的月份點不了", not any(n.enabled for n in ns if n.desc == f"{now[0]} 年 {now[1] + 1} 月") if now[1] < 12 else True,
-            [n for n in ns if n.desc.startswith(f"{now[0]} 年")][-3:])
+    if now[1] < 12 and fm[0] == now[0]:
+        d.tap_text(f"{now[0]} 年 {now[1] + 1} 月", exact=True, lowest=True)
+        ns = d.nodes()
+        d.check("這個月以後的月份點不了（點了開始、共幾個月都沒變）",
+                d.has(ns, "先點開始的月份", True) and d.has(ns, f"共 {n_all} 個月", True), [n.text for n in ns if n.text][:30])
     # 開始、結束都點同一個月：只有 1 個月，按好要提示
     d.tap_text(f"{fm[0]} 年 {fm[1]} 月", exact=True, lowest=True)
     ns = d.nodes()

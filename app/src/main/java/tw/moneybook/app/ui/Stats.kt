@@ -182,6 +182,7 @@ fun RangeBar(vm: MoneyViewModel) {
     if (pick == 2) CuteDatePickerDialog(vm.rangeEnd, { vm.setRange(vm.rangeStart, it); pick = 0 }, { pick = 0 }, "結束日期")
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, onLayout: (String) -> Unit, onAsset: () -> Unit, onDay: (Long) -> Unit) {
     val d = vm.data
@@ -229,7 +230,8 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
 
                 if (mode == 3) {
                     item {
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // 自訂那顆寫期間時比較長，放不下就換到下一行
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             CuteChip("近 6 個月", trendN == 6, { trendN = 6 })
                             CuteChip("近 12 個月", trendN == 12, { trendN = 12 })
                             CuteChip("全部", trendN == 0, { trendN = 0 })
