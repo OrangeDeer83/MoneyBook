@@ -1424,7 +1424,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
      * 記下一筆刷卡（記在目前的帳本；卡、分類由畫面決定）。外幣記在台幣卡：twd 是台幣金額，沒給就用目前匯率，
      * 沒有匯率回傳 false（畫面要問）。可以復原：刪掉那一筆、回到待確認。
      */
-    fun recordPend(id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true): Boolean {
+    fun recordPend(id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true, est: Boolean = false): Boolean {
         val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return false
         if (p.kind == PendKind.REFUND) return recordRefund(id, cardId, twd)
         val d = data
@@ -1432,14 +1432,15 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         val list = if (p.isInst) d.pendInstTxns(p, d.nextId, d.currentBook.id, cardId, catId)
         else listOf(
             (d.pendTxn(p, d.nextId, d.currentBook.id, cardId, catId, twd, pending) ?: run { toast("還沒有 ${p.cur} 的匯率，請先設定匯率"); return false })
-                .let { if (p.kind == PendKind.PREAUTH) it.copy(est = true) else it }
+                // 試刷選「記」也記成預估（跟預先授權一樣，請款時再改金額）
+                .let { if (p.kind == PendKind.PREAUTH || est) it.copy(est = true) else it }
         )
         val ids = list.map { it.id }.toSet()
         commit(d.copy(txns = sortTxns(d.txns + list), nextId = d.nextId + list.size))
         setPend(id) { it.copy(state = PendState.DONE, txnId = list.first().id, cardId = cardId) }
         val msg = when {
             p.isInst -> "已記 ${p.merchant.ifEmpty { "刷卡" }} 分 ${list.size} 期，每期約 ${formatMoney(p.amount / list.size)}"
-            p.kind == PendKind.PREAUTH -> "已記成預估 ${pendTitle(p)}，請款時再改"
+            p.kind == PendKind.PREAUTH || est -> "已記成預估 ${pendTitle(p)}，請款時再改"
             else -> "已記 ${pendTitle(p)}"
         }
         _messages.tryEmit(UiMsg(msg, "復原") {
@@ -1597,11 +1598,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         setPend(id) { if (it.state == PendState.WAIT) it.copy(state = PendState.DONE, txnId = txnId) else it }
     }
 
-    /** 「不是消費」：拿掉，可以復原 */
+    /** 「不是消費」：拿掉，可以復原（試刷選「不記」也是這個，提示寫試刷） */
     fun notSpendPend(id: Long) {
         val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id } ?: return
         setPend(id) { it.copy(state = PendState.NOT) }
-        _messages.tryEmit(UiMsg("已拿掉 ${pendTitle(p)}", "復原") { setPend(id) { it.copy(state = PendState.WAIT) } })
+        _messages.tryEmit(UiMsg("已拿掉 ${pendTitle(p)}" + if (p.maybeTest) "（試刷，不記）" else "", "復原") { setPend(id) { it.copy(state = PendState.WAIT) } })
     }
 
     /** 「已經記過了」：認走 txnId 那一筆，不記新的；那筆補上銀行寫的商店（下次照它的記法帶），可以復原 */

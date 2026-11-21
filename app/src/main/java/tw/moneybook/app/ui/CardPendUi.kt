@@ -59,6 +59,7 @@ import tw.moneybook.app.pendCat
 import tw.moneybook.app.pendShop
 import tw.moneybook.app.shopNote
 import tw.moneybook.app.isInst
+import tw.moneybook.app.maybeTest
 import tw.moneybook.app.pendRefundOf
 import tw.moneybook.app.preauthFor
 import tw.moneybook.app.preauthBillMonth
@@ -89,18 +90,22 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
     // 正在處理的那一筆：選卡片、選分類、外幣金額
     var pickCard by remember { mutableStateOf<CardPend?>(null) }
     var pickCat by remember { mutableStateOf<Pair<CardPend, Long>?>(null) }
+    // 選分類是從「是試刷 → 記」來的：選好記成預估
+    var pickCatEst by remember { mutableStateOf(false) }
+    // 按了「是試刷」：問記成預估還是不記
+    var testAsk by remember { mutableStateOf<CardPend?>(null) }
     var fx by remember { mutableStateOf<Triple<CardPend, Long, Long?>?>(null) }
     // 對到訂閱、外幣對外幣記在台幣卡又沒有匯率：先問台幣金額
     var subFx by remember { mutableStateOf<CardPend?>(null) }
 
-    /** 按「記」：沒有分類先選分類；外幣記在台幣卡、又沒有匯率，先問金額 */
-    fun record(p: CardPend, cardId: Long, catId: Long?) {
+    /** 按「記」：沒有分類先選分類；外幣記在台幣卡、又沒有匯率，先問金額。est＝試刷記成預估 */
+    fun record(p: CardPend, cardId: Long, catId: Long?, est: Boolean = false) {
         val acc = d.accMap[cardId]
         when {
             // 退款不用選分類（記在「退款」）
-            catId == null && p.kind != PendKind.REFUND -> pickCat = p to cardId
+            catId == null && p.kind != PendKind.REFUND -> { pickCat = p to cardId; pickCatEst = est }
             p.cur.isNotEmpty() && !(acc?.isForeign == true && acc.currency == p.cur) && d.rateOf(p.cur) == null -> fx = Triple(p, cardId, catId)
-            else -> vm.recordPend(p.id, cardId, catId)
+            else -> vm.recordPend(p.id, cardId, catId, est = est)
         }
     }
 
@@ -130,6 +135,7 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                 pre != null -> "請款" to cute.expense
                 p.kind == PendKind.PREAUTH -> "預先授權" to cute.expense
                 p.isInst -> "分 ${p.inst} 期" to cute.expense
+                p.maybeTest -> "可能是試刷" to cute.expense
                 else -> null
             }
             Spacer(Modifier.height(8.dp))
@@ -194,6 +200,7 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                     }
                     p.kind == PendKind.PREAUTH -> "預先授權：實際金額請款時才知道" to "先記成預估，請款時再改"
                     p.isInst -> "分 ${p.inst} 期，每期約 ${formatMoney(p.amount / p.inst)}" to "按「記」會記成 ${p.inst} 期，第 1 期入這期帳單"
+                    p.maybeTest && had == null -> "剛好 \$1：可能是試刷，真正的金額之後才會知道" to "按「是試刷」選要不要先記成預估"
                     had != null -> "${shortDay(had.day, today)} ${card.name} 已經有一筆 ${formatMoney(had.recorded)}" to
                         "（" + listOfNotNull(had.categoryId?.let { d.catMap[it]?.name }, had.shopNote().takeIf { it.isNotBlank() }).distinct().joinToString("，") + "）"
                     else -> null
@@ -237,6 +244,8 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                             PendMainButton("記", "記 $name") { record(p, card.id, catId) }
                             SoftButton("改一下", { onEdit(p.id) }, compact = true)
                             SoftButton("不是消費", { vm.notSpendPend(p.id) }, compact = true)
+                            // 剛好 $1：可能是試刷（草圖 ci-out/noti_test_charge2.png）
+                            if (p.maybeTest) SoftButton("是試刷", { testAsk = p }, compact = true)
                         }
                     }
                 }
@@ -272,7 +281,31 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
         )
     }
     pickCat?.let { (p, cardId) ->
-        SubCatPickDialog(d, null, onPick = { c -> pickCat = null; record(p, cardId, c) }, onDismiss = { pickCat = null })
+        SubCatPickDialog(d, null, onPick = { c -> pickCat = null; record(p, cardId, c, pickCatEst) }, onDismiss = { pickCat = null })
+    }
+    testAsk?.let { p ->
+        val cardId = d.resolveCard(p)
+        val name = p.merchant.ifEmpty { "這筆" }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { testAsk = null },
+            title = { Text("$name ${pendAmountText(p)} 是試刷") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("試刷之後才會知道真正的金額。要先記下來嗎？", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "記：先記成預估 ${pendAmountText(p)}，出現在信用卡的「還沒請款」；之後同一家店的刷卡會問要不要改成實際金額",
+                        style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                    )
+                    Button(
+                        onClick = { testAsk = null; if (cardId != null) record(p, cardId, d.pendCat(p, cardId), est = true) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("記，等請款再改金額") }
+                    SoftButton("不記", { testAsk = null; vm.notSpendPend(p.id) }, Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { testAsk = null }) { Text("取消") } },
+        )
     }
     fx?.let { (p, cardId, catId) ->
         FxSpendDialog(

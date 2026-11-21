@@ -398,6 +398,7 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
                 PendKind.REFUND -> "已記（退款）"
                 PendKind.PREAUTH -> "已記（預估）"
                 else -> when {
+                    p.maybeTest && txnMap[p.txnId]?.est == true -> "已記（試刷，預估）"
                     p.isInst -> "已記（分期）"
                     // 改了預先授權那筆的金額（那筆是授權通知記的）
                     txnMap[p.txnId]?.noti?.let { s -> p.src.none { it.notiId == s.notiId } } == true -> "已記（請款）"
@@ -405,7 +406,11 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
                 }
             }
             PendState.HAD -> NotiTagKind.OFF to "已經記過"
-            PendState.NOT -> NotiTagKind.OFF to if (p.kind == PendKind.SPEND) "不是消費" else "不用記"
+            PendState.NOT -> NotiTagKind.OFF to when {
+                p.maybeTest -> "試刷，不記"
+                p.kind == PendKind.SPEND -> "不是消費"
+                else -> "不用記"
+            }
             else -> pendSubDone(p)?.let { NotiTagKind.GOOD to "已記（訂閱：${it.sub.name}）" }
                 ?: if (p.merchant.isEmpty()) NotiTagKind.PART to "少了商店"
                 else if (tplFor(n) != null) NotiTagKind.TPL to "用範本" else NotiTagKind.GOOD to "讀對了"
@@ -493,6 +498,13 @@ fun AppData.pendNotice(list: List<CardPend>, name: String): PendNotice? {
         }
         preauthFor(p, card)?.let { e ->
             return PendNotice("$name：${p.merchant} 請款 ${pendAmt(p)}", "預估的 ${formatMoney(e.amount)} 要改成 ${pendAmt(p)} 嗎？", emptyList(), null)
+        }
+        // 剛好 $1：可能是試刷，要打開 App 選記成預估或不記
+        if (p.maybeTest) {
+            return PendNotice(
+                "$name：刷了一筆 ${pendAmt(p)}，可能是試刷",
+                listOfNotNull(p.merchant.ifEmpty { null }, where0, "點開來選要不要先記").joinToString("・"), emptyList(), null,
+            )
         }
         val title = when {
             p.kind == PendKind.PREAUTH -> "$name：預先授權 ${pendAmt(p)}"

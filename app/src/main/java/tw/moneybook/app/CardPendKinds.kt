@@ -91,3 +91,9 @@ fun AppData.pendInstTxns(p: CardPend, startId: Long, bookId: Long, cardId: Long,
 
 /** 這筆待確認按「記」會記成分期（台幣、有寫分幾期） */
 val CardPend.isInst: Boolean get() = kind == PendKind.SPEND && inst > 1 && cur.isEmpty()
+
+/**
+ * 可能是試刷：剛好台幣 $1 的刷卡（加油站、Uber、綁卡驗證會先刷 $1，真正的金額之後才來；草圖 ci-out/noti_test_charge2.png）。
+ * 待確認標「可能是試刷」、多一顆「是試刷」（記成預估或不記），通知上不能直接記。外幣的 1.00 不算（預估請款只支援台幣）。
+ */
+val CardPend.maybeTest: Boolean get() = kind == PendKind.SPEND && cur.isEmpty() && amount == 1L && !isInst

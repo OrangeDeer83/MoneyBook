@@ -263,7 +263,7 @@ fun AccountDetailScreen(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Text(
-                                "${preHere.size} 筆預先授權還沒請款（預估 ${formatMoney(preHere.sumOf { it.amount })}）",
+                                "${preHere.size} 筆試刷／預先授權還沒請款（預估 ${formatMoney(preHere.sumOf { it.amount })}）",
                                 style = MaterialTheme.typography.labelLarge, color = cute.ink,
                             )
                             Text(

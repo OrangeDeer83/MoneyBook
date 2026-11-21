@@ -49,4 +49,25 @@ class PendNoticeTest {
         // 處理完了：不發
         assertNull(d.pendNotice(list.map { it.copy(state = PendState.DONE) }, "小鹿"))
     }
+
+    @Test
+    fun exactlyOneDollarMayBeATestCharge() {
+        val d = data(Txn(nid++, base.books.first().id, TxType.EXPENSE, 50, food.id, 9001, null, 20400, "台灣中油", emptyList()))
+        // 剛好 $1：可能是試刷，通知上不能直接記
+        val one = pend(1, "台灣中油", amount = 1)
+        assertEquals(true, one.maybeTest)
+        val n = d.pendNotice(listOf(one), "小鹿")!!
+        assertEquals("小鹿：刷了一筆 ${formatMoney(1)}，可能是試刷", n.title)
+        assertEquals("台灣中油・CUBE 卡・點開來選要不要先記", n.body)
+        assertNull(n.single)
+        // $2、外幣 1.00、分期、退款都不算
+        assertEquals(false, pend(2, "7-11", amount = 2).maybeTest)
+        assertEquals(false, one.copy(cur = "USD", amount = 100).maybeTest)
+        assertEquals(false, one.copy(cur = "JPY").maybeTest)
+        assertEquals(false, one.copy(kind = PendKind.REFUND).maybeTest)
+        // 收到的通知：選了不記標「試刷，不記」
+        val cap = CapturedNoti(1, "cathay", "國泰", "", "台灣中油 NT$1", 0L)
+        assertEquals("試刷，不記", d.notiTag(cap, listOf(one.copy(state = PendState.NOT))).second)
+        assertEquals("不是消費", d.notiTag(cap.copy(id = 2), listOf(pend(2, "7-11", amount = 2).copy(state = PendState.NOT))).second)
+    }
 }

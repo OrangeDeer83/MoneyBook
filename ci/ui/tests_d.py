@@ -7440,3 +7440,71 @@ def t_preorder():
     d.time.sleep(1)
     ns = d.shot("沒買")
     d.check("按沒買：提示預留的放回預算、沒買 1", d.has(ns, "沒買 1", True) and any("放回預算了" in n.text for n in ns), [n.text for n in ns if n.text][:30])
+
+
+@case(D, "刷卡通知剛好 $1：標「可能是試刷」、多一顆「是試刷」；記成預估出現在信用卡還沒請款、之後同一家店請款可以改金額；不記標「試刷，不記」", visual=True)
+def t_card_test_charge():
+    s = S.Seed(f.today())
+    s.expense(-3, 900, S.C_TRAFFIC, acc=S.CARD, note="台灣中油")
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    day = today_slash()
+    bank_post("t1", f"您的信用卡末四碼1234於{day} 08:12在台灣中油消費NT$1")
+    bank_post("t2", f"您的信用卡末四碼1234於{day} 09:30在UBER消費NT$1")
+    to_main()
+    f.tab("明細")
+    home_open("刷卡", timeout=8)
+    d.time.sleep(1)
+    ns = d.shot("兩筆 $1")
+    d.check("兩筆都標「可能是試刷」、寫真正的金額之後才會知道、有「是試刷」",
+            len(d.find(ns, "可能是試刷", True)) == 2 and any(n.text.startswith("剛好 $1：可能是試刷") for n in ns) and len(d.find(ns, "是試刷", True)) == 2,
+            pend_texts(ns))
+    # 台灣中油：是試刷 → 記成預估
+    btns = sorted(d.find(ns, "是試刷", True), key=lambda n: n.cy)
+    d.tap(btns[0])
+    d.wait_text("台灣中油 $1 是試刷", timeout=8)
+    ns = d.shot("是試刷：記或不記")
+    d.check("視窗有「記，等請款再改金額」「不記」", d.has(ns, "記，等請款再改金額", True) and d.has(ns, "不記", True), pend_texts(ns))
+    d.tap_text("記，等請款再改金額", exact=True)
+    d.time.sleep(0.6)
+    ns = d.nodes()
+    d.check("提示「已記成預估 台灣中油 $1，請款時再改」", any(n.text.startswith("已記成預估") and "台灣中油" in n.text for n in ns), pend_texts(ns))
+    d.time.sleep(4)
+    # Uber：是試刷 → 不記
+    home_open("刷卡", timeout=6)
+    d.tap(d.wait(lambda n: n.text == "是試刷", 8, "是試刷"))
+    d.wait_text("UBER $1 是試刷", timeout=8)
+    d.tap_text("不記", exact=True)
+    d.time.sleep(0.6)
+    ns = d.nodes()
+    d.check("提示「已拿掉 … （試刷，不記）」", any("試刷，不記" in n.text for n in ns), pend_texts(ns))
+    d.time.sleep(4)
+    ns = d.shot("兩筆都處理好")
+    d.check("待確認沒有了", no_remind(ns, "刷卡"), pend_texts(ns))
+    open_account("測試信用卡")
+    d.time.sleep(1)
+    ns = d.shot("信用卡還沒請款")
+    d.check("信用卡頁：1 筆試刷／預先授權還沒請款（預估 $1）", d.has(ns, "1 筆試刷／預先授權還沒請款（預估 $1）", True), pend_texts(ns))
+    # 真正的金額來了：同一家店，問要不要改成實際金額
+    bank_post("t3", f"您的信用卡末四碼1234於{day} 08:15在台灣中油消費NT$1,280")
+    to_main()
+    f.tab("明細")
+    home_open("刷卡", timeout=8)
+    d.time.sleep(1)
+    ns = d.shot("請款")
+    d.check("待確認：台灣中油標「請款」、寫預估是 $1、按鈕「改成 $1,280」",
+            d.has(ns, "請款", True) and any("記的預估是 $1" in n.text for n in ns) and d.first(ns, "改成 $1,280 台灣中油", True) is not None, pend_texts(ns))
+    b = d.first(ns, "改成 $1,280 台灣中油", True)
+    if b:
+        d.tap(b)
+        d.time.sleep(1.5)
+    ns = d.shot("改好了")
+    d.check("改好了：待確認沒有了、明細台灣中油 -$1,280", no_remind(ns, "刷卡") and d.has(ns, "-$1,280", True), pend_texts(ns))
+    f.me_page("刷卡通知")
+    d.time.sleep(1)
+    for _ in range(4):
+        if d.has(d.nodes(), "試刷，不記", True):
+            break
+        d.scroll_down(1)
+    ns = d.shot("收到的通知")
+    d.check("收到的通知：UBER 那則標「試刷，不記」", d.has(ns, "試刷，不記", True), pend_texts(ns))
