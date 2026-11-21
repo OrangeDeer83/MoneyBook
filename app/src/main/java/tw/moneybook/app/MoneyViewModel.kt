@@ -1817,12 +1817,16 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportCsv(): ByteArray = CsvIO.export(data)
 
-    fun exportBackup(): ByteArray = Codec.encode(data).toByteArray(Charsets.UTF_8)
+    /** 備份：記帳資料＋刷卡待確認（還沒按記的那幾筆也跟著換手機） */
+    fun exportBackup(): ByteArray =
+        BackupCodec.encode(data, tw.moneybook.app.notify.CardPendLog.load(appContext)).toByteArray(Charsets.UTF_8)
 
     fun restoreBackup(text: String): Boolean {
         return try {
             val d = Codec.decode(text)
             commit(d)
+            // 備份檔有待確認就換成備份檔的（舊的備份檔沒有，手機上的不動）
+            BackupCodec.pends(text)?.let { list -> tw.moneybook.app.notify.CardPendLog.update(appContext) { list } }
             true
         } catch (_: Exception) {
             false

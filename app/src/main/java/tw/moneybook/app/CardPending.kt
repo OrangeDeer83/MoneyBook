@@ -185,6 +185,26 @@ object NotiSrcCodec {
     }
 }
 
+/**
+ * 備份檔：記帳資料（Codec）＋刷卡待確認（cardPending）。待確認存在另一個檔案（notify/CardPendLog），
+ * 還沒按記的那幾筆也要跟著換手機。收到的通知原文不放（有卡號、商店，只留 7 天）。
+ */
+object BackupCodec {
+    fun encode(d: AppData, pends: List<CardPend>): String {
+        val root = JSONObject(Codec.encode(d))
+        // 沒有待確認也寫一個空的：還原時才知道要清掉手機上的（舊的備份檔沒有這個欄位，就不動手機上的）
+        root.put("cardPending", JSONArray(CardPendCodec.encode(pends)))
+        return root.toString()
+    }
+
+    /** 備份檔裡的待確認；舊的備份檔沒有這個欄位回傳 null */
+    fun pends(text: String): List<CardPend>? = try {
+        JSONObject(text).optJSONArray("cardPending")?.let { CardPendCodec.decode(it.toString()) }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 object CardPendCodec {
     fun encode(list: List<CardPend>): String = JSONArray().apply {
         list.forEach { p ->

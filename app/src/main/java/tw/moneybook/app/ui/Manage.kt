@@ -1477,7 +1477,7 @@ fun DataScreen(vm: MoneyViewModel, onBack: () -> Unit) {
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 DataCard(
-                    "vec:save", "備份", "把所有帳本、帳戶、分類和設定存成一個檔案。建議存到雲端硬碟，換手機時就能還原。",
+                    "vec:save", "備份", "把所有帳本、帳戶、分類、記錄、設定和刷卡待確認存成一個檔案（收到的通知原文不放）。建議存到雲端硬碟，換手機時就能還原。",
                     "建立備份",
                 ) { backupOut.launch("記帳本備份_$stamp.json") }
             }
