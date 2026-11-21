@@ -65,10 +65,18 @@ import java.time.YearMonth
 /** 一條線：名稱（資訊框用）、顏色、每個月的金額；dashed＝和前面的線同色時改成虛線 */
 class LineSeries(val name: String, val color: Color, val values: List<Long>, val dashed: Boolean = false)
 
-/** 月份標籤：超過 6 個月時雙數月不寫（最後一個一定寫），和趨勢頁其他圖一樣 */
+/**
+ * 月份標籤：6 個月以內每個月都寫；7～12 個月從最後一個往前隔一個寫；更長的（全部、自訂）大約寫 6 個，
+ * 最後一個一定寫。和趨勢頁其他圖一樣。
+ */
 fun trendLabels(months: List<YearMonth>): List<String> {
-    val end = months.lastOrNull()
-    return months.map { if (months.size > 6 && it.monthValue % 2 == 0 && it != end) "" else "${it.monthValue}月" }
+    val n = months.size
+    val step = when {
+        n <= 6 -> 1
+        n <= 12 -> 2
+        else -> (n + 5) / 6
+    }
+    return months.mapIndexed { i, m -> if ((n - 1 - i) % step == 0) "${m.monthValue}月" else "" }
 }
 
 fun trendTitles(months: List<YearMonth>): List<String> = months.map { "${it.year} 年 ${it.monthValue} 月" }
@@ -277,7 +285,7 @@ fun CatTrendCard(vm: MoneyViewModel, months: List<YearMonth>, menu: CardMenu) {
         }
         Spacer(Modifier.height(10.dp))
         if (series.isEmpty()) {
-            Text("最近 12 個月還沒有支出，記幾筆之後這裡會畫出每個分類的走勢", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+            Text("這段期間還沒有支出，記幾筆之後這裡會畫出每個分類的走勢", style = MaterialTheme.typography.bodySmall, color = cute.sub)
         } else {
             CategoryLines("catTrend", trendLabels(months), trendTitles(months), series)
             Spacer(Modifier.height(4.dp))

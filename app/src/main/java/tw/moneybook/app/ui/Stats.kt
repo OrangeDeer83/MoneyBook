@@ -60,6 +60,7 @@ import tw.moneybook.app.inYear
 import tw.moneybook.app.incomeSum
 import tw.moneybook.app.statAmount
 import tw.moneybook.app.statCat
+import tw.moneybook.app.trendMonthsOf
 import java.time.YearMonth
 import java.time.LocalDate
 
@@ -186,6 +187,10 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
     val d = vm.data
     val mode = vm.statMode
     var trendN by vm::statTrendN
+    val now = YearMonth.now()
+    val trendMonths = remember(d, trendN, vm.month, vm.statTrendFrom, vm.statTrendTo) {
+        trendMonthsOf(trendN, vm.month, d.bookTxns.minOfOrNull { it.day }?.let { YearMonth.from(LocalDate.ofEpochDay(it)) } ?: now, now, vm.statTrendFrom, vm.statTrendTo)
+    }
     val cute = LocalCute.current
     val book = d.bookTxns
     // 月、年、區間共用一份排版，趨勢另一份
@@ -224,12 +229,16 @@ fun StatsScreen(vm: MoneyViewModel, onSearch: () -> Unit, onDrill: () -> Unit, o
 
                 if (mode == 3) {
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CuteChip("近 6 個月", trendN == 6, { trendN = 6 })
                             CuteChip("近 12 個月", trendN == 12, { trendN = 12 })
+                            CuteChip("全部", trendN == 0, { trendN = 0 })
+                            CustomMonthChip(trendN < 0, vm.statTrendFrom, vm.statTrendTo, trendMonths) { a, b ->
+                                vm.statTrendFrom = a; vm.statTrendTo = b; trendN = -1
+                            }
                         }
                     }
-                    val t = TrendData(book, vm.month, trendN)
+                    val t = TrendData(book, trendMonths, trendN)
                     cardRows(layout, narrow, { true }, { onLayout(page.key) }) { id, half ->
                         when (id) {
                             "asset" -> AssetShortcutCard(vm, half, menu, onAsset)
@@ -595,14 +604,17 @@ private fun Legend() {
     }
 }
 
-/** 趨勢頁的資料：最近 n 個月（到 end 為止）每個月的收入、支出、結餘與累積 */
-private class TrendData(book: List<Txn>, val end: YearMonth, val n: Int) {
-    val months: List<YearMonth> = (n - 1 downTo 0).map { end.minusMonths(it.toLong()) }
+/** 趨勢頁的資料：這幾個月每個月的收入、支出、結餘與累積；preset＝6、12 是「近 N 個月」，0 全部、-1 自訂 */
+private class TrendData(book: List<Txn>, val months: List<YearMonth>, preset: Int) {
+    val end: YearMonth = months.last()
+    val n: Int = months.size
+    /** 句子開頭：「近 6 個月」，全部、自訂寫「這 14 個月」 */
+    val lead: String = if (preset > 0) "近 $n 個月" else "這 $n 個月"
     val incs: List<Long> = months.map { book.inMonth(it).incomeSum() }
     val exps: List<Long> = months.map { book.inMonth(it).expenseSum() }
     val nets: List<Long> = months.indices.map { incs[it] - exps[it] }
     val cumulative: List<Long> = nets.runningReduce { acc, v -> acc + v }
-    val labels: List<String> = months.map { if (n > 6 && it.monthValue % 2 == 0 && it != end) "" else "${it.monthValue}月" }
+    val labels: List<String> = trendLabels(months)
     // 長按圖表時資訊框的標題
     val titles: List<String> = months.map { "${it.year} 年 ${it.monthValue} 月" }
 }
@@ -638,7 +650,7 @@ private fun SavedCard(t: TrendData, half: Boolean, menu: CardMenu) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            if (saved >= 0) "近 ${t.n} 個月一共 ${formatMoney(saved)}" else "近 ${t.n} 個月多花了 ${formatMoney(-saved)}",
+            if (saved >= 0) "${t.lead}一共 ${formatMoney(saved)}" else "${t.lead}多花了 ${formatMoney(-saved)}",
             style = MaterialTheme.typography.bodySmall, color = cute.sub,
         )
     }
@@ -647,12 +659,11 @@ private fun SavedCard(t: TrendData, half: Boolean, menu: CardMenu) {
 @Composable
 private fun SavingsCard(t: TrendData, menu: CardMenu) {
     val cute = LocalCute.current
-    val n = t.n
     CuteCard(Modifier.fillMaxWidth()) {
         CardTitle("存錢趨勢", "savings", menu, icon = "img:ui_savings")
         val saved = t.cumulative.last()
         Text(
-            if (saved >= 0) "近 $n 個月一共存下 ${formatMoney(saved)}" else "近 $n 個月一共多花了 ${formatMoney(-saved)}",
+            if (saved >= 0) "${t.lead}一共存下 ${formatMoney(saved)}" else "${t.lead}一共多花了 ${formatMoney(-saved)}",
             style = MaterialTheme.typography.bodyMedium,
             color = if (saved >= 0) cute.income else cute.expense,
         )
@@ -685,7 +696,7 @@ private fun TrendBarsCard(t: TrendData, menu: CardMenu) {
     val cute = LocalCute.current
     val n = t.n
     CuteCard(Modifier.fillMaxWidth()) {
-        CardTitle("近 $n 個月收支", "bars", menu)
+        CardTitle("${t.lead}收支", "bars", menu)
         Text("${t.months.first().year}/${t.months.first().monthValue} ～ ${t.end.year}/${t.end.monthValue}", style = MaterialTheme.typography.labelMedium, color = cute.sub)
         Spacer(Modifier.height(12.dp))
         PairBars(t.labels, t.incs, t.exps, cute.income, cute.expense, highlight = n - 1, titles = t.titles, key = "trendBars")
@@ -698,11 +709,13 @@ private fun TrendBarsCard(t: TrendData, menu: CardMenu) {
             val avg = exps.sum() / active
             Text("平均每月支出 ${formatMoney(avg)}", style = MaterialTheme.typography.bodyMedium)
             val last = exps[n - 1]
-            val prev = exps[n - 2]
+            val prev = if (n >= 2) exps[n - 2] else 0L
             if (prev > 0) {
                 val diff = last - prev
+                // 自訂期間不一定到這個月：寫成「2 月比 1 月」
+                val head = if (t.end == YearMonth.now()) "這個月比上個月" else "${t.end.monthValue} 月比 ${t.end.minusMonths(1).monthValue} 月"
                 Text(
-                    if (diff <= 0) "這個月比上個月少花 ${formatMoney(-diff)}，很棒喔！" else "這個月比上個月多花 ${formatMoney(diff)}",
+                    if (diff <= 0) "${head}少花 ${formatMoney(-diff)}，很棒喔！" else "${head}多花 ${formatMoney(diff)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (diff <= 0) cute.income else cute.expense,
                 )

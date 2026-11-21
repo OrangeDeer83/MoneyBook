@@ -7146,3 +7146,89 @@ def t_waive():
     d.time.sleep(4)
     ns = d.shot("刪掉一次")
     d.check("刪掉 team lunch 那次：Amy 還欠你 $1,000", d.has(ns, "Amy還欠你 $1,000", True), [n.text for n in ns if n.text][:30])
+
+
+def ym_add(y, m, k):
+    t = y * 12 + (m - 1) + k
+    return t // 12, t % 12 + 1
+
+
+def ym_count(a, b):
+    return (b[0] * 12 + b[1]) - (a[0] * 12 + a[1]) + 1
+
+
+@case(D, "統計自訂期間：趨勢分頁有全部、自訂，點自訂跳出月份表選開始、結束（最少 2 個月）；總資產頁的自訂分開記", visual=True)
+def t_stats_custom_range():
+    d.fresh(asset_seed())
+    today = f.today()
+    first = today - S.datetime.timedelta(days=65)
+    fm = (first.year, first.month)
+    now = (today.year, today.month)
+    lm = ym_add(now[0], now[1], -1)
+    f.tab("統計")
+    d.time.sleep(2)
+    d.tap_text("趨勢", exact=True)
+    d.time.sleep(2)
+    ns = d.shot("趨勢：四顆期間按鈕")
+    d.check("趨勢分頁有：近 6 個月、近 12 個月、全部、自訂",
+            all(d.has(ns, t, True) for t in ("近 6 個月", "近 12 個月", "全部", "自訂")), [n.text for n in ns if n.text][:20])
+    d.tap_text("全部", exact=True)
+    d.time.sleep(1.5)
+    n_all = max(ym_count(fm, now), 2)
+    ns = d.shot("全部")
+    d.check(f"全部：從第一筆的月份到這個月，卡片寫「這 {n_all} 個月」",
+            any(n.text.startswith(f"這 {n_all} 個月一共") for n in ns), [n.text for n in ns if n.text][:20])
+    d.tap_text("自訂", exact=True)
+    d.wait_text("自訂期間", timeout=10)
+    ns = d.shot("自訂視窗：一開始是現在看的期間")
+    d.check(f"視窗有開始、結束、先點開始的月份、共 {n_all} 個月",
+            d.has(ns, "開始", True) and d.has(ns, "結束", True) and d.has(ns, "先點開始的月份", True) and d.has(ns, f"共 {n_all} 個月", True),
+            [n.text for n in ns if n.text][:30])
+    d.check("這個月以後的月份點不了", not any(n.enabled for n in ns if n.desc == f"{now[0]} 年 {now[1] + 1} 月") if now[1] < 12 else True,
+            [n for n in ns if n.desc.startswith(f"{now[0]} 年")][-3:])
+    # 開始、結束都點同一個月：只有 1 個月，按好要提示
+    d.tap_text(f"{fm[0]} 年 {fm[1]} 月", exact=True, lowest=True)
+    ns = d.nodes()
+    d.check("點了開始，自動換成選結束", d.has(ns, "再點結束的月份（按 ‹ › 換年）", True), [n.text for n in ns if n.text][:30])
+    d.tap_text(f"{fm[0]} 年 {fm[1]} 月", exact=True, lowest=True)
+    d.tap_text("好", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("只選 1 個月按好")
+    d.check("提示「至少要選 2 個月」、視窗沒關", d.has(ns, "至少要選 2 個月", True) and d.has(ns, "自訂期間", True), [n.text for n in ns if n.text][:30])
+    if lm[0] != fm[0]:
+        d.tap(next(n for n in d.nodes() if n.desc == "下一年"))
+    d.tap_text(f"{lm[0]} 年 {lm[1]} 月", exact=True, lowest=True)
+    k = ym_count(fm, lm)
+    ns = d.shot("選好開始、結束")
+    d.check(f"共 {k} 個月，提示消失", d.has(ns, f"共 {k} 個月", True) and not d.has(ns, "至少要選 2 個月", True), [n.text for n in ns if n.text][:30])
+    d.tap_text("好", exact=True)
+    d.time.sleep(1.5)
+    span = f"{fm[0]}/{fm[1]} ～ {lm[0]}/{lm[1]}"
+    ns = d.shot("自訂期間的趨勢")
+    d.check(f"那顆寫 {span}，卡片寫「這 {k} 個月」",
+            not d.has(ns, "自訂期間", True) and d.has(ns, span, True) and any(n.text.startswith(f"這 {k} 個月一共") for n in ns),
+            [n.text for n in ns if n.text][:20])
+    d.tap_text("近 6 個月", exact=True)
+    d.time.sleep(1)
+    ns = d.nodes()
+    d.check("切回近 6 個月，自訂那顆還是寫剛剛的期間", d.has(ns, span, True) and any(n.text.startswith("近 6 個月一共") for n in ns),
+            [n.text for n in ns if n.text][:20])
+    # 總資產頁的自訂分開記
+    d.tap_text("看變化 ›", exact=True)
+    d.wait_text("現在的組成", timeout=10)
+    ns = d.shot("總資產頁")
+    d.check("總資產頁：全部後面是「自訂」（跟趨勢分開記）", d.has(ns, "自訂", True) and not d.has(ns, span, True), [n.text for n in ns if n.text][:20])
+    d.tap_text("自訂", exact=True)
+    d.wait_text("自訂期間", timeout=10)
+    s12 = ym_add(now[0], now[1], -11)
+    d.check("一開始是近 12 個月", d.has(d.nodes(), "共 12 個月", True))
+    d.tap_text("好", exact=True)
+    d.time.sleep(1.5)
+    span12 = f"{s12[0]}/{s12[1]} ～ {now[0]}/{now[1]}"
+    ns = d.shot("總資產自訂")
+    d.check(f"總資產頁那顆寫 {span12}，總資產變化寫「這段期間」",
+            d.find(ns, span12, True) != [] and any(n.text.startswith("這段期間") for n in ns), [n.text for n in ns if n.text][:20])
+    d.back()
+    d.time.sleep(1.5)
+    ns = d.nodes()
+    d.check("回到趨勢，自訂那顆還是趨勢自己的期間", d.has(ns, span, True), [n.text for n in ns if n.text][:20])

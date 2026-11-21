@@ -3,6 +3,8 @@ package tw.moneybook.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,15 +46,17 @@ import tw.moneybook.app.CardPages
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.NetWorthPoint
 import tw.moneybook.app.firstMonth
+import tw.moneybook.app.monthsBetween
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.netWorthMonths
 import tw.moneybook.app.netWorthReasons
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** 總資產的月份：近 n 個月（0＝全部，從有記錄的第一個月開始），到這個月為止 */
-fun AppData.assetMonths(n: Int, today: LocalDate = LocalDate.now()): List<YearMonth> {
+/** 總資產的月份：近 n 個月（0＝全部，從有記錄的第一個月開始），到這個月為止；-1＝自訂 from～to（沒選過當全部） */
+fun AppData.assetMonths(n: Int, today: LocalDate = LocalDate.now(), from: YearMonth? = null, to: YearMonth? = null): List<YearMonth> {
     val now = YearMonth.from(today)
+    if (n < 0 && from != null && to != null) return monthsBetween(from, to)
     val first = if (n <= 0) firstMonth(today) else now.minusMonths((n - 1).toLong())
     val out = ArrayList<YearMonth>()
     var m = first
@@ -78,7 +82,7 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
     val page = CardPages.ASSET
     val layout = vm.cardLayout(page)
     val menu = CardMenu(onHide = { vm.hideCard(page, it) }, onLayout = { onLayout(page.key) })
-    val months = remember(d, vm.assetRange) { d.assetMonths(vm.assetRange) }
+    val months = remember(d, vm.assetRange, vm.assetFrom, vm.assetTo) { d.assetMonths(vm.assetRange, from = vm.assetFrom, to = vm.assetTo) }
     val points = remember(d, months) { d.netWorthMonths(months) }
     // 月份只寫「5月」，年份寫在標題下面（2026/5 ～ 2026/10），跨年的地方畫虛線寫年份
     val labels = months.map { "${it.monthValue}月" }
@@ -99,10 +103,13 @@ fun AssetScreen(vm: MoneyViewModel, onLayout: (String) -> Unit, onBack: () -> Un
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             CuteChip("近 6 個月", vm.assetRange == 6, { vm.assetRange = 6 })
                             CuteChip("近 12 個月", vm.assetRange == 12, { vm.assetRange = 12 })
                             CuteChip("全部", vm.assetRange == 0, { vm.assetRange = 0 })
+                            CustomMonthChip(vm.assetRange < 0, vm.assetFrom, vm.assetTo, months) { a, b ->
+                                vm.assetFrom = a; vm.assetTo = b; vm.assetRange = -1
+                            }
                         }
                     }
                     cardRows(layout, narrow, { true }, { onLayout(page.key) }) { id, _ ->

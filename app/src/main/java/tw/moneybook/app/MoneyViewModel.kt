@@ -130,7 +130,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     // 統計頁其他狀態也放在這裡：點進明細再返回時，要回到原本的收入／支出、展開的項目和捲動位置
     var statKind by mutableIntStateOf(0)
     var statGroup by mutableIntStateOf(0)
+    /** 趨勢分頁的期間：近 6、12 個月，0 是全部，-1 是自訂（statTrendFrom～statTrendTo，不存檔） */
     var statTrendN by mutableIntStateOf(6)
+    var statTrendFrom by mutableStateOf<YearMonth?>(null)
+    var statTrendTo by mutableStateOf<YearMonth?>(null)
     var statGross by mutableStateOf(false)
     var statExpanded by mutableStateOf(setOf<String>())
     var statSelected by mutableIntStateOf(-1)
@@ -201,8 +204,10 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         _messages.tryEmit(UiMsg("已恢復預設排版", "復原") { setCardLayout(page, before) })
     }
 
-    /** 總資產頁的期間：近 6、12 個月，0 是全部 */
+    /** 總資產頁的期間：近 6、12 個月，0 是全部，-1 是自訂（assetFrom～assetTo，不存檔；跟趨勢分頁分開記） */
     var assetRange by mutableIntStateOf(12)
+    var assetFrom by mutableStateOf<YearMonth?>(null)
+    var assetTo by mutableStateOf<YearMonth?>(null)
     var statYear by mutableIntStateOf(LocalDate.now().year)
     var rangeStart by mutableLongStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay())
     var rangeEnd by mutableLongStateOf(LocalDate.now().toEpochDay())
