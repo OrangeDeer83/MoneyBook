@@ -94,7 +94,10 @@ fun PreorderScreen(
     val d = vm.data
     val cute = LocalCute.current
     val today = LocalDate.now().toEpochDay()
-    val all = d.bookPreorders
+    // 從首頁預算「其中預留給預購」點進來：只列那個月（上面可以切「全部」）
+    val fromMonth = remember { vm.preorderMonth }
+    val pm = vm.preorderMonth
+    val all = d.bookPreorders.filter { pm == null || it.month == pm }
     val waits = all.filter { it.status == PRE_WAIT }.sortedWith(compareBy({ it.day }, { it.id }))
     val boughts = all.filter { it.status == PRE_BOUGHT }.sortedByDescending { it.doneDay }
     val skips = all.filter { it.status == PRE_SKIPPED }.sortedByDescending { it.doneDay }
@@ -115,12 +118,20 @@ fun PreorderScreen(
         ) {
             item {
                 CuteCard(Modifier.fillMaxWidth()) {
-                    Text("已經預留", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                    Text(if (pm != null) "${pm.monthValue} 月預留" else "已經預留", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(formatMoney(waits.filter { d.preorderInBudget(it) }.sumOf { it.amount }), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                         Text("${waits.size} 樣等著買", style = MaterialTheme.typography.labelLarge, color = cute.sub)
                     }
                     Text("從預計買的那個月的預算先扣掉，不動帳戶、不算統計的支出", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                }
+            }
+            if (fromMonth != null) {
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CuteChip("${fromMonth.monthValue} 月", pm != null, { vm.preorderMonth = fromMonth })
+                        CuteChip("全部", pm == null, { vm.preorderMonth = null })
+                    }
                 }
             }
             item { PreorderNotifyCard(vm) }

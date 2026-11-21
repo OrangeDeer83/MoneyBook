@@ -63,6 +63,7 @@ import tw.moneybook.app.budgetSpent
 import tw.moneybook.app.outOfBudgetSpent
 import tw.moneybook.app.preorderReserved
 import tw.moneybook.app.preordersDue
+import tw.moneybook.app.preorderReservedNames
 import tw.moneybook.app.AppData
 import tw.moneybook.app.MoneyViewModel
 import tw.moneybook.app.flowFor
@@ -828,8 +829,11 @@ fun HomeScreen(
                     )
                     if (reserved > 0) {
                         Text(
-                            "其中預留給預購 ${formatMoney(reserved)}（還沒買）",
-                            style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.padding(top = 3.dp),
+                            // 點了打開預購清單，只列這個月預留的（草圖 ci-out/budget_preorder_entry.png 甲）
+                            "其中預留給預購 ${formatMoney(reserved)}（${d.preorderReservedNames(month)}）  ›",
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 3.dp).clip(RoundedCornerShape(6.dp))
+                                .clickable { onPreorder("po-month:$month") },
                         )
                     }
                     if (outSpent > 0) {

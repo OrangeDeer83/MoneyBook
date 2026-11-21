@@ -665,6 +665,9 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 刪掉一次免除：那幾項恢復成沒結清；可以復原 */
     // ───────── 預購清單（見 Preorder.kt）─────────
 
+    /** 預購清單只看哪個月（首頁預算「其中預留給預購」點進來的）；null＝全部 */
+    var preorderMonth by mutableStateOf<java.time.YearMonth?>(null)
+
     /** 通知按「延後」打開 App：預購清單那頁要先問延後到哪一天的那一筆 */
     var preorderLater by mutableStateOf<Long?>(null)
 

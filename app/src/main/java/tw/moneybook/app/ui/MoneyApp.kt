@@ -227,6 +227,9 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                         // 首頁「買好了嗎」：買了 → 記一筆帶好那筆預購；延後 → 預購清單選日期
                         it.startsWith("po-buy:") -> push(Route.Edit(null, preorder = "buy:" + it.removePrefix("po-buy:")))
                         it.startsWith("po-later:") -> { vm.preorderLater = it.removePrefix("po-later:").toLongOrNull(); push(Route.Page("preorders")) }
+                        // 首頁預算「其中預留給預購」：預購清單只列那個月；從「我的」進去看全部
+                        it.startsWith("po-month:") -> { vm.preorderMonth = runCatching { java.time.YearMonth.parse(it.removePrefix("po-month:")) }.getOrNull(); push(Route.Page("preorders")) }
+                        it == "preorders" -> { vm.preorderMonth = null; push(Route.Page("preorders")) }
                         else -> push(Route.Page(it))
                     }
                 },

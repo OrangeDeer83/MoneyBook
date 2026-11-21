@@ -38,12 +38,22 @@ data class Preorder(
     val month: YearMonth get() = YearMonth.from(LocalDate.ofEpochDay(day))
 }
 
-/** 清單、通知上的名字：備註第一行，沒有就店家，再沒有就分類名稱 */
+/** 清單、通知、首頁預算上的名字：備註第一行（買什麼），沒有就分類（選了子分類寫子分類），再沒有就店家 */
 fun AppData.preorderName(p: Preorder): String =
     p.note.lineSequence().firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-        ?: p.shop.takeIf { it.isNotBlank() }
         ?: p.categoryId?.let { catMap[it]?.name }
+        ?: p.shop.takeIf { it.isNotBlank() }
         ?: "預購"
+
+/** 這個月預留給哪些預購（首頁預算那行）：一樣寫名字，好幾樣寫「耳機 等 3 樣」 */
+fun AppData.preorderReservedNames(m: java.time.YearMonth): String {
+    val list = bookPreorders.filter { it.waiting && it.month == m && preorderInBudget(it) }.sortedWith(compareBy({ it.day }, { it.id }))
+    return when (list.size) {
+        0 -> ""
+        1 -> preorderName(list[0])
+        else -> "${preorderName(list[0])} 等 ${list.size} 樣"
+    }
+}
 
 /** 目前帳本的預購 */
 val AppData.bookPreorders: List<Preorder> get() = preorders.filter { it.bookId == currentBook.id }

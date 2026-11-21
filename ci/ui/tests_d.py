@@ -7388,9 +7388,19 @@ def t_preorder():
     ns = d.shot("首頁：買好了嗎、預算扣預留")
     d.check("首頁有「買好了嗎？」：headphone 預計今天、預估 $2,980",
             d.has(ns, "買好了嗎？", True) and d.has(ns, "headphone", True) and d.has(ns, "預估 $2,980", True), [n.text for n in ns if n.text][:30])
-    d.check("預算：已花 $1,000・還剩 $6,020，其中預留給預購 $2,980",
-            d.has(ns, "已花 $1,000・還剩 $6,020（預算 $10,000）", True) and d.has(ns, "其中預留給預購 $2,980（還沒買）", True),
+    d.check("預算：已花 $1,000・還剩 $6,020，其中預留給預購 $2,980（headphone）",
+            d.has(ns, "已花 $1,000・還剩 $6,020（預算 $10,000）", True) and d.has(ns, "其中預留給預購 $2,980（headphone）  ›", True),
             [n.text for n in ns if "預算" in n.text or "預留" in n.text])
+    # 點那行：預購清單只列這個月預留的
+    d.tap_text("其中預留給預購 $2,980（headphone）  ›", exact=True)
+    m = f.today().month
+    d.wait_text(f"{m} 月預留", timeout=10)
+    ns = d.shot("這個月預留給誰")
+    d.check(f"打開預購清單：{m} 月預留 $2,980、有「{m} 月」「全部」、列 headphone",
+            d.has(ns, "$2,980", True) and d.has(ns, f"{m} 月", True) and d.has(ns, "全部", True) and d.has(ns, "headphone", True), [n.text for n in ns if n.text][:30])
+    d.tap_back()
+    d.time.sleep(1)
+    home_open("預購")
     d.tap(next(n for n in d.nodes() if n.desc == "買了 headphone"))
     # 備註已經帶好 headphone，看不到「備註（選填）」：等「買了預購」那行
     d.wait(lambda n: n.text.startswith("買了預購"), 15, "買了預購那行")
