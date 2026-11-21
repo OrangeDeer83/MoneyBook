@@ -3846,6 +3846,12 @@ def t_settle_keep_two():
     d.check("Bob 改 120：Amy 自動補成 180", ed[-2].text == "180" and d.has(ns, "要留 $300・已留 $300", True), [e.text for e in ed])
     d.tap_text("展開", exact=True)
     d.time.sleep(0.8)
+    # 展開的那幾筆可能在畫面外（模擬器的狀態列變高了）：捲到看得到「留 $180」
+    for _ in range(3):
+        if d.has(d.nodes(), "留 $180", True):
+            break
+        d.swipe(540, 1500, 540, 1150, 500)
+        d.time.sleep(0.6)
     ns = d.shot("展開 Amy")
     d.check("展開：看得到排序和 Amy 那筆留 $180", d.has(ns, "金額大到小", True) and d.has(ns, "留 $180", True), [n.text for n in ns if n.text][-20:])
     d.tap_text("確認結清", exact=True)
