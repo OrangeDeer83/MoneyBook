@@ -628,7 +628,7 @@ fun HomeScreen(
     onDrill: () -> Unit = {},
     /** 刷卡待確認按「改一下」 */
     onEditPend: (Long) -> Unit = {},
-    /** 「該買了嗎」卡片：po-buy:<id> 買了、po-later:<id> 延後 */
+    /** 「買好了嗎」卡片：po-buy:<id> 買了、po-later:<id> 延後 */
     onPreorder: (String) -> Unit = {},
 ) {
     val d = vm.data
@@ -658,7 +658,7 @@ fun HomeScreen(
     }
     // 預購到了預計那天還沒回答的（見 Preorder.kt）
     val preDue = remember(d) { d.preordersDue(LocalDate.now().toEpochDay()) }
-    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、該買了嗎（有才有）、刷卡待確認（有才有）、吉祥物（可以關）、預算、本月摘要
+    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、買好了嗎（有才有）、刷卡待確認（有才有）、吉祥物（可以關）、預算、本月摘要
     val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0) + (if (preDue.isNotEmpty()) 1 else 0) + (if (hasPend) 1 else 0)
     // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排
     val settleIds = d.settles.map { it.id }.toSet()

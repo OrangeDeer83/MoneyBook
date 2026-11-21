@@ -87,7 +87,7 @@ class PreorderTest {
         // 好幾樣：合成一則
         val (d2, _) = add(d1, po(500, LocalDate.of(2026, 11, 20), "書"))
         val many = d2.preorderNotice(today, 2, "小鹿")!!
-        assertEquals("小鹿：有 2 樣預購該買了", many.title)
+        assertEquals("小鹿：有 2 樣預購買好了嗎？", many.title)
         assertNull(many.single)
         assertEquals(listOf("書 $500", "Switch 2 $10,000"), many.lines.map { it.replace(Money.twd, "$") })
     }

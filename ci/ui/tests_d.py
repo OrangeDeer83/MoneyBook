@@ -7317,13 +7317,13 @@ def preorder_seed():
     return _json.dumps(root, ensure_ascii=False)
 
 
-@case(D, "預購：首頁預算先扣預留、「該買了嗎」按買了照實際記；預購清單新增一筆（記一筆有預購按鈕）、按沒買放回預算", visual=True)
+@case(D, "預購：首頁預算先扣預留、「買好了嗎」按買了照實際記；預購清單新增一筆（記一筆有預購按鈕）、按沒買放回預算", visual=True)
 def t_preorder():
     d.fresh(preorder_seed())
     d.time.sleep(2)
-    ns = d.shot("首頁：該買了嗎、預算扣預留")
-    d.check("首頁有「該買了嗎？」：headphone 預計今天、預估 $2,980",
-            d.has(ns, "該買了嗎？", True) and d.has(ns, "headphone", True) and d.has(ns, "預估 $2,980", True), [n.text for n in ns if n.text][:30])
+    ns = d.shot("首頁：買好了嗎、預算扣預留")
+    d.check("首頁有「買好了嗎？」：headphone 預計今天、預估 $2,980",
+            d.has(ns, "買好了嗎？", True) and d.has(ns, "headphone", True) and d.has(ns, "預估 $2,980", True), [n.text for n in ns if n.text][:30])
     d.check("預算：已花 $1,000・還剩 $6,020，其中預留給預購 $2,980",
             d.has(ns, "已花 $1,000・還剩 $6,020（預算 $10,000）", True) and d.has(ns, "其中預留給預購 $2,980（還沒買）", True),
             [n.text for n in ns if "預算" in n.text or "預留" in n.text])
@@ -7340,8 +7340,8 @@ def t_preorder():
     f.save_edit()
     d.time.sleep(1.5)
     ns = d.shot("買好了")
-    d.check("該買了嗎不見了；預算照實際的：已花 $3,500・還剩 $6,500，沒有預留那行",
-            not d.has(ns, "該買了嗎？", True) and d.has(ns, "已花 $3,500・還剩 $6,500（預算 $10,000）", True) and not d.has(ns, "其中預留", False),
+    d.check("買好了嗎不見了；預算照實際的：已花 $3,500・還剩 $6,500，沒有預留那行",
+            not d.has(ns, "買好了嗎？", True) and d.has(ns, "已花 $3,500・還剩 $6,500（預算 $10,000）", True) and not d.has(ns, "其中預留", False),
             [n.text for n in ns if n.text][:30])
     f.tab("我的")
     d.time.sleep(1)

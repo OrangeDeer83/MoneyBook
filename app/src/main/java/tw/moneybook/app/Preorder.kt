@@ -115,7 +115,7 @@ fun AppData.preorderNotice(today: Long, repeat: Int, name: String): PreorderNoti
     }
     val lines = due.take(5).map { "${preorderName(it)} ${formatMoney(it.amount)}" }
     return PreorderNotice(
-        "$name：有 ${due.size} 樣預購該買了", "預估合計 ${formatMoney(due.sumOf { it.amount })}・點開來看", lines, worried, null,
+        "$name：有 ${due.size} 樣預購買好了嗎？", "預估合計 ${formatMoney(due.sumOf { it.amount })}・點開來看", lines, worried, null,
     )
 }
 

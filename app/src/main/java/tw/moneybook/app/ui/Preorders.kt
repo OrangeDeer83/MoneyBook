@@ -50,7 +50,7 @@ import tw.moneybook.app.preorderName
 import java.time.LocalDate
 
 /*
- * 預購清單（草圖 ci-out/preorder_plan.png ②④）：我的 → 預購清單，和首頁的「該買了嗎？」卡片。
+ * 預購清單（草圖 ci-out/preorder_plan.png ②④）：我的 → 預購清單，和首頁的「買好了嗎？」卡片。
  */
 
 /** 「12/20・還有 29 天」「今天」「12/1・過了 3 天」 */
@@ -298,7 +298,7 @@ fun PreorderDueCard(vm: MoneyViewModel, due: List<Preorder>, onPreorder: (String
     var later by remember { mutableStateOf<Preorder?>(null) }
     CuteCard(Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
         Text(
-            if (due.size == 1) "該買了嗎？" else "有 ${due.size} 樣預購該買了",
+            if (due.size == 1) "買好了嗎？" else "有 ${due.size} 樣預購買好了嗎？",
             style = MaterialTheme.typography.titleSmall,
         )
         due.take(5).forEach { p ->

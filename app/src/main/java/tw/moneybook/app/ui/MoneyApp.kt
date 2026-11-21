@@ -224,7 +224,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                         it == "accounts" -> tab = 1
                         // 刷卡待確認的「改一下」：打開記一筆，內容帶好
                         it.startsWith("pend:") -> push(Route.Edit(null, pendId = it.removePrefix("pend:").toLongOrNull()))
-                        // 首頁「該買了嗎」：買了 → 記一筆帶好那筆預購；延後 → 預購清單選日期
+                        // 首頁「買好了嗎」：買了 → 記一筆帶好那筆預購；延後 → 預購清單選日期
                         it.startsWith("po-buy:") -> push(Route.Edit(null, preorder = "buy:" + it.removePrefix("po-buy:")))
                         it.startsWith("po-later:") -> { vm.preorderLater = it.removePrefix("po-later:").toLongOrNull(); push(Route.Page("preorders")) }
                         else -> push(Route.Page(it))
