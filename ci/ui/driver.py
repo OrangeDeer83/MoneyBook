@@ -440,7 +440,8 @@ def contrast_issues(png_path, ns, threshold=1.8, ignore=()):
         if not t or t.startswith("＋ 子分類") or re.match(r"^(今天|昨天|前天|\d+/\d+)", t):
             continue   # 已知誤報：節點範圍與實際文字位置不一致
         x1, y1, x2, y2 = max(n.x1, 0), max(n.y1, 0), min(n.x2, W), min(n.y2, H)
-        if x2 - x1 < 6 or y2 - y1 < 6 or (x2 - x1) * (y2 - y1) > 0.3 * W * H:
+        # 只露出一小條（捲到畫面邊緣被切掉）的字看不出顏色，不檢查
+        if x2 - x1 < 6 or y2 - y1 < 12 or (x2 - x1) * (y2 - y1) > 0.3 * W * H:
             continue
         crop = im.crop((x1, y1, x2, y2))
         crop.thumbnail((80, 40))

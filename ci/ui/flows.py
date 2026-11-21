@@ -105,9 +105,23 @@ def open_acc(name):
     d.time.sleep(1)
 
 
+def me_show(label, tries=5):
+    """「我的」頁：把某一列捲到畫面裡（項目越來越多，下面幾列會在畫面外；模擬器的狀態列也變高了）"""
+    h = d._screen()[1]
+    for _ in range(tries):
+        n = next((x for x in d.nodes() if x.text == label), None)
+        if n and n.y2 < h * 0.78:
+            return n
+        d.swipe(540, int(h * 0.7), 540, int(h * 0.45), 500)
+        d.time.sleep(0.6)
+    return next((x for x in d.nodes() if x.text == label), None)
+
+
 def me_page(label):
     tab("我的")
-    d.tap(d.wait(lambda n: n.text == label, 10, label))
+    d.wait(lambda n: n.text in ("帳本管理", label), 10, "我的")
+    n = me_show(label)
+    d.tap(n if n else d.wait(lambda n: n.text == label, 10, label))
     d.time.sleep(1)
 
 

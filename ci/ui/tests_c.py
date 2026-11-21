@@ -56,7 +56,7 @@ def t_dark_sub():
 
     def budget():
         f.tab("我的")
-        d.tap(d.wait(lambda n: n.text == "每月預算", 8, "每月預算"))
+        d.tap(f.me_show("每月預算") or d.wait(lambda n: n.text == "每月預算", 8, "每月預算"))
         d.time.sleep(1.2)
         d.shot("深色：每月預算對話框", contrast=True)
         d.back()
@@ -354,6 +354,7 @@ def t_budget_dialog():
     d.hide_ime()
     f.confirm_dialog()
     d.time.sleep(1.5)
+    f.me_show("每月預算")
     ns = d.shot("設定後的我的頁面")
     d.check("我的頁面顯示 $1,000", any("$1,000" in n.text for n in ns))
 

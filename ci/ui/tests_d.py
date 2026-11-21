@@ -3709,6 +3709,19 @@ def settle_seed(snack=False):
     return s.json()
 
 
+def settle_summary(timeout=10):
+    """依分帳結論結清第一步：底下的「照理說你會收到」被「下一步」擋住時往上捲一點（模擬器的狀態列變高了）"""
+    d.wait_text("下一步", timeout=timeout)
+    h = d._screen()[1]
+    for _ in range(4):
+        n = next((x for x in d.nodes() if x.text.startswith("照理說你")), None)
+        if n and n.y2 < h - 320:
+            return n
+        d.swipe(540, int(h * 0.62), 540, int(h * 0.47), 500)
+        d.time.sleep(0.6)
+    return None
+
+
 def amount_right_of(ns, label):
     lb = d.first(ns, label, True)
     if not lb:
@@ -3722,12 +3735,16 @@ def t_settle_group():
     d.fresh(settle_seed())
     f.open_reimb_home()
     d.tap_text("依分帳結論結清", exact=True)
-    d.wait_text("照理說你會收到", timeout=10)
+    settle_summary()
     ns = d.shot("第一步：全部")
     d.check("列出 Amy、Bob、Dan 欠我、我欠 Carol；照理說收到 $850", all(d.has(ns, t, True) for t in ("Amy欠我", "Bob欠我", "Dan欠我", "我欠Carol"))
             and amount_right_of(ns, "照理說你會收到") == "$850", [n.text for n in ns if n.text][:40])
+    # 捲回最上面點標籤
+    d.swipe(540, 900, 540, 1700, 500)
+    d.time.sleep(0.6)
     d.tap_text("#tokyo", exact=True)
     d.time.sleep(1)
+    settle_summary()
     ns = d.shot("篩 #tokyo")
     d.check("篩 #tokyo：沒有 Dan，照理說收到 $700", not d.has(ns, "Dan欠我", True) and amount_right_of(ns, "照理說你會收到") == "$700", [n.text for n in ns if n.text][:40])
     d.tap_text("下一步", exact=True)
@@ -3764,7 +3781,7 @@ def settle_keep_open(actual):
     d.fresh(settle_seed())
     f.open_reimb_home()
     d.tap_text("依分帳結論結清", exact=True)
-    d.wait_text("照理說你會收到", timeout=10)
+    d.wait_text("下一步", timeout=10)
     d.tap_text("#tokyo", exact=True)
     d.time.sleep(1)
     d.tap_text("下一步", exact=True)
@@ -4572,6 +4589,7 @@ def t_settle_detail_edit():
         ok = True
     except TimeoutError:
         ok = False
+    settle_summary()
     ns = d.shot("修改分帳結清")
     d.check("打開修改分帳結清：原本勾的 Amy、Bob、Carol 勾好（照理說收到 $700，Dan 沒勾）", ok and amount_right_of(ns, "照理說你會收到") == "$700", [n.text for n in ns if n.text][:30])
     if not ok:
@@ -6094,6 +6112,7 @@ def t_sub_icon():
     to_main()
     f.tab("明細")
     d.time.sleep(1.5)
+    home_open("扣款")
     ns = d.shot("首頁到期提醒")
     r1, r2 = bubble_left_of(ns, last_png(), "影音平台"), bubble_left_of(ns, last_png(), "音樂")
     d.check("首頁到期提醒：影音平台用自己的圖", r1 > 0.02 and 0 <= r2 < 0.005, f"影音平台 {r1:.1%}、音樂 {r2:.1%}")
