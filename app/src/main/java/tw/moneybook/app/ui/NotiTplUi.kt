@@ -60,6 +60,8 @@ import tw.moneybook.app.read
 import tw.moneybook.app.readNoti
 import tw.moneybook.app.setMark
 import tw.moneybook.app.tplFor
+import tw.moneybook.app.tplsOf
+import tw.moneybook.app.orderTpls
 import tw.moneybook.app.tplName
 import tw.moneybook.app.tplNeed
 import java.time.Instant
@@ -239,6 +241,41 @@ fun TplTeachScreen(vm: MoneyViewModel, teach: TplTeach, onDone: () -> Unit) {
                     }
                 }
             }
+            // 4. 這個 App 的其他範本：跟這則的關係（現在用哪個讀、存好後會不會蓋掉）
+            val others = d.tplsOf(teach.pkg).filter { it.id != teach.editId }
+            if (others.isNotEmpty()) {
+                Text("4. ${teach.label} 的範本（寫得比較仔細的先比）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                fun reads(t: NotiTpl) = t.read("", teach.sample, teach.time) != null
+                val nowWin = d.tplsOf(teach.pkg).firstOrNull { reads(it) }
+                val after = orderTpls(others + tpl)
+                val afterWin = after.firstOrNull { reads(it) }
+                CuteCard(Modifier.fillMaxWidth(), padding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
+                    after.forEachIndexed { i, t ->
+                        val mine = t === tpl
+                        val name = if (!mine) d.tplName(t) else if (teach.editId != null) "正在改的這個" else "你正在標的"
+                        // 狀態、顏色（0 灰、1 綠、2 主色、3 橘）
+                        val (st, tone) = when {
+                            mine && read == null -> "還沒標好" to 0
+                            mine && afterWin === tpl -> "存好後排第 ${i + 1}，這則用它讀" to 2
+                            mine -> "存好後排第 ${i + 1}，這則還是用「${afterWin?.let { d.tplName(it) } ?: "通用規則"}」讀" to 3
+                            !reads(t) -> "對不上這則" to 0
+                            afterWin === t -> "這則用它讀" to 1
+                            nowWin?.id == t.id -> "現在用它讀這則・存好後被蓋掉" to 3
+                            else -> "對得上，但排後面" to 0
+                        }
+                        val col = when (tone) { 1 -> cute.income; 2 -> MaterialTheme.colorScheme.primary; 3 -> cute.accent2; else -> cute.sub }
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = cute.sub, modifier = Modifier.width(22.dp))
+                            Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text(
+                                st, style = MaterialTheme.typography.labelSmall, color = if (tone == 3) cute.ink else col,
+                                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(10.dp)).background(col.copy(alpha = 0.18f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
             Button(
                 onClick = { if (need != null) tries.count++ else stage = 2 },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -264,18 +301,8 @@ private fun TplConfirm(vm: MoneyViewModel, tpl: NotiTpl, teach: TplTeach, onBack
     SubPage("確認範本", onBack) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("範本長這樣（灰字照抄，色塊每次會變）", style = MaterialTheme.typography.labelLarge, color = cute.sub)
-            val colors = TplField.entries.associateWith { tplColor(it) }
             CuteCard(Modifier.fillMaxWidth(), padding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
-                val text = buildAnnotatedString {
-                    var pos = 0
-                    tpl.marks.sortedBy { it.start }.forEach { m ->
-                        withStyle(SpanStyle(color = cute.sub)) { append(tpl.sample.substring(pos, m.start)) }
-                        withStyle(SpanStyle(background = colors.getValue(m.field).copy(alpha = 0.45f), color = MaterialTheme.colorScheme.onSurface)) { append(" ${m.field.label} ") }
-                        pos = m.end + 1
-                    }
-                    withStyle(SpanStyle(color = cute.sub)) { append(tpl.sample.substring(pos)) }
-                }
-                Text(text, style = MaterialTheme.typography.bodyLarge)
+                TplPreview(tpl)
             }
             Text("用這個範本重讀最近的通知", style = MaterialTheme.typography.labelLarge, color = cute.sub)
             val rows = list.map { n -> n to tpl.read(n.title, n.text, n.time) }
@@ -313,29 +340,61 @@ private fun TplConfirm(vm: MoneyViewModel, tpl: NotiTpl, teach: TplTeach, onBack
     }
 }
 
-/** 刷卡通知設定頁的範本清單（草圖 ④）：左滑刪除；點了看原本那則、重新標 */
+/** 範本長怎樣：灰字照抄，標的欄位是色塊 */
 @Composable
-fun TplListCard(vm: MoneyViewModel, captured: List<CapturedNoti>, onOpen: (NotiTpl) -> Unit) {
+fun TplPreview(tpl: NotiTpl, style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge) {
+    val cute = LocalCute.current
+    val colors = TplField.entries.associateWith { tplColor(it) }
+    val text = buildAnnotatedString {
+        var pos = 0
+        tpl.marks.sortedBy { it.start }.forEach { m ->
+            withStyle(SpanStyle(color = cute.sub)) { append(tpl.sample.substring(pos, m.start)) }
+            withStyle(SpanStyle(background = colors.getValue(m.field).copy(alpha = 0.45f), color = MaterialTheme.colorScheme.onSurface)) { append(" ${m.field.label} ") }
+            pos = m.end + 1
+        }
+        withStyle(SpanStyle(color = cute.sub)) { append(tpl.sample.substring(pos)) }
+    }
+    Text(text, style = style)
+}
+
+/**
+ * 一個 App 的範本清單（照比的順序：寫得比較仔細的先比）：左滑刪除；點了看原本那則、重新標。
+ * 「最近 7 天用它讀了 N 則」只算真的用它讀的（被排前面的範本先讀走的不算）。
+ */
+@Composable
+fun AppTplCard(vm: MoneyViewModel, pkg: String, captured: List<CapturedNoti>, onOpen: (NotiTpl) -> Unit) {
     val cute = LocalCute.current
     val d = vm.data
-    if (d.notiTpls.isEmpty()) return
+    val tpls = d.tplsOf(pkg)
     CuteCard(Modifier.fillMaxWidth()) {
-        Text("範本", style = MaterialTheme.typography.titleSmall)
-        d.notiTpls.sortedBy { it.id }.forEach { t ->
+        Text("範本（寫得比較仔細的先比）", style = MaterialTheme.typography.titleSmall)
+        if (tpls.isEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text("還沒有範本。在「收到的通知」點讀錯的那則，就可以教它怎麼讀。", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+            return@CuteCard
+        }
+        tpls.forEachIndexed { i, t ->
             Spacer(Modifier.height(6.dp))
             SwipeRow(onDelete = { vm.deleteTpl(t.id) }) {
-                val n = captured.count { it.pkg == t.pkg && t.read(it.title, it.text, it.time) != null }
+                val n = captured.count { it.pkg == pkg && d.tplFor(it)?.id == t.id }
                 val day = LocalDate.ofEpochDay(t.created)
-                Column(
+                Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.soft.copy(alpha = 0.45f))
                         .clickable { onOpen(t) }.padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    Text(d.tplName(t), style = MaterialTheme.typography.bodyMedium)
-                    Text("最近 7 天對上 $n 則・從 ${day.monthValue}/${day.dayOfMonth} 的通知學的", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                    Text("${i + 1}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(22.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(d.tplName(t), style = MaterialTheme.typography.bodyMedium)
+                        Text("最近 7 天用它讀了 $n 則・從 ${day.monthValue}/${day.dayOfMonth} 的通知學的", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                        TplPreview(t, MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text("左滑刪除；點了看原本那則、重新標", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+        Text(
+            "收到這個 App 的通知時從 1 開始比，第一個對得上的就用它讀；都對不上用通用規則。左滑刪除；點了看原本那則、重新標",
+            style = MaterialTheme.typography.labelSmall, color = cute.sub,
+        )
     }
 }

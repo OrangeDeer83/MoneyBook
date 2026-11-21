@@ -122,7 +122,18 @@ fun NotiTpl.read(title: String, text: String, postTime: Long, zone: ZoneId = Zon
 
 /** 這則通知對得上哪個範本（同一個 App 的，新的先試）；都對不上回傳 null */
 fun AppData.tplFor(n: CapturedNoti): NotiTpl? =
-    notiTpls.filter { it.pkg == n.pkg }.sortedByDescending { it.id }.firstOrNull { it.read(n.title, n.text, n.time) != null }
+    tplsOf(n.pkg).firstOrNull { it.read(n.title, n.text, n.time) != null }
+
+/** 範本寫得多仔細：沒標的固定字有幾個（數字可以是任何數字、空白可有可無，都不算） */
+val NotiTpl.fixedLen: Int
+    get() = sample.indices.count { i -> marks.none { i in it.start..it.end } && !sample[i].isDigit() && !sample[i].isWhitespace() }
+
+/** 比的順序：寫得比較仔細的先比（兩個都對得上時用它），一樣仔細的新存的先；還沒存的（id 0）當最新 */
+fun orderTpls(list: List<NotiTpl>): List<NotiTpl> =
+    list.sortedWith(compareByDescending<NotiTpl> { it.fixedLen }.thenByDescending { if (it.id == 0L) Long.MAX_VALUE else it.id })
+
+/** 這個 App 的範本，照比的順序 */
+fun AppData.tplsOf(pkg: String): List<NotiTpl> = orderTpls(notiTpls.filter { it.pkg == pkg })
 
 /** 讀一則通知：先試這個 App 的範本，都對不上才用通用規則 */
 fun AppData.readNoti(n: CapturedNoti): NotiRead =
@@ -159,6 +170,8 @@ fun retplPends(pends: List<CardPend>, captured: List<CapturedNoti>, d: AppData, 
     var out = pends
     var n = 0
     for (c in captured.filter { it.pkg == tpl.pkg }.sortedBy { it.time }) {
+        // 別的範本比較仔細、會先用它讀的不動
+        if (d.tplFor(c)?.id != tpl.id) continue
         val r = tpl.read(c.title, c.text, c.time) ?: continue
         val p = out.firstOrNull { pp -> pp.src.any { it.notiId == c.id } }
         if (p == null) {

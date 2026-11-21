@@ -6,6 +6,8 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -152,8 +154,14 @@ fun CardNotifyScreen(vm: MoneyViewModel, onBack: () -> Unit) {
     var step by rememberSaveable { mutableIntStateOf(if (d.notiApps.isEmpty()) 1 else 3) }
     // 教範本（點收到的一則通知、或範本清單的一個範本）
     var teach by remember { mutableStateOf<TplTeach?>(null) }
+    var appPage by rememberSaveable { mutableStateOf<String?>(null) }
     teach?.let { t ->
         TplTeachScreen(vm, t) { teach = null }
+        return
+    }
+    // 點了「讀哪些 App」的一個 App：記到哪張卡＋它的範本
+    d.notiApps.firstOrNull { it.pkg == appPage }?.let { a ->
+        SubPage(a.label, { appPage = null }) { NotiAppPage(vm, a, { appPage = null; step = 2 }, { teach = it }) }
         return
     }
     SubPage("刷卡通知", onBack) {
@@ -161,7 +169,7 @@ fun CardNotifyScreen(vm: MoneyViewModel, onBack: () -> Unit) {
             !enabled -> PermissionStep(tick)
             step == 1 || d.notiApps.isEmpty() -> AppPickStep(vm) { step = 2 }
             step == 2 -> CardMapStep(vm) { step = 3 }
-            else -> NotiOverview(vm, { step = 1 }, { teach = it })
+            else -> NotiOverview(vm, { step = 1 }, { appPage = it }, { teach = it })
         }
     }
 }
@@ -382,6 +390,33 @@ private fun CardMapStep(vm: MoneyViewModel, onDone: () -> Unit) {
     }
 }
 
+/** 這個 App 的通知記到哪幾張卡（好幾張時加上沒寫末四碼時記到哪） */
+private fun appCardsText(d: tw.moneybook.app.AppData, a: NotiApp): String {
+    val names = a.cardIds.mapNotNull { d.accMap[it]?.name }
+    return (if (names.isEmpty()) "還沒選卡（收到時再問）" else names.joinToString("、")) +
+        (if (names.size != 1) "・沒寫末四碼時：" + (a.defaultCard?.let { d.accMap[it]?.name } ?: "每次問我") else "")
+}
+
+/** 一個 App 的頁面：記到哪張卡（修改到對應卡片那步）、它的範本 */
+@Composable
+private fun NotiAppPage(vm: MoneyViewModel, a: NotiApp, onEditCards: () -> Unit, onTeach: (TplTeach) -> Unit) {
+    val ctx = LocalContext.current
+    val cute = LocalCute.current
+    val d = vm.data
+    val ver by CardNotiLog.version.collectAsState()
+    val list: List<CapturedNoti> = remember(ver) { CardNotiLog.load(ctx) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        CuteCard(Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("記到哪張卡", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text("修改 ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { onEditCards() }.padding(4.dp))
+            }
+            Text(appCardsText(d, a), style = MaterialTheme.typography.bodySmall, color = cute.sub)
+        }
+        AppTplCard(vm, a.pkg, list) { onTeach(d.teachOf(it)) }
+    }
+}
+
 /** 收到的通知旁邊的標籤（讀對了、用範本、少了商店、不是消費…） */
 @Composable
 private fun NotiTagChip(kind: NotiTagKind, tag: String) {
@@ -399,7 +434,7 @@ private fun NotiTagChip(kind: NotiTagKind, tag: String) {
 }
 
 @Composable
-private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit, onTeach: (TplTeach) -> Unit) {
+private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit, onOpenApp: (String) -> Unit, onTeach: (TplTeach) -> Unit) {
     val ctx = LocalContext.current
     val cute = LocalCute.current
     val d = vm.data
@@ -430,25 +465,28 @@ private fun NotiOverview(vm: MoneyViewModel, onEditApps: () -> Unit, onTeach: (T
                     Text("讀哪些 App", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     Text("修改 ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { onEditApps() }.padding(4.dp))
                 }
+                // 點一列打開那個 App：記到哪張卡＋它的範本
                 d.notiApps.forEach { a ->
                     Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onOpenApp(a.pkg) }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         AppIcon(a.pkg, a.label)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(a.label, style = MaterialTheme.typography.bodyMedium)
-                            val names = a.cardIds.mapNotNull { d.accMap[it]?.name }
-                            Text(
-                                (if (names.isEmpty()) "還沒選卡（收到時再問）" else names.joinToString("、")) +
-                                    (if (names.size != 1) "・沒寫末四碼時：" + (a.defaultCard?.let { d.accMap[it]?.name } ?: "每次問我") else ""),
-                                style = MaterialTheme.typography.labelSmall, color = cute.sub,
-                            )
+                            Text(appCardsText(d, a), style = MaterialTheme.typography.labelSmall, color = cute.sub)
                         }
+                        val n = d.notiTpls.count { it.pkg == a.pkg }
+                        Text(
+                            (if (n > 0) "範本 $n 個" else "沒有範本") + " ›", style = MaterialTheme.typography.labelMedium,
+                            color = if (n > 0) MaterialTheme.colorScheme.primary else cute.sub, modifier = Modifier.padding(start = 6.dp),
+                        )
                     }
                 }
             }
         }
-        if (d.notiTpls.isNotEmpty()) item { TplListCard(vm, list) { onTeach(d.teachOf(it)) } }
         item {
             // 有待確認時吉祥物發手機通知；手機沒允許記帳本發通知時，點一下要權限（拒絕過就打開系統設定）
             var tick by remember { mutableIntStateOf(0) }

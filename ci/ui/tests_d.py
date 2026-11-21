@@ -6612,8 +6612,16 @@ def t_card_tpl():
     except TimeoutError:
         d.check("存好：提示「範本存好了，重讀了 1 則通知」", False, pend_texts(d.nodes()))
     d.time.sleep(1.5)
-    ns = d.shot("範本清單")
-    d.check("設定頁有範本清單「X 銀行・交易」", d.has(ns, "X 銀行・交易", True) and d.has(ns, "最近 7 天對上 1 則", False), pend_texts(ns))
+    ns = d.shot("讀哪些 App")
+    d.check("總覽沒有範本那張；X 銀行那列寫「範本 1 個 ›」", not d.has(ns, "X 銀行・交易", True) and d.has(ns, "範本 1 個 ›", True), pend_texts(ns))
+    d.tap_text("範本 1 個 ›", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("X 銀行的範本")
+    d.check("點 X 銀行：記到哪張卡＋範本「1 X 銀行・交易」、最近 7 天用它讀了 1 則、格式有商店和金額色塊",
+            d.has(ns, "記到哪張卡", True) and d.has(ns, "X 銀行・交易", True) and d.has(ns, "最近 7 天用它讀了 1 則", False)
+            and d.has(ns, " 商店 ", False) and d.has(ns, " 金額 ", False), pend_texts(ns))
+    d.back()
+    d.time.sleep(1)
     bank_post("t2", "交易提醒 店家 UNIQLO 已扣款 NTD 990")
     d.time.sleep(1)
     ns = d.shot("用範本")
@@ -6998,3 +7006,58 @@ def t_card_noti_tabs():
     ns = d.shot("其他分頁")
     d.check("其他分頁：只有點數通知、標「不是消費」",
             d.has(ns, pts, True) and d.has(ns, "不是消費", True) and not d.has(ns, ad, True), pend_texts(ns))
+
+
+@case(D, "範本照仔細程度排：點 App 看範本 1、2；教範本那頁列出這個 App 的範本和跟這則的關係", visual=True)
+def t_card_tpl_order():
+    import json as _json
+    s = S.Seed(f.today())
+    root = _json.loads(card_noti_seed(s))
+    smp = "交易提醒店家COSTCO已扣款NTD 2,350"
+    amt = {"f": "AMOUNT", "s": smp.index("2,350"), "e": len(smp) - 1}
+    c0 = smp.index("COSTCO")
+    # 1 仔細：交易提醒店家【商店】已扣款NTD【金額】；2 寬鬆（後來才存）：交易提醒【商店】已扣款NTD【金額】
+    root["notiTpls"] = [
+        {"id": 900, "pkg": SHELL_PKG, "sample": smp, "created": f.today().toordinal() - 719163,
+         "marks": [{"f": "MERCHANT", "s": c0, "e": c0 + 5}, amt]},
+        {"id": 901, "pkg": SHELL_PKG, "sample": smp, "created": f.today().toordinal() - 719163,
+         "marks": [{"f": "MERCHANT", "s": smp.index("店家"), "e": c0 + 5}, amt]},
+    ]
+    root["nextId"] = max(root.get("nextId", 1000), 1000)
+    d.fresh(_json.dumps(root, ensure_ascii=False))
+    card_noti_on()
+    t1 = "交易提醒 店家 UNIQLO 已扣款 NTD 990"
+    bank_post("o1", t1)
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("仔細的先讀")
+    d.check("用比較仔細的範本讀：待確認商店是 UNIQLO（不是「店家UNIQLO」）",
+            d.has(ns, "UNIQLO", True) and not d.has(ns, "店家UNIQLO", True), pend_texts(ns))
+    f.me_page("刷卡通知")
+    d.time.sleep(1)
+    d.tap_text("範本 2 個 ›", exact=True)
+    d.time.sleep(1)
+    ns = d.shot("App 的範本")
+    names = [n.text for n in ns if n.text.startswith("X 銀行・交易")]
+    d.check("點 App：兩個範本照 1、2 排，比較仔細的在前、它讀了 1 則",
+            d.has(ns, "1", True) and d.has(ns, "2", True) and len(names) == 2 and d.has(ns, "最近 7 天用它讀了 1 則", False)
+            and d.has(ns, "最近 7 天用它讀了 0 則", False), pend_texts(ns))
+    d.back()
+    d.time.sleep(1)
+    try:
+        d.tap(to_noti(t1))
+        d.wait_text("教它讀這種通知", timeout=8)
+    except TimeoutError as e:
+        d.check("點那則打開教範本", False, str(e))
+        return
+    d.time.sleep(1)
+    for _ in range(3):
+        ns = d.nodes()
+        if d.has(ns, "對得上，但排後面", True):
+            break
+        d.scroll_down(1)
+    ns = d.shot("4. 這個 App 的範本")
+    d.check("教範本：有「4. X 銀行 的範本」，正在改的寫「存好後排第 1，這則用它讀」，另一個寫「對得上，但排後面」",
+            d.has(ns, "4. X 銀行 的範本（寫得比較仔細的先比）", True) and d.has(ns, "存好後排第 1，這則用它讀", True)
+            and d.has(ns, "對得上，但排後面", True), pend_texts(ns))

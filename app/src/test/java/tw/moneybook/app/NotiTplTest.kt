@@ -98,7 +98,7 @@ class NotiTplTest {
     @Test
     fun retplUpdatesWaitingAndAddsMissing() {
         val base = Defaults.create()
-        val d = base.copy(notiApps = listOf(NotiApp("x", "X 銀行")))
+        val d0 = base.copy(notiApps = listOf(NotiApp("x", "X 銀行")))
         val text1 = "交易提醒 卡片1234 店家 COSTCO 已扣款 NTD 2,350"
         val text2 = "交易提醒 卡片1234 店家 UNIQLO 已扣款 NTD 990"
         val now = ms(2026, 11, 15)
@@ -110,11 +110,37 @@ class NotiTplTest {
         var marks = parseCardNoti("", text1, c1.time, zone).spans.map { (f, r) -> TplMark(f, r.first, r.last) }
         marks = setMark(marks, TplField.MERCHANT, s.indexOf("COSTCO"), s.indexOf("COSTCO") + 5)
         val t = NotiTpl(5, "x", s, marks, 0L)
+        val d = d0.copy(notiTpls = listOf(t))
         val (out, n) = retplPends(listOf(p1), listOf(c1, c2), d, t, now)
         assertEquals(2, n)
         assertEquals("COSTCO", out.first { it.id == 1L }.merchant)
         assertEquals("UNIQLO", out.first { it.id == 2L }.merchant)
         // 再重讀一次沒有變
         assertEquals(0, retplPends(out, listOf(c1, c2), d, t, now).second)
+    }
+
+    @Test
+    fun moreDetailedTemplateGoesFirst() {
+        val now = ms(2026, 11, 15)
+        val text = "交易提醒 店家 COSTCO 已扣款 NTD 2,350"
+        val s = normalizeNoti(text)   // 交易提醒店家COSTCO已扣款NTD 2,350
+        val amt = TplMark(TplField.AMOUNT, s.indexOf("2,350"), s.lastIndex)
+        // 仔細：「交易提醒店家【商店】已扣款NTD【金額】」
+        val fine = NotiTpl(1, "x", s, listOf(TplMark(TplField.MERCHANT, s.indexOf("COSTCO"), s.indexOf("COSTCO") + 5), amt), 0L)
+        // 寬鬆（後來才存）：「交易提醒【商店】已扣款NTD【金額】」，商店會讀成「店家COSTCO」
+        val loose = NotiTpl(2, "x", s, listOf(TplMark(TplField.MERCHANT, s.indexOf("店家"), s.indexOf("COSTCO") + 5), amt), 0L)
+        assertTrue(fine.fixedLen > loose.fixedLen)
+        val d = Defaults.create().copy(notiApps = listOf(NotiApp("x", "X 銀行")), notiTpls = listOf(fine, loose))
+        assertEquals(listOf(1L, 2L), d.tplsOf("x").map { it.id })
+        val c = CapturedNoti(9, "x", "X 銀行", "", "交易提醒 店家 UNIQLO 已扣款 NTD 990", now)
+        assertEquals(1L, d.tplFor(c)?.id)
+        assertEquals("UNIQLO", d.readNoti(c).merchant)
+        // 一樣仔細：新存的先；還沒存的（id 0）當最新
+        val same = loose.copy(id = 3)
+        assertEquals(listOf(3L, 2L), orderTpls(listOf(loose, same)).map { it.id })
+        assertEquals(listOf(0L, 3L), orderTpls(listOf(same, same.copy(id = 0))).map { it.id })
+        // 存寬鬆的那個後重讀：比較仔細的會先讀的不動
+        val p = pendOf(c, d.readNoti(c))!!
+        assertEquals(0, retplPends(listOf(p), listOf(c), d, loose, now).second)
     }
 }
