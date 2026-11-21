@@ -289,7 +289,7 @@ private fun PreorderNotifyCard(vm: MoneyViewModel) {
     }
 }
 
-/** 首頁：到了預計那天還沒回答的預購，每一筆「沒買」「延後」「買了」 */
+/** 首頁：到了預計那天還沒回答的預購，每一筆「買了」「沒買」「延後」 */
 @Composable
 fun PreorderDueCard(vm: MoneyViewModel, due: List<Preorder>, onPreorder: (String) -> Unit) {
     val d = vm.data
@@ -317,13 +317,14 @@ fun PreorderDueCard(vm: MoneyViewModel, due: List<Preorder>, onPreorder: (String
                     Text("預估 ${formatMoney(p.amount)}", color = cute.expense, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
                 }
                 Row(Modifier.padding(start = 44.dp, top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SoftButton("沒買", { vm.skipPreorder(p.id) }, compact = true)
-                    SoftButton("延後", { later = p }, compact = true)
+                    // 順序跟手機通知一樣：買了、沒買、延後
                     Button(
                         onClick = { onPreorder("po-buy:${p.id}") },
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
                         modifier = Modifier.height(32.dp).semantics { contentDescription = "買了 ${d.preorderName(p)}" },
                     ) { Text("買了", style = MaterialTheme.typography.labelLarge) }
+                    SoftButton("沒買", { vm.skipPreorder(p.id) }, compact = true)
+                    SoftButton("延後", { later = p }, compact = true)
                 }
             }
         }
