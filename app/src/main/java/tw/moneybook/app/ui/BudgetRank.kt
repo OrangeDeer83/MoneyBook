@@ -54,7 +54,7 @@ import tw.moneybook.app.trendStat
 
 /**
  * 首頁點預算卡：這個月算預算的支出花在哪。最上面是預算（點了換成設定預算的視窗，存好回到這裡），
- * 「依分類」大分類由多到少（點一列就地展開近 6 個月折線，「看明細 ›」打開下鑽頁），「單筆最大」前 10 筆（點了修改）。
+ * 「依分類」大分類由多到少（點一列直接打開那個分類的下鑽頁），「單筆最大」前 10 筆（點了修改）。
  */
 @Composable
 fun BudgetRankDialog(
@@ -72,7 +72,6 @@ fun BudgetRankDialog(
     val cute = LocalCute.current
     val budget = d.currentBook.budgetFor(month)
     val spent = remember(d, list) { list.filter { d.countsInBudget(it) || d.refundInBudget(it) }.sumOf { it.spent } }
-    var open by rememberSaveable { mutableStateOf<Long?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${month.monthValue} 月錢花在哪") },
@@ -103,10 +102,15 @@ fun BudgetRankDialog(
                         val top = rank.firstOrNull()?.second ?: 1L
                         rank.forEachIndexed { i, (cid, v) ->
                             val c = cid?.let { d.catMap[it] }
-                            val isOpen = cid != null && open == cid
+                            // 點一列：直接打開那個分類這個月的明細（下鑽頁）
                             Column(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                                    .clickable(enabled = cid != null) { open = if (isOpen) null else cid }
+                                    .clickable(enabled = c != null) {
+                                        if (c != null) {
+                                            vm.drill = Drill(iconLabel(c.emoji, c.name), 0, rankPred(d, c.id), { t -> t.spent }, c.id)
+                                            onDrill()
+                                        }
+                                    }
                                     .padding(vertical = 4.dp),
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -123,18 +127,13 @@ fun BudgetRankDialog(
                                             RatioBar(v.toFloat() / top.toFloat(), catColor(c?.color ?: 8), Modifier.weight(1f))
                                         }
                                     }
-                                    if (cid != null) {
+                                    if (c != null) {
                                         Icon(
-                                            if (isOpen) AppIcons.ChevronDown else AppIcons.ChevronRight,
-                                            contentDescription = if (isOpen) "收起${c?.name}" else "展開${c?.name}",
+                                            AppIcons.ChevronRight, contentDescription = "看${c.name}的明細",
                                             tint = cute.sub, modifier = Modifier.padding(start = 4.dp).size(20.dp),
                                         )
                                     } else Spacer(Modifier.width(24.dp))
                                 }
-                            }
-                            if (isOpen && c != null) RankTrend(vm, d, c, month) {
-                                vm.drill = Drill(iconLabel(c.emoji, c.name), 0, rankPred(d, c.id), { t -> t.spent }, c.id)
-                                onDrill()
                             }
                         }
                     } else {
@@ -170,54 +169,4 @@ fun BudgetRankDialog(
 private fun rankPred(d: AppData, id: Long): (Txn) -> Boolean {
     val ids = d.catAndKids(id)
     return { t -> d.statCat(t)?.let { it in ids } == true && (d.countsInBudget(t) || d.refundInBudget(t)) }
-}
-
-/** 排行裡展開的近 6 個月折線：跟統計下鑽頁一樣（虛線平均、比平均多 30% 以上紅點、長按看那個月） */
-@Composable
-private fun RankTrend(vm: MoneyViewModel, d: AppData, c: tw.moneybook.app.Category, month: YearMonth, onMore: () -> Unit) {
-    val cute = LocalCute.current
-    val now = YearMonth.now()
-    val end = if (month.isAfter(now)) now else month
-    val months = remember(end) { monthsEnding(end, 6) }
-    val pred = remember(d, c.id) { rankPred(d, c.id) }
-    val values = remember(d, c.id, end) { monthlySums(d.bookTxns, months, pred) { it.spent } }
-    val first = remember(d, c.id) { firstMonthOf(d.bookTxns, pred) }
-    val st = trendStat(values, months, first, now)
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.background).padding(horizontal = 10.dp, vertical = 8.dp)
-            .semantics { contentDescription = "近 6 個月：${c.name}" },
-    ) {
-        val last = values.last()
-        val head = "${if (end == now) "這個月" else "${end.monthValue} 月"} ${formatMoney(last)}"
-        if (st.avg > 0L) {
-            val p = pctVs(last, st.avg)
-            Text(
-                head + when {
-                    p > 0 -> "，比平均 ${formatMoney(st.avg)} 多 $p%"
-                    p < 0 -> "，比平均 ${formatMoney(st.avg)} 少 ${-p}%"
-                    else -> "，和平均 ${formatMoney(st.avg)} 一樣"
-                } + if (end == now) "（還沒過完）" else "",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (p >= 30) cute.expense else if (p < 0) cute.income else cute.sub,
-            )
-        } else {
-            Text(head, style = MaterialTheme.typography.labelSmall, color = cute.sub)
-        }
-        Spacer(Modifier.height(6.dp))
-        CategoryLines(
-            "rankTrend", trendLabels(months), trendTitles(months), listOf(LineSeries(c.name, catColor(c.color), values)),
-            avg = st.avg, warn = st.warn,
-        )
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (st.avg > 0L) {
-                DashMark(cute.sub)
-                Text(" 平均 ${formatMoney(st.avg)}", style = MaterialTheme.typography.labelSmall, color = cute.sub)
-            }
-            Spacer(Modifier.weight(1f))
-            Box(Modifier.clip(CircleShape).clickable(onClick = onMore).padding(horizontal = 8.dp, vertical = 4.dp)) {
-                Text("看明細  ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            }
-        }
-    }
 }

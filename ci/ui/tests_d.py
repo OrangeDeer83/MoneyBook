@@ -5111,7 +5111,7 @@ def t_sub_week_pause():
     d.check("清單寫已暫停，合計 $0", d.has(ns, "已暫停", True) and d.has(ns, "$0", True), [n.text for n in ns if n.text][:20])
 
 
-@case(D, "預算卡點了跳出「錢花在哪」：依分類排行（點一列展開近 6 個月）、改預算回到排行、單筆最大、看明細", visual=True)
+@case(D, "預算卡點了跳出「錢花在哪」：依分類排行（點一列直接看明細）、改預算回到排行、單筆最大", visual=True)
 def t_budget_rank():
     t = f.today()
     s = S.Seed(t, budget=1000)
@@ -5132,11 +5132,8 @@ def t_budget_rank():
     order = [n.text for n in sorted(names, key=lambda n: n.cy)]
     d.check("算預算的 $1,400・超出 $400；預算 $1,000；餐飲 > 購物 > 交通",
             d.has(ns, "算預算的 $1,400・超出 $400", True) and d.has(ns, "預算 $1,000", True) and order == ["餐飲", "購物", "交通"], ([n.text for n in ns if n.text][:25], order))
-    d.tap(d.wait(lambda n: n.desc == "展開餐飲", 8, "展開餐飲"))
-    d.time.sleep(1)
-    ns = d.shot("展開餐飲")
-    d.check("餐飲下面展開近 6 個月折線、有「看明細 ›」", any(n.desc == "近 6 個月：餐飲" for n in ns) and d.has(ns, "看明細  ›", True)
-            and any(n.text.startswith("這個月 $600") for n in ns), [n.text for n in ns if n.text][:25])
+    d.check("每一列右邊是「›」（點了看明細），不會就地展開折線", any(n.desc == "看餐飲的明細" for n in ns) and not any(n.desc == "近 6 個月：餐飲" for n in ns),
+            [n.desc for n in ns if n.desc][:25])
     # 改預算：換成預算設定，存好回到排行
     d.tap_text("預算 $1,000", exact=True)
     d.wait_text("預算設定", timeout=8)
@@ -5158,16 +5155,14 @@ def t_budget_rank():
     d.check("點一筆打開修改畫面", d.has(d.nodes(), "lunchR", False))
     d.tap_back()
     d.time.sleep(1.5)
-    # 再打開：記得上次看的是單筆最大；切回依分類，展開餐飲 → 看明細
+    # 再打開：記得上次看的是單筆最大；切回依分類，點餐飲直接看明細
     d.tap_text("點這裡看錢花在哪  ›", exact=True)
     d.wait_text(f"{t.month} 月錢花在哪", timeout=8)
     d.time.sleep(0.6)
     d.check("再打開還是單筆最大", d.has(d.nodes(), "lunchR", False))
     d.tap_text("依分類", exact=True)
     d.time.sleep(0.6)
-    d.tap(d.wait(lambda n: n.desc == "展開餐飲", 8, "展開餐飲"))
-    d.time.sleep(0.8)
-    d.tap_text("看明細  ›", exact=True)
+    d.tap_text("餐飲", exact=True)
     d.wait_text("近 12 個月", timeout=10)
     ns = d.shot("看明細")
     d.check("打開餐飲的下鑽頁：近 12 個月、這個月 $600", d.has(ns, "近 12 個月", True) and d.has(ns, "$600", True), [n.text for n in ns if n.text][:20])
