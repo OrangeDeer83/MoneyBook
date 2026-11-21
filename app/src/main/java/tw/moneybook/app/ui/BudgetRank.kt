@@ -99,7 +99,6 @@ fun BudgetRankDialog(
                     if (tab == 0) {
                         val rank = remember(d, list) { d.budgetRankCats(list) }
                         if (rank.isEmpty()) Text("這個月還沒有算預算的支出", style = MaterialTheme.typography.bodySmall, color = cute.sub)
-                        val top = rank.firstOrNull()?.second ?: 1L
                         rank.forEachIndexed { i, (cid, v) ->
                             val c = cid?.let { d.catMap[it] }
                             // 點一列：直接打開那個分類這個月的明細（下鑽頁）
@@ -124,7 +123,8 @@ fun BudgetRankDialog(
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text("${if (spent > 0) Math.round(v * 100.0 / spent) else 0}%", style = MaterialTheme.typography.labelSmall, color = cute.sub, modifier = Modifier.width(36.dp))
-                                            RatioBar(v.toFloat() / top.toFloat(), catColor(c?.color ?: 8), Modifier.weight(1f))
+                                            // 條的長度跟百分比一樣（43% 就畫 43% 長，草圖 ci-out/rank_bar.png 甲）
+                                            RatioBar(if (spent > 0) v.toFloat() / spent.toFloat() else 0f, catColor(c?.color ?: 8), Modifier.weight(1f))
                                         }
                                     }
                                     if (c != null) {
