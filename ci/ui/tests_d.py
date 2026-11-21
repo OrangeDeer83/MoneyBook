@@ -7071,3 +7071,78 @@ def t_card_tpl_order():
     d.check("教範本：有「4. X 銀行 的範本」，正在改的寫「存好後排第 1，這則用它讀」，另一個寫「對得上，但排後面」",
             d.has(ns, "4. X 銀行 的範本（寫得比較仔細的先比）", True) and d.has(ns, "存好後排第 1，這則用它讀", True)
             and d.has(ns, "對得上，但排後面", True), pend_texts(ns))
+
+
+@case(D, "免除：Amy 的頁面按「免除」，勾報銷免掉（寫原因）、不動帳戶、紀錄有一列可以刪；我不用還 Amy 那邊也可以", visual=True)
+def t_waive():
+    s = empty_seed()
+    t = s.expense(0, 1000, S.C_LUNCH, note="team lunch")
+    t.update(reimb=1, reimbAmount=1000, reimbItems=[S.reimb_item("Amy", 1000)])
+    t = s.expense(0, 800, S.C_DINNER, acc=None, note="dinner")
+    t.update(debtItems=[dict(who="Amy", amount=800, units=0, done=False, pays=[])], debtSelf=0)
+    d.fresh(s.json())
+    open_reimb_debt_home()
+    f.tap_person("Amy")
+    f.person_page()
+    d.tap_text("免除", exact=True)
+    try:
+        d.wait_text("免除・Amy", timeout=8)
+    except TimeoutError:
+        d.check("按「免除」打開免除頁", False, [n.text for n in d.nodes() if n.text][:30])
+        return
+    d.time.sleep(1)
+    ns = d.shot("免除頁")
+    d.check("免除頁：上面選 Amy 不用還我／我不用還 Amy，列出 team lunch 待收 $1,000、寫算你自己的支出",
+            d.has(ns, "Amy 不用還我", True) and d.has(ns, "我不用還 Amy", True) and any(n.text.startswith("team lunch") for n in ns)
+            and d.has(ns, "待收 $1,000", True) and d.has(ns, "改算你自己的支出", False), [n.text for n in ns if n.text][:30])
+    # 沒勾就按：紅框提示
+    c = [n for n in d.nodes() if n.text.startswith("免除 $")]
+    d.tap(max(c, key=lambda n: n.cy))
+    d.time.sleep(0.8)
+    ns = d.shot("沒勾")
+    d.check("沒勾就按：提示「請至少勾一筆要免除的帳」", d.has(ns, "請至少勾一筆要免除的帳", True), [n.text for n in ns if n.text][:30])
+    d.tap(d.wait(lambda n: n.text.startswith("team lunch"), 8, "team lunch"))
+    d.time.sleep(0.5)
+    d.fill(d.edits()[0], "birthday")
+    d.hide_ime()
+    d.time.sleep(0.5)
+    ns = d.shot("勾好")
+    d.check("勾好：按鈕寫「免除 $1,000」", d.has(ns, "免除 $1,000", True), [n.text for n in ns if n.text][:30])
+    c = [n for n in d.nodes() if n.text == "免除 $1,000"]
+    d.tap(max(c, key=lambda n: n.cy))
+    wait_toast("已免除：Amy 不用還 $1,000", "提示「已免除：Amy 不用還 $1,000」")
+    d.time.sleep(4)
+    ns = d.shot("免除後")
+    d.check("回到 Amy 的頁面：淨額變成你還欠 Amy $800", d.has(ns, "你還欠Amy $800", True), [n.text for n in ns if n.text][:30])
+    f.person_tab("紀錄")
+    ns = d.shot("紀錄")
+    d.check("紀錄有「免除 $1,000（Amy 不用還我）」、寫 team lunch、沒有錢進出、原因 birthday",
+            d.has(ns, "免除 $1,000（Amy 不用還我）", False) and any("team lunch" in n.text and "沒有錢進出" in n.text and "birthday" in n.text for n in ns),
+            [n.text for n in ns if n.text][:30])
+    # 我不用還 Amy
+    d.tap_text("免除", exact=True)
+    d.wait_text("免除・Amy", timeout=8)
+    d.time.sleep(1)
+    ns = d.shot("剩欠款")
+    d.check("報銷都結清了：不用選方向，直接列 dinner 待還 $800",
+            not d.has(ns, "Amy 不用還我", True) and any(n.text.startswith("dinner") for n in ns) and d.has(ns, "待還 $800", True), [n.text for n in ns if n.text][:30])
+    d.tap(d.wait(lambda n: n.text.startswith("dinner"), 8, "dinner"))
+    d.time.sleep(0.5)
+    c = [n for n in d.nodes() if n.text == "免除 $800"]
+    d.tap(max(c, key=lambda n: n.cy))
+    wait_toast("已免除：不用還Amy $800", "提示「已免除：不用還Amy $800」")
+    d.time.sleep(4)
+    ns = d.shot("兩清")
+    d.check("兩邊都免除：淨額兩清", d.has(ns, "兩清", True), [n.text for n in ns if n.text][:30])
+    # 刪掉第一次免除：Amy 又欠我 $1,000
+    f.person_tab("紀錄")
+    ns = d.nodes()
+    line = next(n for n in ns if "免除 $1,000（Amy 不用還我）" in n.text)
+    rows = [n for n in ns if n.text == "⋯"]
+    d.tap(min(rows, key=lambda n: abs(n.cy - line.cy)))
+    d.time.sleep(0.6)
+    d.tap_text("刪除這次免除", exact=True)
+    wait_toast("已刪除這次免除", "提示「已刪除這次免除」")
+    d.time.sleep(4)
+    ns = d.shot("刪掉一次")
+    d.check("刪掉 team lunch 那次：Amy 還欠你 $1,000", d.has(ns, "Amy還欠你 $1,000", True), [n.text for n in ns if n.text][:30])

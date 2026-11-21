@@ -112,6 +112,9 @@ import tw.moneybook.app.totalUnits
 import tw.moneybook.app.DebtItem
 import tw.moneybook.app.DebtCodec
 import tw.moneybook.app.effective
+import tw.moneybook.app.reimbKey
+import tw.moneybook.app.debtKey
+import tw.moneybook.app.waiveTwd
 import tw.moneybook.app.remainingTwd
 import tw.moneybook.app.formatMoney
 import tw.moneybook.app.pendingReimb
@@ -718,6 +721,8 @@ private sealed class ReimbPage {
     class Person(val who: String) : ReimbPage()
     class Repay(val who: String) : ReimbPage()
     class Offset(val who: String) : ReimbPage()
+    /** 免除：別人不用還我、我不用還別人 */
+    class Waive(val who: String) : ReimbPage()
     object Settle : ReimbPage()
     /** 修改某次分帳結清 */
     class SettleEdit(val id: Long) : ReimbPage()
@@ -761,6 +766,8 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
         is ReimbPage.Receive -> ReimbReceivePage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Repay -> DebtRepayPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
         is ReimbPage.Offset -> OffsetPage(vm, p.who, onBack = { back() }, onDone = { fromPerson = null; page = ReimbPage.Home })
+        // 免除只從人頁進去：做完回到那個人的頁面
+        is ReimbPage.Waive -> WaivePage(vm, p.who, onBack = { back() }, onDone = { back() })
         is ReimbPage.Person -> ReimbPersonPage(
             // 從記一筆「前往」過來的：返回就回到原本的地方
             vm, p.who, onBack = { if (vm.reimbGoto?.first == p.who) leave() else { fromPerson = null; page = ReimbPage.Home } },
@@ -768,6 +775,7 @@ fun ReimbScreen(vm: MoneyViewModel, onEdit: (Long) -> Unit, onBack: () -> Unit) 
             onReceive = { fromPerson = p.who; page = ReimbPage.Receive(p.who) },
             onRepay = { fromPerson = p.who; page = ReimbPage.Repay(p.who) },
             onOffset = { fromPerson = p.who; page = ReimbPage.Offset(p.who) },
+            onWaive = { fromPerson = p.who; page = ReimbPage.Waive(p.who) },
             onEditSettle = { fromPerson = p.who; page = ReimbPage.SettleEdit(it) },
         )
     }
@@ -1104,7 +1112,7 @@ private fun SettleDetailDialog(vm: MoneyViewModel, id: Long, onEdit: () -> Unit,
  */
 private class Rec(
     val who: String, val day: Long, val time: Int, val title: String, val sub: String, val amount: String,
-    val kind: Int, // 0 收款、1 還款、2 抵銷
+    val kind: Int, // 0 收款、1 還款、2 抵銷、3 免除
     val line: String, val personSub: String,
     val onDelete: (MoneyViewModel) -> Unit,
     /** 收款可以修改：報銷的哪一筆、第幾筆收款 */
@@ -1149,6 +1157,20 @@ private fun records(d: AppData, claims: List<Claim>, who: String? = null, withTx
                 "分帳結清", movesText(s), { vm -> vm.deleteSettle(s.id) }, settleId = s.id,
             ))
         }
+    }
+    // 免除：總覽、人頁都是一次一列
+    d.waives.filter { it.bookId == d.currentBook.id && (who == null || it.who == who) }.forEach { w ->
+        val ids = w.items.keys.mapNotNull { k -> k.drop(1).substringBefore('_').toLongOrNull() }.distinct()
+        val bills = ids.mapNotNull { d.txnMap[it] }.joinToString("、") { billLabel(d, it) }
+        val head = if (w.owedToMe) "${ownerLabel(w.who)} 不用還我" else "我不用還${ownerLabel(w.who)}"
+        val anyFx = !w.owedToMe && ids.any { id -> d.txnMap[id]?.debtCurrency?.isNotEmpty() == true }
+        val amt = (if (anyFx) "約 " else "") + formatMoney(d.waiveTwd(w))
+        val tail = (if (w.owedToMe) "算我自己的支出" else "從那筆支出扣掉") + "・沒有錢進出" + if (w.note.isNotBlank()) "・${w.note}" else ""
+        out.add(Rec(
+            w.who, w.day, w.time, "免除・$head", "$bills・$tail", amt, 3,
+            "免除 $amt（$head）", "$bills・$tail", { vm -> vm.deleteWaive(w.id) },
+            txns = if (withTxns) ids.toSet() else emptySet(),
+        ))
     }
     claims.filter { who == null || it.who == who }.forEach { c ->
         c.item.pays.forEachIndexed { n, pay ->
@@ -1552,8 +1574,10 @@ private fun FoldRow(label: String, folded: Boolean, onToggle: () -> Unit) {
 private fun ClaimBill(d: tw.moneybook.app.AppData, c: Claim, onClick: () -> Unit) {
     val cute = LocalCute.current
     val item = c.item
+    val waived = d.waives.any { reimbKey(c.txn.id, c.index) in it.items }
     val status = when {
         !item.closed -> "待收 ${formatMoney(item.remaining)}"
+        waived -> "已免除 ${formatMoney(item.amount - item.received)}"
         item.received < item.amount -> "不追了，少收 ${formatMoney(item.amount - item.received)}"
         else -> "已收齊"
     }
@@ -1574,8 +1598,10 @@ private fun DebtBill(d: tw.moneybook.app.AppData, r: DebtRef, onClick: () -> Uni
     val cute = LocalCute.current
     val item = r.item
     val back = item.pays.sumOf { it.amount }
+    val waived = d.waives.firstOrNull { debtKey(r.t.id, r.index) in it.items }
     val status = when {
         !item.done -> "待還 " + if (r.currency.isEmpty()) formatMoney(item.remainingTwd) else formatFx(item.remainingUnits, r.currency)
+        waived != null -> "已免除 " + waived.items.getValue(debtKey(r.t.id, r.index)).let { if (r.currency.isEmpty()) formatMoney(it) else formatFx(it, r.currency) }
         item.effective < item.amount -> "已還清，免 ${formatMoney(item.amount - item.effective)}"
         item.effective > item.amount -> "已還清，多付 ${formatMoney(item.effective - item.amount)}"
         else -> "已還清"
@@ -1600,7 +1626,7 @@ private fun DebtBill(d: tw.moneybook.app.AppData, r: DebtRef, onClick: () -> Uni
 @Composable
 private fun ReimbPersonPage(
     vm: MoneyViewModel, who: String, onBack: () -> Unit, onReceive: () -> Unit,
-    onRepay: () -> Unit, onOffset: () -> Unit,
+    onRepay: () -> Unit, onOffset: () -> Unit, onWaive: () -> Unit,
     /** 點帳單：到記一筆修改那一筆 */
     onEdit: (Long) -> Unit,
     /** 修改某次分帳結清 */
@@ -1763,7 +1789,7 @@ private fun ReimbPersonPage(
                                                 DropdownMenuItem(text = { Text("查看這次結清") }, onClick = { menuFor = null; showSettle = r.settleId })
                                             }
                                             DropdownMenuItem(
-                                                text = { Text(if (r.kind == 2) "刪除這次抵銷（兩邊一起）" else "刪除") },
+                                                text = { Text(when (r.kind) { 2 -> "刪除這次抵銷（兩邊一起）"; 3 -> "刪除這次免除"; else -> "刪除" }) },
                                                 onClick = { menuFor = null; r.onDelete(vm) },
                                             )
                                         }
@@ -1780,9 +1806,10 @@ private fun ReimbPersonPage(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (owed > 0L) Button(onClick = onReceive, modifier = Modifier.weight(1f)) { Text("收款") }
-                    // 按鈕固定最多三顆：幣別再多也只有一顆「還款」，進去一頁還完全部幣別
+                    // 幣別再多也只有一顆「還款」，進去一頁還完全部幣別
                     if (groups.isNotEmpty()) Button(onClick = onRepay, modifier = Modifier.weight(1f)) { Text("還款") }
                     if (owed > 0L && groups.isNotEmpty()) Button(onClick = onOffset, modifier = Modifier.weight(1f)) { Text("抵銷") }
+                    Button(onClick = onWaive, modifier = Modifier.weight(1f)) { Text("免除") }
                 }
             }
         }
@@ -2266,6 +2293,112 @@ private fun OffsetPage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDo
         }
     }
     if (pickDate) CuteDatePickerDialog(day, { day = it; pickDate = false }, { pickDate = false }, "抵銷的日期")
+}
+
+// ───────────────────────── 免除 ─────────────────────────
+
+/**
+ * 免除（草圖 ci-out/debt_waive.png）：兩個方向都有帳時上面選「X 不用還我／我不用還 X」，勾要免除的帳（部分收過、還過的免除剩下的），
+ * 原因選填。不動任何帳戶：別人不用還我＝那些錢算自己的支出；我不用還別人＝從那筆支出扣掉。
+ */
+@Composable
+private fun WaivePage(vm: MoneyViewModel, who: String, onBack: () -> Unit, onDone: () -> Unit) {
+    val d = vm.data
+    val cute = LocalCute.current
+    val name = ownerLabel(who)
+    val claims = claimsOf(d.bookTxns).filter { it.who == who && !it.item.closed && it.item.remaining > 0L }.sortedWith(compareBy({ it.txn.day }, { it.txn.id }))
+    val refs = d.bookTxns.filter { it.isDebt }.flatMap { t -> t.debtItems.indices.map { DebtRef(t, it) } }
+        .filter { it.who == who && !it.item.done && it.item.remainingUnits > 0L }.sortedWith(compareBy({ it.t.day }, { it.t.id }, { it.index }))
+    // 0＝X 不用還我（報銷）、1＝我不用還 X（欠款）
+    var dir by remember { mutableIntStateOf(if (claims.isNotEmpty()) 0 else 1) }
+    val sel = remember { mutableStateMapOf<String, Boolean>() }
+    var note by remember { mutableStateOf("") }
+    val keys = if (dir == 0) claims.map { reimbKey(it.txn.id, it.index) }.filter { sel[it] == true }
+    else refs.map { debtKey(it.t.id, it.index) }.filter { sel[it] == true }
+    val anyFx = dir == 1 && refs.any { sel[debtKey(it.t.id, it.index)] == true && it.currency.isNotEmpty() }
+    val total = if (dir == 0) claims.filter { sel[reimbKey(it.txn.id, it.index)] == true }.sumOf { it.item.remaining }
+    else refs.filter { sel[debtKey(it.t.id, it.index)] == true }.sumOf { it.item.remainingTwd }
+    val totalText = (if (anyFx) "約 " else "") + formatMoney(total)
+    val tries = rememberNeedTries()
+    val need = if (keys.isEmpty()) Need("pick", "請至少勾一筆要免除的帳") else null
+    val nv = NeedView(need, tries.count)
+
+    SubPage("免除・$name", onBack) {
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (claims.isNotEmpty() && refs.isNotEmpty()) {
+                    PillSegment(listOf("$name 不用還我", "我不用還 $name"), dir, { dir = it }, Modifier.fillMaxWidth(), equal = true)
+                }
+                if (claims.isEmpty() && refs.isEmpty()) {
+                    Text("沒有還沒結清的帳", style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                }
+                Text("勾要免除的帳", style = MaterialTheme.typography.labelLarge, color = cute.sub)
+                nv.Message("pick")
+                if (dir == 0) claims.forEach { c ->
+                    val k = reimbKey(c.txn.id, c.index)
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.card).clickable { sel[k] = sel[k] != true }.padding(end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.Checkbox(checked = sel[k] == true, onCheckedChange = { sel[k] = it })
+                        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                            Text(billLabel(d, c.txn), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "應收 ${formatMoney(c.item.amount)}" + if (c.item.received > 0L) "・已收 ${formatMoney(c.item.received)}" else "",
+                                style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                            )
+                        }
+                        Text("待收 ${formatMoney(c.item.remaining)}", style = MaterialTheme.typography.bodyMedium, color = cute.income)
+                    }
+                } else refs.forEach { r ->
+                    val k = debtKey(r.t.id, r.index)
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cute.card).clickable { sel[k] = sel[k] != true }.padding(end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.Checkbox(checked = sel[k] == true, onCheckedChange = { sel[k] = it })
+                        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                            Text(billLabel(d, r.t), style = MaterialTheme.typography.bodyMedium)
+                            val back = r.item.pays.sumOf { it.amount }
+                            Text(
+                                "欠 " + (if (r.currency.isEmpty()) formatMoney(r.item.amount) else formatFx(r.item.totalUnits, r.currency)) +
+                                    if (back > 0L) "・已還 ${formatMoney(back)}" else "",
+                                style = MaterialTheme.typography.labelSmall, color = cute.sub,
+                            )
+                        }
+                        Text(
+                            "待還 " + if (r.currency.isEmpty()) formatMoney(r.item.remainingTwd) else formatFx(r.item.remainingUnits, r.currency),
+                            style = MaterialTheme.typography.bodyMedium, color = cute.expense,
+                        )
+                    }
+                }
+                CuteCard(Modifier.fillMaxWidth()) {
+                    Text("免除 $totalText", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "・不動任何帳戶（沒有錢進出）\n" +
+                            (if (dir == 0) "・這些錢 $name 不用還，改算你自己的支出（跟收款時選「不追了」一樣）\n"
+                            else "・這些欠款不用還了，算還清；不用還的錢從那筆支出扣掉（跟還款時選「這樣就算還清了」一樣）\n") +
+                            "・紀錄裡看得到，刪掉就恢復成" + (if (dir == 0) "待收" else "待還"),
+                        style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                    )
+                }
+                CompactField(note, { note = it.replace("\n", "").take(40) }, "原因（選填，例如生日請客）", Modifier.fillMaxWidth())
+            }
+            Box(Modifier.fillMaxWidth().background(cute.card).padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Button(
+                    onClick = {
+                        if (need != null) { tries.count++; return@Button }
+                        if (vm.waive(who, dir == 0, keys, note)) onDone()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("免除 $totalText") }
+            }
+        }
+    }
 }
 
 // ───────────────────────── 依分帳結論結清 ─────────────────────────

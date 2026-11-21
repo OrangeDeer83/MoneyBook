@@ -139,6 +139,15 @@ object Codec {
                 )
             }
         })
+        if (d.waives.isNotEmpty()) root.put("waives", JSONArray().apply {
+            d.waives.forEach { w ->
+                put(
+                    JSONObject().put("id", w.id).put("bookId", w.bookId).put("day", w.day).put("time", w.time).put("who", w.who)
+                        .put("owedToMe", w.owedToMe).put("note", w.note)
+                        .put("items", JSONObject().apply { w.items.forEach { (k, v) -> put(k, v) } })
+                )
+            }
+        })
         root.put("rates", JSONArray().apply {
             d.rates.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
         })
@@ -328,9 +337,21 @@ object Codec {
                 kept = o.optJSONObject("kept")?.let { k -> k.keys().asSequence().associateWith { key -> k.optLong(key, 0L) }.filterValues { it > 0L } } ?: emptyMap(),
             )
         }
+        val waives = objects(root.optJSONArray("waives")) { o ->
+            Waive(
+                id = o.getLong("id"),
+                bookId = o.optLong("bookId", books.first().id),
+                day = o.optLong("day", 0L),
+                time = o.optInt("time", -1),
+                who = o.optString("who", ""),
+                owedToMe = o.optBoolean("owedToMe", true),
+                items = o.optJSONObject("items")?.let { k -> k.keys().asSequence().associateWith { key -> k.optLong(key, 0L) } } ?: emptyMap(),
+                note = o.optString("note", ""),
+            )
+        }
         val subs = SubCodec.fromJson(root.optJSONArray("subs"), books.first().id)
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
-            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id } + subs.map { it.id }).maxOrNull() ?: 0L
+            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id } + waives.map { it.id } + subs.map { it.id }).maxOrNull() ?: 0L
         return AppData(
             books = books,
             accounts = accounts,
@@ -357,6 +378,7 @@ object Codec {
                 }.toMap()
             } ?: emptyMap(),
             settles = settles,
+            waives = waives,
             subs = subs,
         )
     }

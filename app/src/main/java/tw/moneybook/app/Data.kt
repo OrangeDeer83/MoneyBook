@@ -323,6 +323,8 @@ data class AppData(
     val prices: List<PriceSnap> = emptyList(),
     /** 分帳結清（見 Settle.kt），舊資料沒有這個欄位 */
     val settles: List<Settle> = emptyList(),
+    /** 免除（別人不用還我、我不用還別人，見 Waive.kt），舊資料沒有這個欄位 */
+    val waives: List<Waive> = emptyList(),
     /** 訂閱／固定扣款（見 Subs.kt），舊資料沒有這個欄位 */
     val subs: List<Sub> = emptyList(),
     /** 外幣每天的歷史匯率（抓價時從 Yahoo 補抓的收盤匯率），投資成效的折線換台幣用；舊資料沒有這個欄位 */

@@ -630,6 +630,41 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         })
     }
 
+    /**
+     * 免除：owedToMe＝true 是別人不用還我（那幾項報銷不追了，算自己的支出），false 是我不用還別人（那幾項欠款算還清，從支出扣掉）。
+     * 不動帳戶；可以復原。成功回傳 true。
+     */
+    fun waive(who: String, owedToMe: Boolean, keys: List<String>, note: String): Boolean {
+        val d = data
+        val now = java.time.LocalDateTime.now()
+        val after = d.withWaive(who, owedToMe, keys, now.toLocalDate().toEpochDay(), now.hour * 60 + now.minute, note) ?: run {
+            toast("免除不了：勾的帳可能已經結清了")
+            return false
+        }
+        val w = after.waives.last()
+        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        commit(after)
+        val name = if (who.isBlank()) "沒填對象" else who
+        _messages.tryEmit(UiMsg((if (owedToMe) "已免除：$name 不用還 " else "已免除：不用還$name ") + formatMoney(after.waiveTwd(w)), "復原") {
+            val n = data
+            commit(n.copy(txns = n.txns.map { before[it.id] ?: it }, waives = n.waives.filter { it.id != w.id }))
+        })
+        return true
+    }
+
+    /** 刪掉一次免除：那幾項恢復成沒結清；可以復原 */
+    fun deleteWaive(id: Long) {
+        val d = data
+        val w = d.waives.firstOrNull { it.id == id } ?: return
+        val after = d.withWaiveRemoved(id) ?: return
+        val before = d.txns.filter { t -> after.txns.any { it.id == t.id && it != t } }.associateBy { it.id }
+        commit(after)
+        _messages.tryEmit(UiMsg("已刪除這次免除", "復原") {
+            val n = data
+            commit(n.copy(txns = n.txns.map { before[it.id] ?: it }, waives = n.waives + w))
+        })
+    }
+
     fun deleteOffset(offsetId: Long) {
         val d = data
         val after = d.withOffsetRemoved(offsetId) ?: return
@@ -988,6 +1023,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 books = books,
                 txns = d.txns.filter { it.bookId != id },
                 subs = d.subs.filter { it.bookId != id },
+                waives = d.waives.filter { it.bookId != id },
                 prefs = if (d.prefs.bookId == id) d.prefs.copy(bookId = books.first().id) else d.prefs,
             )
         }
