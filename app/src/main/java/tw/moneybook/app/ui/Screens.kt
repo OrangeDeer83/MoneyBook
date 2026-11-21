@@ -44,6 +44,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -650,7 +652,8 @@ fun HomeScreen(
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val pendVer by tw.moneybook.app.notify.CardPendLog.version.collectAsState()
     val pends = remember(pendVer) { tw.moneybook.app.notify.CardPendLog.load(ctx) }
-    val hasPend = remember(pends, d) { d.pendWaiting(pends).isNotEmpty() }
+    val pendN = remember(pends, d) { d.pendWaiting(pends).size }
+    val hasPend = pendN > 0
     // 到期還沒記的固定扣款；已經在刷卡待確認裡出現（金額一樣）的不再列
     val subsDue = remember(d, pends) {
         val inPend = d.subsShownInPend(pends)
@@ -658,8 +661,18 @@ fun HomeScreen(
     }
     // 預購到了預計那天還沒回答的（見 Preorder.kt）
     val preDue = remember(d) { d.preordersDue(LocalDate.now().toEpochDay()) }
-    // 前面固定的項目：書本列、固定扣款提醒（有到期的才有）、買好了嗎（有才有）、刷卡待確認（有才有）、吉祥物（可以關）、預算、本月摘要
-    val homeBase = 3 + (if (mascot != "none") 1 else 0) + (if (subsDue.isNotEmpty()) 1 else 0) + (if (preDue.isNotEmpty()) 1 else 0) + (if (hasPend) 1 else 0)
+    // 提醒（草圖 ci-out/home_todo.png 甲）：不再疊在吉祥物上面，吉祥物說「有 N 件事等你處理」，下面一排膠囊，
+    // 點一顆才在吉祥物下面展開那一張（一次一張、再點收起；不記住，重新打開 App 都是收起來的）
+    val reminds = listOfNotNull(
+        if (subsDue.isNotEmpty()) Triple("subs", "扣款", subsDue.size) else null,
+        if (preDue.isNotEmpty()) Triple("pre", "預購", preDue.size) else null,
+        if (hasPend) Triple("pend", "刷卡", pendN) else null,
+    )
+    var remindOpen by rememberSaveable { mutableStateOf<String?>(null) }
+    // 那一種都處理完了：收起來
+    val openKind = remindOpen?.takeIf { k -> reminds.any { it.first == k } }
+    // 前面固定的項目：書本列、吉祥物（關掉吉祥物但有提醒時是一排膠囊）、展開的提醒、預算、本月摘要
+    val homeBase = 3 + (if (mascot != "none" || reminds.isNotEmpty()) 1 else 0) + (if (openKind != null) 1 else 0)
     // 這個月收到的報銷款也列在明細裡（只顯示，不算進收支），和一般記錄一起照日期時間排
     val settleIds = d.settles.map { it.id }.toSet()
     val homeRecvs = reimbRecvsOf(d.bookTxns, settleIds).filter { java.time.YearMonth.from(LocalDate.ofEpochDay(it.pay.day)) == month }
@@ -696,16 +709,19 @@ fun HomeScreen(
             }
         }
 
-        if (subsDue.isNotEmpty()) {
-            item(key = "subsDue") { SubDueCard(vm, subsDue) }
+        // 提醒的膠囊：一種一顆（扣款 2、預購 1、刷卡 3），點了展開那一張、再點收起
+        val remindChips: @Composable () -> Unit = {
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                reminds.forEach { (k, label, n) ->
+                    CuteChip(
+                        "$label $n", openKind == k, { remindOpen = if (openKind == k) null else k },
+                        modifier = Modifier.semantics { contentDescription = "提醒：$label $n" },
+                    )
+                }
+            }
         }
-        if (preDue.isNotEmpty()) {
-            item(key = "preDue") { PreorderDueCard(vm, preDue, onPreorder) }
-        }
-        if (hasPend) {
-            item(key = "cardPend") { CardPendCard(vm, pends, onEditPend) }
-        }
-
         if (mascot != "none") {
             item {
                 val mood = moodOf(d)
@@ -720,10 +736,25 @@ fun HomeScreen(
                     ) {
                         val name = d.prefs.mascotName.ifBlank { mascotDefaultName(mascot) }
                         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Text(mascotLine(mood, d), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (reminds.isEmpty()) mascotLine(mood, d) else "有 ${reminds.sumOf { it.third }} 件事等你處理喔",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        if (reminds.isNotEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            remindChips()
+                        }
                     }
                 }
             }
+        } else if (reminds.isNotEmpty()) {
+            // 關掉吉祥物：只有一排膠囊
+            item { remindChips() }
+        }
+        when (openKind) {
+            "subs" -> item(key = "subsDue") { SubDueCard(vm, subsDue) }
+            "pre" -> item(key = "preDue") { PreorderDueCard(vm, preDue, onPreorder) }
+            "pend" -> item(key = "cardPend") { CardPendCard(vm, pends, onEditPend) }
         }
 
         val budget = book.budgetFor(month)

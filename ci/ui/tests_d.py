@@ -77,6 +77,39 @@ def fill_dialog(values):
         d.hide_ime()
 
 
+REMIND_TITLES = {"扣款": ("固定扣款到期了", "筆固定扣款還沒記"), "預購": ("買好了嗎？", "樣預購買好了嗎？"), "刷卡": ("刷卡等你確認",)}
+
+
+def remind_chip(ns, kind):
+    """首頁吉祥物下面的提醒膠囊（扣款 2、預購 1、刷卡 3）"""
+    return next((n for n in ns if n.desc.startswith(f"提醒：{kind} ")), None)
+
+
+def remind_card(ns, kind):
+    return any(any(t in n.text for t in REMIND_TITLES[kind]) for n in ns)
+
+
+def home_open(kind, timeout=8):
+    """首頁的提醒收在吉祥物下面的膠囊裡（草圖 ci-out/home_todo.png 甲）：點開那一種（已經開著就不動）；沒有那一種回傳 False"""
+    end = d.time.time() + timeout
+    while d.time.time() < end:
+        ns = d.nodes()
+        if remind_card(ns, kind):
+            return True
+        c = remind_chip(ns, kind)
+        if c:
+            d.tap(c)
+            d.time.sleep(0.8)
+            continue
+        d.time.sleep(0.5)
+    return False
+
+
+def no_remind(ns, kind):
+    """那一種提醒都處理完了：膠囊、卡片都不見"""
+    return remind_chip(ns, kind) is None and not remind_card(ns, kind)
+
+
 def home_values():
     """回到明細分頁（列表），回傳 (本月支出, 收入)"""
     to_main()
@@ -4948,6 +4981,7 @@ def t_sub_add():
     d.check("我的：寫「1 個・每月 $390」", d.has(ns, "1 個・每月 $390", True), [n.text for n in ns if n.text][:20])
     f.tab("明細")
     d.time.sleep(1.5)
+    home_open("扣款")
     ns = d.shot("首頁提醒")
     d.check("首頁最上面：固定扣款到期了、Netflix、略過", d.has(ns, "固定扣款到期了", True) and d.has(ns, "Netflix", True) and d.has(ns, "略過", True),
             [n.text for n in ns if n.text][:20])
@@ -4965,6 +4999,7 @@ def sub_due_seed(**kw):
 def t_sub_home():
     d.fresh(sub_due_seed().json())
     d.time.sleep(1.5)
+    home_open("扣款")
     ns = d.shot("兩筆到期")
     d.check("有 2 筆固定扣款還沒記、有「全部記」", d.has(ns, "有 2 筆固定扣款還沒記", True) and d.has(ns, "全部記", True), [n.text for n in ns if n.text][:20])
     skips = [n for n in ns if n.text == "略過"]
@@ -4986,7 +5021,7 @@ def t_sub_home():
     d.tap(d.wait(lambda n: n.desc == "記 iCloud", 8, "記 iCloud"))
     d.time.sleep(1.2)
     ns = d.shot("都記好")
-    d.check("都記好：提醒卡不見了", not d.has(ns, "固定扣款到期了", True) and not d.has(ns, "略過", True), [n.text for n in ns if n.text][:20])
+    d.check("都記好：提醒卡不見了", no_remind(ns, "扣款") and not d.has(ns, "略過", True), [n.text for n in ns if n.text][:20])
     sub_list()
     ns = d.shot("清單")
     d.check("清單：兩個都寫下次扣款日", not any(n.text.endswith("到期") for n in ns) and sum(1 for n in ns if n.text.startswith("下次 ")) == 2, [n.text for n in ns if n.text][:20])
@@ -4996,6 +5031,7 @@ def t_sub_home():
 def t_sub_all():
     d.fresh(sub_due_seed().json())
     d.time.sleep(1.5)
+    home_open("扣款")
     d.tap_text("全部記", exact=True)
     d.time.sleep(0.6)
     ns = d.nodes()
@@ -5004,6 +5040,7 @@ def t_sub_all():
     if undo:
         d.tap(undo)
         d.time.sleep(1.2)
+    home_open("扣款")
     ns = d.shot("復原全部記")
     d.check("復原：又是 2 筆還沒記，明細沒有 #訂閱", d.has(ns, "有 2 筆固定扣款還沒記", True) and not d.has(ns, "#訂閱", True), [n.text for n in ns if n.text][:20])
 
@@ -5015,6 +5052,7 @@ def t_sub_fx():
     s.sub("Domain", 500, [f.today().day], cur="USD", acc=S.USD, done_off=-1)
     d.fresh(s.json())
     d.time.sleep(1.5)
+    home_open("扣款")
     ns = d.shot("外幣訂閱到期")
     d.check("提醒卡寫 US$15.49、US$5.00", d.has(ns, "US$15.49", True) and d.has(ns, "US$5.00", True), [n.text for n in ns if n.text][:20])
     d.tap(d.wait(lambda n: n.desc == "記 Netflix", 8, "記 Netflix"))
@@ -5029,7 +5067,7 @@ def t_sub_fx():
     d.tap(d.wait(lambda n: n.desc == "記 Domain", 8, "記 Domain"))
     d.time.sleep(1.2)
     ns = d.shot("記好 Domain")
-    d.check("美元帳戶的直接記好（不跳視窗），提醒卡不見", not d.has(ns, "固定扣款到期了", True) and not d.has(ns, "還沒請款（預估）", True), [n.text for n in ns if n.text][:20])
+    d.check("美元帳戶的直接記好（不跳視窗），提醒卡不見", no_remind(ns, "扣款") and not d.has(ns, "還沒請款（預估）", True), [n.text for n in ns if n.text][:20])
 
 
 @case(D, "訂閱：修改記錄右上角 •••「設成固定扣款」，帶入那筆的內容，存好不會馬上再提醒", visual=True)
@@ -5054,7 +5092,7 @@ def t_sub_from_txn():
     d.tap_back()
     d.time.sleep(1.5)
     ns = d.shot("回到首頁")
-    d.check("今天這一次已經記了：首頁沒有提醒", not d.has(ns, "固定扣款到期了", True), [n.text for n in ns if n.text][:20])
+    d.check("今天這一次已經記了：首頁沒有提醒", no_remind(ns, "扣款"), [n.text for n in ns if n.text][:20])
     sub_list()
     ns = d.shot("清單")
     d.check("清單有 gym，寫下次扣款日", d.has(ns, "gym", True) and any(n.text.startswith("下次 ") for n in ns), [n.text for n in ns if n.text][:20])
@@ -5317,7 +5355,7 @@ def t_sub_notify():
     f.tab("明細")
     d.time.sleep(1.5)
     ns = d.shot("首頁")
-    d.check("首頁的到期提醒卡不見了，多了一筆 $390", not d.has(ns, "固定扣款到期了") and d.has(ns, "$390"), [n.text for n in ns if n.text][:25])
+    d.check("首頁的到期提醒卡不見了，多了一筆 $390", no_remind(ns, "扣款") and d.has(ns, "$390"), [n.text for n in ns if n.text][:25])
 
 
 @case(D, "刷卡通知第一步：先帶你開通知存取權，再選 App、對應卡片；勾選的 App 跳的通知會列在收到的通知", visual=True)
@@ -6136,6 +6174,7 @@ def t_card_pend():
     bank_post("b3", "您已獲得 2 點")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("首頁待確認")
     d.check("首頁出現「有 2 筆刷卡等你確認」（點數通知不算）", d.has(ns, "有 2 筆刷卡等你確認", True), pend_texts(ns))
@@ -6167,7 +6206,7 @@ def t_card_pend():
         d.check("沒有分類：按記先跳出選分類", False)
         return
     ns = d.shot("都記好了")
-    d.check("都記好了：待確認卡片不見，明細有全聯福利中心", not d.has(ns, "刷卡等你確認") and d.has(ns, "全聯福利中心", True), pend_texts(ns))
+    d.check("都記好了：待確認卡片不見，明細有全聯福利中心", no_remind(ns, "刷卡") and d.has(ns, "全聯福利中心", True), pend_texts(ns))
     # 收到的通知旁邊的標籤
     f.me_page("刷卡通知")
     d.time.sleep(1)
@@ -6185,6 +6224,7 @@ def t_card_pend():
     # 吉祥物通知：收到 1 分鐘後才發；只有一筆、卡和分類都有，通知上可以直接記
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     bank_post("b4", f"您的信用卡末四碼1234於{day} 18:40在統一超商消費NT$45")
     d.time.sleep(66)
     d.sh("cmd statusbar expand-notifications")
@@ -6200,9 +6240,10 @@ def t_card_pend():
     d.time.sleep(1)
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("通知上記好了")
-    d.check("通知上按了記好了：首頁沒有待確認，明細有 $45 的統一超商", not d.has(ns, "刷卡等你確認") and d.has(ns, "$45"), pend_texts(ns))
+    d.check("通知上按了記好了：首頁沒有待確認，明細有 $45 的統一超商", no_remind(ns, "刷卡") and d.has(ns, "$45"), pend_texts(ns))
 
 
 @case(D, "刷卡待確認：可能已經記過、對不到卡時選卡片並記住末四碼、改一下打開記一筆並帶好內容", visual=True)
@@ -6218,6 +6259,7 @@ def t_card_pend_more():
     bank_post("c3", f"末四碼9012於{day} 18:40在7-ELEVEN消費NT$65")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("三筆待確認")
     d.check("有 3 筆刷卡等你確認", d.has(ns, "有 3 筆刷卡等你確認", True), pend_texts(ns))
@@ -6273,7 +6315,7 @@ def t_card_pend_more():
     f.save_edit()
     d.time.sleep(1.5)
     ns = d.shot("改一下存好")
-    d.check("存好之後待確認沒有了，明細有誠品書店", not d.has(ns, "刷卡等你確認") and d.has(ns, "誠品書店", True), pend_texts(ns))
+    d.check("存好之後待確認沒有了，明細有誠品書店", no_remind(ns, "刷卡") and d.has(ns, "誠品書店", True), pend_texts(ns))
     # 記住：9012 存到第二張卡的末四碼
     open_account("第二張卡")
     d.tap_text("編輯", exact=True)
@@ -6301,31 +6343,38 @@ def t_card_pend_sub():
     bank_post("s1", f"末四碼1234於{day} 03:12在NETFLIX.COM刷卡NT$390")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("訂閱和刷卡")
-    d.check("影音平台只出現一次：在刷卡待確認、標「訂閱」，訂閱提醒剩健身房",
+    # 提醒收在膠囊裡、一次只開一張：刷卡（影音平台）和扣款（健身房）各一顆
+    d.check("影音平台只出現一次：在刷卡待確認、標「訂閱」；另外有「扣款 1」（健身房）",
             len(d.find(ns, "影音平台", True)) == 1 and d.has(ns, "訂閱", True) and d.first(ns, "記 影音平台", True) is not None
-            and d.has(ns, "固定扣款到期了", True), pend_texts(ns))
-    d.check("健身房：昨天測試信用卡已經有一筆 $1,288，按鈕是「已經記過了／還是要記」",
-            d.has(ns, "已經有一筆 $1,288") and d.first(ns, "已經記過了 健身房", True) is not None, pend_texts(ns))
-    d.tap(d.first(ns, "記 影音平台", True))
+            and remind_chip(ns, "扣款") is not None and remind_chip(ns, "扣款").desc == "提醒：扣款 1", pend_texts(ns))
+    home_open("扣款")
+    ns = d.shot("訂閱提醒剩健身房")
+    d.check("健身房：昨天測試信用卡已經有一筆 $1,288，按鈕是「已經記過了／還是要記」；影音平台不在訂閱提醒裡",
+            d.has(ns, "已經有一筆 $1,288") and d.first(ns, "已經記過了 健身房", True) is not None and not d.has(ns, "影音平台", True), pend_texts(ns))
+    home_open("刷卡")
+    d.tap(d.wait(lambda n: n.desc == "記 影音平台", 8, "記 影音平台"))
     d.time.sleep(1.5)
     ns = d.shot("記了影音平台")
-    d.check("按記：照訂閱記一筆 $390，刷卡待確認不見", not d.has(ns, "刷卡等你確認") and d.has(ns, "$390"), pend_texts(ns))
+    d.check("按記：照訂閱記一筆 $390，刷卡待確認不見", no_remind(ns, "刷卡") and d.has(ns, "$390"), pend_texts(ns))
+    home_open("扣款")
+    ns = d.nodes()
     b = d.first(ns, "已經記過了 健身房", True)
     if b:
         d.tap(b)
         d.time.sleep(0.8)
         ns = d.shot("已經記過了")
-        d.check("按「已經記過了」：提示標成訂閱，訂閱提醒不見", d.has(ns, "的那筆標成訂閱了") or not d.has(ns, "固定扣款到期了"), pend_texts(ns))
+        d.check("按「已經記過了」：提示標成訂閱，訂閱提醒不見", d.has(ns, "的那筆標成訂閱了") or no_remind(ns, "扣款"), pend_texts(ns))
     d.time.sleep(3)
     ns = d.shot("都處理好了")
-    d.check("訂閱提醒不見了；自己記的健身那筆加上 #訂閱", not d.has(ns, "固定扣款到期了") and d.has(ns, "#訂閱", True), pend_texts(ns))
+    d.check("訂閱提醒不見了；自己記的健身那筆加上 #訂閱", no_remind(ns, "扣款") and d.has(ns, "#訂閱", True), pend_texts(ns))
     # 訂閱已經記了，才又收到一則同金額的刷卡通知：首頁不出現
     bank_post("s2", f"末四碼1234於{day} 03:13在NETFLIX.COM刷卡NT$390")
     d.time.sleep(1)
     ns = d.shot("訂閱記過了才收到")
-    d.check("訂閱這次已經記了：再收到的刷卡通知不出現在首頁", not d.has(ns, "刷卡等你確認"), pend_texts(ns))
+    d.check("訂閱這次已經記了：再收到的刷卡通知不出現在首頁", no_remind(ns, "刷卡"), pend_texts(ns))
     f.me_page("刷卡通知")
     d.time.sleep(1)
     ns = d.shot("收到的通知")
@@ -6442,6 +6491,7 @@ def t_card_backfill():
         d.check("打開 App 提示「之前收到的 2 筆刷卡放進待確認了」", False, pend_texts(d.nodes()))
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("補進待確認")
     d.check("前天的鼎泰豐、昨天的全聯補進待確認（點數通知不算）", d.has(ns, "有 2 筆刷卡等你確認", True) and d.has(ns, "鼎泰豐", True)
@@ -6449,6 +6499,7 @@ def t_card_backfill():
     d.check("昨天已經手動記了全聯 $350：顯示可能已經記過", d.has(ns, "已經有一筆 $350") and d.first(ns, "已經記過了 全聯福利中心", True) is not None, pend_texts(ns))
     d.restart()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("再打開一次")
     d.check("再打開一次不會再補：還是 2 筆", d.has(ns, "有 2 筆刷卡等你確認", True) and not d.has(ns, "放進待確認了"), pend_texts(ns))
@@ -6471,6 +6522,7 @@ def t_card_relearn():
     bank_post("r1", f"末四碼1234於{day} 09:11在統一超商消費NT$85")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.tap(d.wait(lambda n: n.desc == "記 統一超商", 10, "記 統一超商"))
     d.time.sleep(2)
     relearn_open("統一超商")
@@ -6507,6 +6559,7 @@ def t_card_relearn():
     bank_post("r2", f"末四碼1234於{day} 12:31在全聯福利中心消費NT$350")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("以後的 1234 記到第二張卡")
     d.check("之後的 1234 通知直接對到第二張卡", d.has(ns, "第二張卡・今天 12:31", False), pend_texts(ns))
@@ -6567,6 +6620,7 @@ def t_card_tpl():
     bank_post("t1", t1)
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("通用規則讀錯商店")
     d.check("通用規則讀成一筆 $2,350，但商店不是 COSTCO", d.has(ns, "$2,350", True) and not d.has(ns, "COSTCO", True), pend_texts(ns))
@@ -6630,6 +6684,7 @@ def t_card_tpl():
     d.check("下一則同格式的通知標「用範本」", d.has(ns, "用範本", True), pend_texts(ns))
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("待確認重讀")
     d.check("首頁待確認：COSTCO $2,350（重讀）、UNIQLO $990（用範本讀）", d.has(ns, "COSTCO", True) and d.has(ns, "UNIQLO", True)
@@ -6656,6 +6711,7 @@ def t_card_refund():
     bank_post("r1", f"末四碼1234於{today_slash()}在全聯福利中心之消費退款NT$350")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("待確認的退款")
     d.check("待確認：標「退款」、金額 +$350、寫「退的是 … 全聯福利中心 $350」和從購物扣掉",
@@ -6667,7 +6723,7 @@ def t_card_refund():
     d.time.sleep(4)
     ns = d.shot("記好退款")
     d.check("待確認不見；明細的退款標「退 … 全聯福利中心 $350」",
-            not d.has(ns, "刷卡等你確認") and any(n.text.startswith("退 ") and "全聯福利中心 $350" in n.text for n in ns), pend_texts(ns))
+            no_remind(ns, "刷卡") and any(n.text.startswith("退 ") and "全聯福利中心 $350" in n.text for n in ns), pend_texts(ns))
     d.check("本月支出扣掉退款變 $0、收入還是 $0", value_below(ns, "本月支出") == "$0" and value_below(ns, "收入") == "$0",
             (value_below(ns, "本月支出"), value_below(ns, "收入")))
 
@@ -6708,6 +6764,7 @@ def t_manual_refund():
     d.check("帳戶明細的退款標「退 … UNIQLO $350」", any(n.text.startswith("退 ") and "UNIQLO $350" in n.text for n in ns), pend_texts(ns))
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1)
     ns = d.shot("首頁")
     d.check("本月支出 $450 − $350 = $100，收入 $0", value_below(ns, "本月支出") == "$100" and value_below(ns, "收入") == "$0",
@@ -6722,6 +6779,7 @@ def t_card_preauth():
     bank_post("p1", f"末四碼1234於{today_slash()} 15:10在福華飯店預先授權NT$10,000")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("待確認的預先授權")
     d.check("待確認：標「預先授權」、寫「實際金額請款時才知道」，按鈕「記成預估」",
@@ -6740,6 +6798,7 @@ def t_card_preauth():
     bank_post("p2", f"末四碼1234於{today_slash()}在福華飯店消費NT$8,200")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("請款通知")
     d.check("待確認：標「請款」、寫「… 記的預估是 $10,000」，按鈕「改成 $8,200」「是另一筆」",
@@ -6750,7 +6809,7 @@ def t_card_preauth():
     d.time.sleep(4)
     ns = d.shot("改好了")
     d.check("待確認不見；明細福華飯店 -$8,200、沒有「預估」；本月支出 $8,200",
-            not d.has(ns, "刷卡等你確認") and d.has(ns, "-$8,200", True) and not d.has(ns, "預估", True) and value_below(ns, "本月支出") == "$8,200",
+            no_remind(ns, "刷卡") and d.has(ns, "-$8,200", True) and not d.has(ns, "預估", True) and value_below(ns, "本月支出") == "$8,200",
             pend_texts(ns))
 
 
@@ -6762,6 +6821,7 @@ def t_card_inst():
     bank_post("i1", f"末四碼1234於{today_slash()}在燦坤消費NT$12,000，分12期")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("待確認的分期")
     d.check("待確認：標「分 12 期」、寫「每期約 $1,000」，分類照同名分類帶「3C」",
@@ -6799,6 +6859,7 @@ def t_shop_field():
     f.keypad("45")
     f.save_edit()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1)
     ns = d.shot("明細")
     d.check("明細那筆寫「7-11・tuna rice」", d.has(ns, "7-11・tuna rice", True), pend_texts(ns))
@@ -6842,6 +6903,7 @@ def t_card_shop_memo():
     bank_post("s1", f"【刷卡通知】金額NT$45元 卡號末四碼1234於{today_slash()} 08:42在OP錢包統一超商刷卡")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("照上次的記法")
     d.check("待確認：名稱「7-11・雙蔬鮪魚飯糰」、不寫「照 … 的記法」、分類早餐、第二行有 OP錢包",
@@ -6851,11 +6913,12 @@ def t_card_shop_memo():
     wait_toast("已記 7-11・雙蔬鮪魚飯糰 $45", "提示「已記 7-11・雙蔬鮪魚飯糰 $45」")
     d.time.sleep(4)
     ns = d.shot("記好了")
-    d.check("待確認不見；明細有兩筆「7-11・雙蔬鮪魚飯糰」", not d.has(ns, "刷卡等你確認") and len(d.find(ns, "7-11・雙蔬鮪魚飯糰", True)) >= 2, pend_texts(ns))
+    d.check("待確認不見；明細有兩筆「7-11・雙蔬鮪魚飯糰」", no_remind(ns, "刷卡") and len(d.find(ns, "7-11・雙蔬鮪魚飯糰", True)) >= 2, pend_texts(ns))
     # 別的金額：只帶店家
     bank_post("s2", f"【刷卡通知】金額NT$35元 卡號末四碼1234於{today_slash()} 15:10在OP錢包統一超商刷卡")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("別的金額")
     d.check("$35：名稱「7-11」、沒有「照 … 的記法」", d.has(ns, "7-11", True) and not any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns), pend_texts(ns))
@@ -6870,6 +6933,7 @@ def t_card_shop_had():
     bank_post("h1", f"【刷卡通知】金額NT$45元 卡號末四碼1234於{today_slash()} 08:42在OP錢包統一超商刷卡")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     d.tap(d.wait(lambda n: n.desc == "已經記過了 統一超商", 8, "已經記過了 統一超商"))
     d.time.sleep(4.5)
@@ -6921,6 +6985,7 @@ def t_card_shop_had():
     bank_post("h2", f"【刷卡通知】金額NT$45元 卡號末四碼1234於{today_slash()} 12:30在OP錢包統一超商刷卡")
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("下一則通知")
     d.check("下一則統一超商 $45 不照那筆帶：名稱是「統一超商」、沒有「照 … 的記法」",
@@ -6937,9 +7002,10 @@ def t_card_ad():
     bank_post("ad1", ad)
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("收到廣告")
-    d.check("廣告沒放進待確認：首頁沒有「刷卡等你確認」、沒有 $500", not d.has(ns, "刷卡等你確認") and not d.has(ns, "$500", True), pend_texts(ns))
+    d.check("廣告沒放進待確認：首頁沒有「刷卡等你確認」、沒有 $500", no_remind(ns, "刷卡") and not d.has(ns, "$500", True), pend_texts(ns))
     try:
         row = to_noti(ad, tab="廣告")
     except TimeoutError as e:
@@ -6970,6 +7036,7 @@ def t_card_ad():
     d.time.sleep(1)
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("放回待確認")
     d.check("首頁待確認有那筆 $500", d.has(ns, "刷卡等你確認", False) and d.has(ns, "$500", True), pend_texts(ns))
@@ -7032,6 +7099,7 @@ def t_card_tpl_order():
     bank_post("o1", t1)
     to_main()
     f.tab("明細")
+    home_open("刷卡", timeout=6)
     d.time.sleep(1.5)
     ns = d.shot("仔細的先讀")
     d.check("用比較仔細的範本讀：待確認商店是 UNIQLO（不是「店家UNIQLO」）",
@@ -7316,6 +7384,7 @@ def preorder_seed():
 def t_preorder():
     d.fresh(preorder_seed())
     d.time.sleep(2)
+    home_open("預購")
     ns = d.shot("首頁：買好了嗎、預算扣預留")
     d.check("首頁有「買好了嗎？」：headphone 預計今天、預估 $2,980",
             d.has(ns, "買好了嗎？", True) and d.has(ns, "headphone", True) and d.has(ns, "預估 $2,980", True), [n.text for n in ns if n.text][:30])
@@ -7336,7 +7405,7 @@ def t_preorder():
     d.time.sleep(1.5)
     ns = d.shot("買好了")
     d.check("買好了嗎不見了；預算照實際的：已花 $3,500・還剩 $6,500，沒有預留那行",
-            not d.has(ns, "買好了嗎？", True) and d.has(ns, "已花 $3,500・還剩 $6,500（預算 $10,000）", True) and not d.has(ns, "其中預留", False),
+            no_remind(ns, "預購") and d.has(ns, "已花 $3,500・還剩 $6,500（預算 $10,000）", True) and not d.has(ns, "其中預留", False),
             [n.text for n in ns if n.text][:30])
     f.tab("我的")
     d.time.sleep(1)
