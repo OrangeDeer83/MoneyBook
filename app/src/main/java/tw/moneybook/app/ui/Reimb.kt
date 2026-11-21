@@ -398,7 +398,6 @@ fun ReimbEditPage(
     var restMode by remember { mutableStateOf(false) }
     // 正在打名字的是第幾欄（-1 是沒有），那一欄下面才放名字建議
     var nameFocus by remember { mutableStateOf(-1) }
-    val focus = androidx.compose.ui.platform.LocalFocusManager.current
     LaunchedEffect(tab) { restMode = false }
     val lockedSum = cur.sumOf { if (it.isLocked) it.lockedEffective else 0L }
 
@@ -447,6 +446,8 @@ fun ReimbEditPage(
     }
 
     FullScreenDialog(onDismissRequest = onClose) {
+        // 焦點要用全螢幕視窗自己的（外面那層的 clearFocus 收不起這個視窗的鍵盤）
+        val focus = androidx.compose.ui.platform.LocalFocusManager.current
         Column(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding().navigationBarsPadding().imePadding()

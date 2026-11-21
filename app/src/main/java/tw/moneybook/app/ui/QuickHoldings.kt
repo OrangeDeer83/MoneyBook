@@ -88,7 +88,6 @@ private class QRow(val key: Int) {
 fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
     val d = vm.data
     val cute = LocalCute.current
-    val focus = LocalFocusManager.current
     var nextKey by remember { mutableStateOf(1) }
     val rows = remember { mutableStateListOf(QRow(0)) }
     // 要把游標移到哪一列的代號欄（新增一列、或一打開畫面時）
@@ -104,17 +103,6 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
         val r = QRow(nextKey++)
         rows.add(r)
         focusKey = r.key
-    }
-    val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(focusKey) {
-        val k = focusKey ?: return@LaunchedEffect
-        // 新的一列還沒排好版時 requestFocus 會丟例外（之前就是這樣跳不過去）：等下一個畫面再試，最多試 10 次
-        for (t in 0 until 10) {
-            withFrameNanos { }
-            val ok = try { rows.firstOrNull { it.key == k }?.codeFocus?.requestFocus(); true } catch (_: IllegalStateException) { false }
-            if (ok) { keyboard?.show(); break }
-        }
-        focusKey = null
     }
 
     /** 小算盤按「下一檔」：跳到下一檔的代號；已經是最後一檔就多一列（這一列還空著就不加） */
@@ -164,6 +152,19 @@ fun QuickHoldingsDialog(vm: MoneyViewModel, a: Account, onClose: () -> Unit) {
     }
 
     FullScreenDialog(onDismissRequest = onClose) {
+        // 焦點、鍵盤要用全螢幕視窗自己的（用外面那層的，「下一個」會叫錯視窗換格子，什麼都不會發生——之前跳不過去就是這樣）
+        val focus = LocalFocusManager.current
+        val keyboard = LocalSoftwareKeyboardController.current
+        LaunchedEffect(focusKey) {
+            val k = focusKey ?: return@LaunchedEffect
+            // 新的一列還沒排好版時 requestFocus 會丟例外（之前就是這樣跳不過去）：等下一個畫面再試，最多試 10 次
+            for (t in 0 until 10) {
+                withFrameNanos { }
+                val ok = try { rows.firstOrNull { it.key == k }?.codeFocus?.requestFocus(); true } catch (_: IllegalStateException) { false }
+                if (ok) { keyboard?.show(); break }
+            }
+            focusKey = null
+        }
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(AppIcons.ChevronLeft, contentDescription = "返回") }
