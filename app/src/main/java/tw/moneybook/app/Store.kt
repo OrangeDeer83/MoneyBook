@@ -208,7 +208,7 @@ object Codec {
                 cardNos = CardNoCodec.fromJson(o.optJSONArray("cardNos")),
             )
         }
-        val categories = objects(root.optJSONArray("categories")) { o ->
+        val categories = alignSubColors(objects(root.optJSONArray("categories")) { o ->
             Category(
                 id = o.getLong("id"),
                 name = o.getString("name"),
@@ -220,7 +220,7 @@ object Codec {
                 budgetMode = o.optInt("budgetMode", 0),
                 noIncome = o.optBoolean("noIncome", false),
             )
-        }
+        })
         val txns = objects(root.optJSONArray("txns")) { o ->
             val t = Txn(
                 id = o.getLong("id"),
@@ -963,4 +963,13 @@ object ReimbCodec {
     fun encode(list: List<ReimbItem>): String = if (list.isEmpty()) "" else toJson(list).toString()
 
     fun decode(s: String): List<ReimbItem> = if (s.isBlank()) emptyList() else try { fromJson(JSONArray(s)) } catch (e: Exception) { emptyList() }
+}
+
+/**
+ * 子分類的顏色一律跟大分類一樣（App 裡只有大分類能選顏色，改大分類時子分類跟著改）。
+ * 讀資料時對齊一次：萬一有子分類存到別的顏色（例如 11/21 使用者回報「宵夜」跟吃喝其他子分類不同色），畫出來還是跟大分類一致。
+ */
+fun alignSubColors(cats: List<Category>): List<Category> {
+    val byId = cats.associateBy { it.id }
+    return cats.map { c -> c.parentId?.let { byId[it] }?.let { p -> if (p.color != c.color) c.copy(color = p.color) else c } ?: c }
 }
