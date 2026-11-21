@@ -7275,7 +7275,8 @@ def t_quick_holdings_next():
     d.tap_text("下一檔 ›", exact=True)
     d.time.sleep(1.5)
     ns = d.shot("按下一檔：多一列、鍵盤跳到新的代號")
-    d.check("多了一列，鍵盤出來", len(codes()) == 2 and d.ime_shown(), codes())
+    # 模擬器用實體鍵盤、不會跳出手機鍵盤：游標有沒有跳到新的代號，看下面打的 0050 有沒有進到第二列
+    d.check("多了一列", len(codes()) == 2, codes())
     d.type_text("0050")
     d.sh("input keyevent 66")
     d.time.sleep(0.8)
@@ -7287,8 +7288,8 @@ def t_quick_holdings_next():
     d.tap_text("完成", exact=True, lowest=True)
     d.time.sleep(1)
     ns = d.shot("按完成：只關掉")
-    d.check("按完成只關掉，沒有多一列、鍵盤沒出來", len(codes()) == 2 and not d.ime_shown() and not d.has(ns, "÷", True), codes())
-    d.check("代號、成本都填對：成本 $580,000、$304,600",
+    d.check("按完成只關掉，沒有多一列", len(codes()) == 2 and not d.has(ns, "÷", True), codes())
+    d.check("「下一檔」後游標跳到新的代號（0050 打在第二列），成本 $580,000、$304,600",
             codes() == ["2330", "0050"] and d.has(ns, "成本 $580,000", False) and d.has(ns, "成本 $304,600", False), [n.text for n in ns if "成本" in n.text or n.text in ("2330", "0050")])
     d.tap(next(n for n in d.nodes() if n.desc == "金額欄位：0050 的每股均價"))
     d.wait_text("÷", timeout=8)
