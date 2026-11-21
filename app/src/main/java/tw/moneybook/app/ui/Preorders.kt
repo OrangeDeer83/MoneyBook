@@ -153,7 +153,8 @@ fun PreorderScreen(
                     }
                 }
             }
-            item { OutlinedButton(onClick = onNew, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增預購") } }
+            // 新增完回來要看得到剛加的：先切到「等著買」
+            item { OutlinedButton(onClick = { tab = 0; onNew() }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增預購") } }
             item {
                 Text(
                     "到了預計那天會問你買了沒：買了就打開記一筆，照實際的金額記，預留的拿掉；沒買就把預留的放回預算。左滑可以刪除。",
@@ -263,7 +264,7 @@ private fun PreorderNotifyCard(vm: MoneyViewModel) {
             )
         }
         Text(
-            if (p.preorderNotify) "$name 會在預計那天${noticeTimeText(p.subNotifyTime)}問你（跟訂閱的到期通知同一個時間；沒回答照那邊的設定再問）"
+            if (p.preorderNotify) "$name 會在預計那天${noticeTimeText(p.subNotifyTime)} 問你（跟訂閱的到期通知同一個時間；沒回答照那邊的設定再問）"
             else "關掉後只在首頁問，不跳手機通知",
             style = MaterialTheme.typography.labelSmall, color = cute.sub,
         )
