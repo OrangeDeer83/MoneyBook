@@ -7508,3 +7508,52 @@ def t_card_test_charge():
         d.scroll_down(1)
     ns = d.shot("收到的通知")
     d.check("收到的通知：UBER 那則標「試刷，不記」", d.has(ns, "試刷，不記", True), pend_texts(ns))
+
+
+@case(D, "刷卡通知沒寫商店（只有玉山一則）：收到的通知標灰色「通知沒寫商店」；按記先問店家，可以點用過的店家，記好明細有店家", visual=True)
+def t_card_no_shop():
+    s = S.Seed(f.today())
+    t = s.expense(-2, 300, S.C_FOOD, acc=S.CARD, note="lunch")
+    t["shop"] = "全聯"
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    bank_post("n1", "信用卡消費450元通知", title="玉山銀行")
+    to_main()
+    f.tab("明細")
+    home_open("刷卡", timeout=8)
+    d.time.sleep(1)
+    ns = d.shot("沒寫商店的待確認")
+    d.check("待確認寫「（通知沒寫商店）」$450", d.has(ns, "（通知沒寫商店）", True) and d.has(ns, "$450", True), pend_texts(ns))
+    b = d.first(ns, "記 $450", True)
+    d.check("有「記」", b is not None, pend_texts(ns))
+    if not b:
+        return
+    d.tap(b)
+    try:
+        d.wait_text("選擇分類", timeout=4)
+        d.tap_text("餐飲", exact=True)
+        d.time.sleep(1)
+    except TimeoutError:
+        pass
+    d.wait(lambda n: n.text.endswith("的通知沒寫商店"), 8, "問店家的視窗")
+    ns = d.shot("按記先問店家")
+    d.check("視窗：通知沒寫商店、店家（選填）、用過的店家有全聯、記／略過",
+            d.has(ns, "店家（選填，例如 全聯）", True) and d.has(ns, "全聯", True) and d.has(ns, "略過", True) and d.has(ns, "記", True), pend_texts(ns))
+    # 視窗後面的明細也有「全聯」「記」：只找視窗裡的（「用過的店家」到「略過」之間、跟「略過」同一排）
+    lab = d.first(ns, "用過的店家", True)
+    sk = d.first(ns, "略過", True)
+    chip = next((n for n in ns if n.text == "全聯" and lab and sk and lab.cy < n.cy < sk.cy), None)
+    d.check("用過的店家有「全聯」", chip is not None, pend_texts(ns))
+    if not chip:
+        return
+    d.tap(chip)
+    d.time.sleep(0.5)
+    ok = next((n for n in d.nodes() if n.text == "記" and abs(n.cy - sk.cy) < 80), None)
+    d.tap(ok)
+    d.time.sleep(1.5)
+    ns = d.shot("記好了")
+    d.check("記好了：待確認沒有了、明細有店家全聯的 $450", no_remind(ns, "刷卡") and d.has(ns, "-$450", True) and len(d.find(ns, "全聯", False)) >= 2, pend_texts(ns))
+    f.me_page("刷卡通知")
+    d.time.sleep(1)
+    ns = d.shot("收到的通知")
+    d.check("收到的通知標「已記」（記好了就不寫沒寫商店）", d.has(ns, "已記", True) and not d.has(ns, "少了商店", True), pend_texts(ns))

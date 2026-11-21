@@ -151,6 +151,16 @@ fun pendOf(n: CapturedNoti, r: NotiRead): CardPend? {
     )
 }
 
+/**
+ * 已經記好了才收到同一筆有店名的另一則（例如玉山先到、按了記，Samsung Wallet 才到；草圖 ci-out/noti_no_shop.png ③）：
+ * 記好的那筆還沒有店家就補上。回傳（那筆的 id、店家），不用補回傳 null。
+ */
+fun AppData.pendShopBackfill(p: CardPend): Pair<Long, String>? {
+    if (p.state != PendState.DONE || p.txnId == 0L || p.merchant.isBlank()) return null
+    val t = txnMap[p.txnId] ?: return null
+    return if (t.shop.isBlank()) t.id to p.merchant else null
+}
+
 /** 「其實是刷卡」：被當成廣告的那則照一般刷卡放進待確認（已經在待確認裡的不動）；回傳新的清單，沒放進去回傳 null */
 fun forceSpendPend(list: List<CardPend>, n: CapturedNoti, d: AppData, now: Long): List<CardPend>? {
     if (list.any { p -> p.src.any { it.notiId == n.id } }) return null
@@ -412,14 +422,14 @@ fun AppData.notiTag(n: CapturedNoti, pends: List<CardPend>): Pair<NotiTagKind, S
                 else -> "不用記"
             }
             else -> pendSubDone(p)?.let { NotiTagKind.GOOD to "已記（訂閱：${it.sub.name}）" }
-                ?: if (p.merchant.isEmpty()) NotiTagKind.PART to "少了商店"
+                ?: if (p.merchant.isEmpty()) NotiTagKind.OFF to "通知沒寫商店"
                 else if (tplFor(n) != null) NotiTagKind.TPL to "用範本" else NotiTagKind.GOOD to "讀對了"
         }
     }
     if (tplFor(n) != null) return NotiTagKind.TPL to "用範本"
     val r = parseCardNoti(n.title, n.text, n.time)
     return when (r.kind) {
-        NotiKind.SPEND, NotiKind.REFUND, NotiKind.PREAUTH -> if (r.merchant.isEmpty()) NotiTagKind.PART to "少了商店" else NotiTagKind.GOOD to "讀對了"
+        NotiKind.SPEND, NotiKind.REFUND, NotiKind.PREAUTH -> if (r.merchant.isEmpty()) NotiTagKind.OFF to "通知沒寫商店" else NotiTagKind.GOOD to "讀對了"
         NotiKind.NO_AMOUNT -> NotiTagKind.OFF to "不是消費"
         NotiKind.INST_PAY -> NotiTagKind.OFF to "分期請款，不記"
         NotiKind.OTHER -> NotiTagKind.OFF to "還不會讀"

@@ -14,6 +14,8 @@ import tw.moneybook.app.CardPend
 import tw.moneybook.app.CardPendCodec
 import tw.moneybook.app.AppData
 import tw.moneybook.app.addPend
+import tw.moneybook.app.linkBankShop
+import tw.moneybook.app.pendShopBackfill
 import tw.moneybook.app.backfillPends
 import tw.moneybook.app.readNoti
 import tw.moneybook.app.pendOf
@@ -126,6 +128,18 @@ fun onCardNoti(ctx: Context, n: CapturedNoti) {
     // 先試這個 App 的範本，都對不上才用通用規則
     val p = pendOf(n, d.readNoti(n)) ?: return
     CardPendLog.update(ctx) { addPend(it, p, d, System.currentTimeMillis()) }
+    // 併進已經記好的那筆（另一則先到、已經按了記）：那筆還沒有店家就補上
+    CardPendLog.load(ctx).firstOrNull { pp -> pp.src.any { it.notiId == n.id } }?.let { merged ->
+        d.pendShopBackfill(merged)?.let { (txnId, shop) ->
+            val vm = MoneyViewModel.live?.get()
+            if (vm != null) vm.backfillPendShop(txnId, shop)
+            else {
+                val store = Store(ctx.filesDir)
+                val d0 = store.load()
+                store.save(d0.copy(txns = d0.txns.map { t -> if (t.id == txnId && t.shop.isBlank()) t.linkBankShop(shop) else t }))
+            }
+        }
+    }
     // 1 分鐘後由吉祥物發手機通知（同一筆的第二則通知趕得上合併）
     CardPendNotifier.later(ctx)
 }

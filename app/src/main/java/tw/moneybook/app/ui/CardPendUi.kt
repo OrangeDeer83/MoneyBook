@@ -60,6 +60,7 @@ import tw.moneybook.app.pendShop
 import tw.moneybook.app.shopNote
 import tw.moneybook.app.isInst
 import tw.moneybook.app.maybeTest
+import tw.moneybook.app.shopSuggestions
 import tw.moneybook.app.pendRefundOf
 import tw.moneybook.app.preauthFor
 import tw.moneybook.app.preauthBillMonth
@@ -79,6 +80,7 @@ private fun pendWhen(p: CardPend, today: Long): String =
  * 首頁「有 N 筆刷卡等你確認」：每一筆要按「記」才記；分類直接寫自動帶的（找不到寫「還沒有分類」）。
  * 對不到卡的問是哪張卡；那天那張卡已經有同金額的，問是不是已經記過了。
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit) {
     val d = vm.data
@@ -94,18 +96,24 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
     var pickCatEst by remember { mutableStateOf(false) }
     // 按了「是試刷」：問記成預估還是不記
     var testAsk by remember { mutableStateOf<CardPend?>(null) }
+    // 通知沒寫商店（只有玉山一則）：按記先問店家（草圖 ci-out/noti_no_shop.png ② 甲）
+    var shopAsk by remember { mutableStateOf<Triple<CardPend, Long, Pair<Long?, Boolean>>?>(null) }
     var fx by remember { mutableStateOf<Triple<CardPend, Long, Long?>?>(null) }
     // 對到訂閱、外幣對外幣記在台幣卡又沒有匯率：先問台幣金額
     var subFx by remember { mutableStateOf<CardPend?>(null) }
 
-    /** 按「記」：沒有分類先選分類；外幣記在台幣卡、又沒有匯率，先問金額。est＝試刷記成預估 */
-    fun record(p: CardPend, cardId: Long, catId: Long?, est: Boolean = false) {
+    /**
+     * 按「記」：沒有分類先選分類；通知沒寫商店先問店家（可以略過）；外幣記在台幣卡、又沒有匯率，先問金額。
+     * est＝試刷記成預估；shop＝問過的店家（null＝還沒問）
+     */
+    fun record(p: CardPend, cardId: Long, catId: Long?, est: Boolean = false, shop: String? = null) {
         val acc = d.accMap[cardId]
         when {
             // 退款不用選分類（記在「退款」）
             catId == null && p.kind != PendKind.REFUND -> { pickCat = p to cardId; pickCatEst = est }
+            p.merchant.isEmpty() && p.kind == PendKind.SPEND && shop == null -> shopAsk = Triple(p, cardId, catId to est)
             p.cur.isNotEmpty() && !(acc?.isForeign == true && acc.currency == p.cur) && d.rateOf(p.cur) == null -> fx = Triple(p, cardId, catId)
-            else -> vm.recordPend(p.id, cardId, catId, est = est)
+            else -> vm.recordPend(p.id, cardId, catId, est = est, shop = shop.orEmpty())
         }
     }
 
@@ -282,6 +290,35 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
     }
     pickCat?.let { (p, cardId) ->
         SubCatPickDialog(d, null, onPick = { c -> pickCat = null; record(p, cardId, c, pickCatEst) }, onDismiss = { pickCat = null })
+    }
+    shopAsk?.let { (p, cardId, rest) ->
+        val (catId, est) = rest
+        var shop by remember(p.id) { mutableStateOf("") }
+        val sugg = remember(d) { d.shopSuggestions().take(8) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { shopAsk = null },
+            title = { Text("${p.label.ifEmpty { "銀行" }} 的通知沒寫商店") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        listOfNotNull(pendAmountText(p), pendWhen(p, LocalDate.now().toEpochDay()), d.accMap[cardId]?.name).joinToString("・"),
+                        style = MaterialTheme.typography.bodySmall, color = cute.sub,
+                    )
+                    CompactField(shop, { shop = it.replace("
+", "").take(40) }, "店家（選填，例如 全聯）", Modifier.fillMaxWidth())
+                    if (sugg.isNotEmpty()) {
+                        Text("用過的店家", style = MaterialTheme.typography.labelSmall, color = cute.sub)
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            sugg.forEach { sname -> CuteChip(sname, shop == sname, { shop = sname }) }
+                        }
+                    }
+                }
+            },
+            confirmButton = { Button(onClick = { shopAsk = null; record(p, cardId, catId, est, shop.trim()) }) { Text("記") } },
+            dismissButton = { TextButton(onClick = { shopAsk = null; record(p, cardId, catId, est, "") }) { Text("略過") } },
+        )
     }
     testAsk?.let { p ->
         val cardId = d.resolveCard(p)

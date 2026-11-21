@@ -70,4 +70,23 @@ class PendNoticeTest {
         assertEquals("試刷，不記", d.notiTag(cap, listOf(one.copy(state = PendState.NOT))).second)
         assertEquals("不是消費", d.notiTag(cap.copy(id = 2), listOf(pend(2, "7-11", amount = 2).copy(state = PendState.NOT))).second)
     }
+
+    @Test
+    fun noShopInTheNotificationAndBackfillLater() {
+        val t = Txn(nid++, base.books.first().id, TxType.EXPENSE, 81, food.id, 9001, null, 20406, "", emptyList())
+        val d = data(t)
+        // 只有玉山一則：收到的通知標灰色的「通知沒寫商店」（不是讀錯）
+        val cap = CapturedNoti(1, "cathay", "國泰", "", "信用卡消費81元通知", 0L)
+        val noShop = pend(1, "", amount = 81)
+        assertEquals(NotiTagKind.OFF to "通知沒寫商店", d.notiTag(cap, listOf(noShop)))
+        // 已經記好了才收到有店名的另一則（併進那筆待確認）：那筆還沒有店家就補上
+        val done = noShop.copy(state = PendState.DONE, txnId = t.id)
+        assertNull(d.pendShopBackfill(done))
+        val merged = done.copy(merchant = "UNI-PROSPERITY LIFESTY")
+        assertEquals(t.id to "UNI-PROSPERITY LIFESTY", d.pendShopBackfill(merged))
+        // 自己填過店家的不動；還沒記的不補
+        val withShop = data(t.copy(shop = "全家"))
+        assertNull(withShop.pendShopBackfill(merged))
+        assertNull(d.pendShopBackfill(merged.copy(state = PendState.WAIT)))
+    }
 }

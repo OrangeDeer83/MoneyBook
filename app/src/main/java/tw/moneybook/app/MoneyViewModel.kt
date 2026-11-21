@@ -1424,7 +1424,7 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
      * 記下一筆刷卡（記在目前的帳本；卡、分類由畫面決定）。外幣記在台幣卡：twd 是台幣金額，沒給就用目前匯率，
      * 沒有匯率回傳 false（畫面要問）。可以復原：刪掉那一筆、回到待確認。
      */
-    fun recordPend(id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true, est: Boolean = false): Boolean {
+    fun recordPend(id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true, est: Boolean = false, shop: String = ""): Boolean {
         val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return false
         if (p.kind == PendKind.REFUND) return recordRefund(id, cardId, twd)
         val d = data
@@ -1434,6 +1434,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
             (d.pendTxn(p, d.nextId, d.currentBook.id, cardId, catId, twd, pending) ?: run { toast("還沒有 ${p.cur} 的匯率，請先設定匯率"); return false })
                 // 試刷選「記」也記成預估（跟預先授權一樣，請款時再改金額）
                 .let { if (p.kind == PendKind.PREAUTH || est) it.copy(est = true) else it }
+                // 通知沒寫商店、按記時自己填的店家
+                .let { if (shop.isNotBlank() && it.shop.isBlank()) it.copy(shop = shop.trim()) else it }
         )
         val ids = list.map { it.id }.toSet()
         commit(d.copy(txns = sortTxns(d.txns + list), nextId = d.nextId + list.size))
@@ -1596,6 +1598,15 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
     /** 記一筆（改一下）存好了：待確認那筆算記好了 */
     fun pendSaved(id: Long, txnId: Long) {
         setPend(id) { if (it.state == PendState.WAIT) it.copy(state = PendState.DONE, txnId = txnId) else it }
+    }
+
+    /** 已經記好的那筆才收到有店名的另一則：補上店家，可以復原 */
+    fun backfillPendShop(txnId: Long, shop: String) {
+        val old = data.txnMap[txnId]?.takeIf { it.shop.isBlank() } ?: return
+        update { d -> d.copy(txns = d.txns.map { if (it.id == txnId) it.linkBankShop(shop) else it }) }
+        _messages.tryEmit(UiMsg("剛剛記的 ${formatMoney(old.amount)} 補上店家 $shop", "復原") {
+            update { d -> d.copy(txns = d.txns.map { if (it.id == txnId) it.copy(shop = old.shop, bankShop = old.bankShop) else it }) }
+        })
     }
 
     /** 「不是消費」：拿掉，可以復原（試刷選「不記」也是這個，提示寫試刷） */
