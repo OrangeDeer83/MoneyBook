@@ -304,8 +304,7 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                         listOfNotNull(pendAmountText(p), pendWhen(p, LocalDate.now().toEpochDay()), d.accMap[cardId]?.name).joinToString("・"),
                         style = MaterialTheme.typography.bodySmall, color = cute.sub,
                     )
-                    CompactField(shop, { shop = it.replace("
-", "").take(40) }, "店家（選填，例如 全聯）", Modifier.fillMaxWidth())
+                    CompactField(shop, { shop = it.replace("\n", "").take(40) }, "店家（選填，例如 全聯）", Modifier.fillMaxWidth())
                     if (sugg.isNotEmpty()) {
                         Text("用過的店家", style = MaterialTheme.typography.labelSmall, color = cute.sub)
                         androidx.compose.foundation.layout.FlowRow(
