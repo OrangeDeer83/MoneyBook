@@ -6821,7 +6821,7 @@ def t_shop_field():
     d.check("點小圓鈕打開店家格", d.first(ns, "店家", True) is not None, pend_texts(ns))
 
 
-@case(D, "刷卡通知照上次的記法：同一家店、金額一樣帶店家・備註和分類，寫「照 … 的記法」；別的金額只帶店家的叫法", visual=True)
+@case(D, "刷卡通知照上次的記法：同一家店、金額一樣帶店家・備註和分類（不寫照哪天的記法）；別的金額只帶店家的叫法", visual=True)
 def t_card_shop_memo():
     s = S.Seed(f.today())
     t = s.expense(s.back(1), 45, S.C_BREAKFAST, acc=S.CARD, note="雙蔬鮪魚飯糰")
@@ -6834,8 +6834,8 @@ def t_card_shop_memo():
     f.tab("明細")
     d.time.sleep(1.5)
     ns = d.shot("照上次的記法")
-    d.check("待確認：名稱「7-11・雙蔬鮪魚飯糰」、寫「照 … 的記法」、分類早餐、第二行有 OP錢包",
-            d.has(ns, "7-11・雙蔬鮪魚飯糰", True) and any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns)
+    d.check("待確認：名稱「7-11・雙蔬鮪魚飯糰」、不寫「照 … 的記法」、分類早餐、第二行有 OP錢包",
+            d.has(ns, "7-11・雙蔬鮪魚飯糰", True) and not any(n.text.startswith("照") and n.text.endswith("的記法") for n in ns)
             and any("OP錢包" in n.text and "早餐" in n.text for n in ns), pend_texts(ns))
     d.tap(d.wait(lambda n: n.desc == "記 統一超商", 8, "記 統一超商"))
     wait_toast("已記 7-11・雙蔬鮪魚飯糰 $45", "提示「已記 7-11・雙蔬鮪魚飯糰 $45」")

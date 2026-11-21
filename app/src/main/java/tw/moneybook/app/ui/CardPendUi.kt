@@ -175,13 +175,6 @@ fun CardPendCard(vm: MoneyViewModel, all: List<CardPend>, onEdit: (Long) -> Unit
                             ).joinToString("・"),
                             style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 2,
                         )
-                        // 帶了上次的備註，或店家換成你的叫法：說一下是照哪一天的記法
-                        val memo = ps.memo
-                        if (memo != null && sm == null && pre == null && !refund && (memo.note.isNotBlank() || ps.shop != p.merchant)) {
-                            val when0 = shortDay(memo.day, today)
-                            // 「照昨天的記法」「照 11/16 的記法」：日期前後才空一格
-                            Text(if (when0.firstOrNull()?.isDigit() == true) "照 $when0 的記法" else "照${when0}的記法", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
                     }
                     Text(
                         (if (refund) "+" else "") + pendAmountText(p), color = if (refund) cute.income else cute.expense,
