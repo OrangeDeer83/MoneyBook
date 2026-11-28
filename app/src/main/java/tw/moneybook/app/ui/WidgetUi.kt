@@ -178,6 +178,7 @@ fun WidgetLayoutsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onBack: () -
 /**
  * 一份排版的排版頁。initW/initH：從桌面上的小工具打開時，那個小工具現在的大小（dp），預覽預設用它
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun WidgetEditScreen(vm: MoneyViewModel, id: Long, initW: Int?, initH: Int?, onBack: () -> Unit) {
     val d = vm.data
