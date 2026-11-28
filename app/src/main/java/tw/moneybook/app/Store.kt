@@ -149,6 +149,7 @@ object Codec {
             }
         })
         if (d.preorders.isNotEmpty()) root.put("preorders", PreorderCodec.toJson(d.preorders))
+        if (d.widgetLayouts.isNotEmpty()) root.put("widgetLayouts", WLayoutCodec.toJson(d.widgetLayouts))
         root.put("rates", JSONArray().apply {
             d.rates.forEach { r -> put(JSONObject().put("code", r.code).put("rate", r.rate).put("day", r.day)) }
         })
@@ -353,8 +354,9 @@ object Codec {
         }
         val subs = SubCodec.fromJson(root.optJSONArray("subs"), books.first().id)
         val preorders = PreorderCodec.fromJson(root.optJSONArray("preorders"), books.first().id)
+        val widgetLayouts = WLayoutCodec.fromJson(root.optJSONArray("widgetLayouts"))
         val maxId = (books.map { it.id } + accounts.map { it.id } + categories.map { it.id } +
-            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id } + waives.map { it.id } + subs.map { it.id } + preorders.map { it.id }).maxOrNull() ?: 0L
+            txns.map { it.id } + templates.map { it.id } + trades.map { it.id } + settles.map { it.id } + waives.map { it.id } + subs.map { it.id } + preorders.map { it.id } + widgetLayouts.map { it.id }).maxOrNull() ?: 0L
         return AppData(
             books = books,
             accounts = accounts,
@@ -384,6 +386,7 @@ object Codec {
             waives = waives,
             subs = subs,
             preorders = preorders,
+            widgetLayouts = widgetLayouts,
         )
     }
 
