@@ -7898,7 +7898,9 @@ def t_widget_config():
     d.shot("改選排版 2")
     d.tap_text("用這份", exact=True)
     d.time.sleep(1.5)
-    f.me_page("桌面小工具")
+    # 選完回到原本的畫面（排版清單）；不在清單上才從「我的」進去
+    if not d.has(d.nodes(), "自己組的排版", True):
+        f.me_page("桌面小工具")
     d.time.sleep(1)
     d.shot("換了之後")
     d.check("每天看・桌面上沒有；排版 2・桌面上有 2 個", "桌面上沒有" in widget_list_info("每天看") and "桌面上有 2 個" in widget_list_info("排版 2"),
