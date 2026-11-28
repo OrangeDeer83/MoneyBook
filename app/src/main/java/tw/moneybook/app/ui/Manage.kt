@@ -155,6 +155,7 @@ fun MeScreen(vm: MoneyViewModel, open: (String) -> Unit) {
                     val w = d.bookPreorders.filter { it.waiting }
                     if (w.isEmpty()) "以後要買的先記下來，預算先留起來" else "${w.size} 樣等著買・預留 ${formatMoney(w.sumOf { it.amount })}"
                 }) { open("preorders") }
+                MenuRow("vec:ticket", "桌面小工具", if (d.widgetLayouts.isEmpty()) "自己組一個：挑區塊、排順序" else "自己組的排版 ${d.widgetLayouts.size} 份") { open("widgets") }
                 MenuRow("vec:receipt", "刷卡通知", if (d.notiApps.isEmpty()) "讀銀行的刷卡通知，自動幫你記（先收集通知）" else "讀 ${d.notiApps.size} 個 App 的通知") { open("cardnoti") }
                 MenuRow(
                     "vec:target", "每月預算",

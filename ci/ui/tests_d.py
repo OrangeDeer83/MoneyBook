@@ -7715,3 +7715,129 @@ def t_est_due():
     d.time.sleep(4)
     ns = d.shot("首頁")
     d.check("明細有 -$1,280、膠囊還是沒有「試刷」", d.has(ns, "-$1,280", True) and remind_chip(ns, "試刷") is None, pend_texts(ns))
+
+
+def w_find(pred, what, tries=8, up=False):
+    """排版頁（可以捲）：往下（或往上）捲直到找到"""
+    for _ in range(tries):
+        ns = d.nodes()
+        n = next((x for x in ns if pred(x)), None)
+        if n is not None:
+            return n
+        if up:
+            d.scroll_up(1)
+        else:
+            d.scroll_down(1)
+        d.time.sleep(0.4)
+    raise TimeoutError(f"找不到{what}")
+
+
+def block_menu(title):
+    """排版頁上那個區塊的 •••（同一列、在名字右邊）"""
+    t = w_find(lambda n: n.text.startswith(title), title)
+    ns = d.nodes()
+    t = next((n for n in ns if n.text.startswith(title)), t)
+    ms = [n for n in ns if n.desc == "區塊選單" and abs(n.cy - t.cy) < 70 and n.cx > t.cx]
+    return min(ms, key=lambda n: n.cx - t.cx) if ms else None
+
+
+def widget_seed():
+    s = S.Seed(f.today(), budget=20000)
+    s.template("Breakfast", 60, S.C_BREAKFAST)
+    s.template("Lunch", 120, S.C_LUNCH)
+    s.template("Metro", 30, S.C_METRO)
+    s.template("Dinner", 200, S.C_DINNER)
+    s.expense(0, 300, S.C_LUNCH)
+    return s
+
+
+@case(D, "自組小工具排版頁：我的 → 桌面小工具 → 新增一份，照範例排好、上面即時預覽；切 2×2 寫放不下哪些、區塊標「放不下」；加區塊、••• 改記一筆打開收入、挑常用記帳", visual=True)
+def t_widget_layout_edit():
+    d.fresh(widget_seed().json())
+    f.me_page("桌面小工具")
+    ns = d.shot("桌面小工具頁")
+    d.check("有「＋ 新增一份排版」、原本的五種", d.has(ns, "＋ 新增一份排版", True) and d.has(ns, "原本的五種", True), [n.text for n in ns if n.text][:20])
+    d.tap_text("＋ 新增一份排版", exact=True)
+    d.time.sleep(1.2)
+    ns = d.shot("新增的排版")
+    d.check("排版頁：名字每天看、上面有預覽，預覽裡有本月支出、剩餘預算、常用記帳的 Breakfast",
+            d.has(ns, "名字：每天看", True) and any(n.desc == "小工具預覽" for n in ns) and d.has(ns, "本月支出", True)
+            and d.has(ns, "剩餘預算", True) and d.has(ns, "Breakfast", True), [n.text for n in ns if n.text][:40])
+    d.tap_text("2×2", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("2×2")
+    d.check("2×2：寫「放不下：…」", any(n.text.startswith("放不下：") for n in ns), [n.text for n in ns if n.text][:40])
+    d.tap_text("5×5", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("5×5")
+    d.check("5×5：全部放得下", not any(n.text.startswith("放不下：") for n in ns), [n.text for n in ns if n.text][:40])
+    d.tap_text("2×2", exact=True)
+    d.time.sleep(0.8)
+    tag = w_find(lambda n: n.text == "放不下", "區塊上的「放不下」")
+    d.check("下面的區塊標「放不下」", tag is not None)
+    # 加「近 7 天支出」
+    row = w_find(lambda n: n.text == "近 7 天支出", "可以加的近 7 天支出")
+    ns = d.nodes()
+    plus = [n for n in ns if n.text == "＋ 加" and abs(n.cy - row.cy) < 60]
+    d.check("可以加的區塊有「近 7 天支出」和「＋ 加」", bool(plus), [n.text for n in ns if n.text][:40])
+    if plus:
+        d.tap(plus[0])
+        d.time.sleep(1)
+    w_find(lambda n: n.text == "5×5", "5×5", up=True)
+    d.tap_text("5×5", exact=True)
+    d.time.sleep(0.8)
+    ns = d.shot("加了近 7 天")
+    d.check("預覽多了「近 7 天支出」（排版清單也有一個）", sum(1 for n in ns if n.text == "近 7 天支出") >= 1 and not any(n.text.startswith("放不下：") for n in ns),
+            [n.text for n in ns if n.text][:40])
+    # ＋ 記一筆 → 打開：收入
+    m = block_menu("＋ 記一筆")
+    d.check("「＋ 記一筆」有 •••", m is not None)
+    if m:
+        d.tap(m)
+        d.time.sleep(0.8)
+        d.tap_text("打開：收入", exact=True)
+        d.time.sleep(1)
+    w_find(lambda n: n.desc == "小工具預覽", "預覽", up=True)
+    ns = d.shot("記一筆改收入")
+    d.check("預覽的按鈕變成「＋ 記收入」、排版清單那塊還是叫「＋ 記一筆」", d.has(ns, "＋ 記收入", True), [n.text for n in ns if n.text][:40])
+    # 常用記帳：多勾 Dinner
+    m = block_menu("常用記帳")
+    d.check("「常用記帳」有 •••", m is not None)
+    if m:
+        d.tap(m)
+        d.time.sleep(0.8)
+        d.tap_text("挑常用記帳…", exact=True)
+        d.wait_text("小工具上放哪幾個常用記帳", timeout=8)
+        d.tap_text("Dinner", exact=True)
+        d.time.sleep(0.4)
+        ns = d.shot("挑常用記帳")
+        d.check("勾的順序：Dinner 是第 4 個", d.has(ns, "4", True), [n.text for n in ns if n.text][:30])
+        d.tap_text("好", exact=True)
+        d.time.sleep(1)
+    n = w_find(lambda n: n.text.startswith("常用記帳："), "常用記帳那塊")
+    d.check("那塊寫「常用記帳：Breakfast、Lunch、Metro、Dinner」", n.text == "常用記帳：Breakfast、Lunch、Metro、Dinner", n.text)
+    # 外觀：字大、深色
+    w_find(lambda n: n.text == "字的大小", "外觀")
+    d.tap_text("大", exact=True)
+    d.tap_text("深色", exact=True)
+    d.time.sleep(0.8)
+    w_find(lambda n: n.desc == "小工具預覽", "預覽", up=True, tries=12)
+    d.shot("字大、深色")
+    d.tap_back()
+    d.time.sleep(1)
+    ns = d.shot("排版清單")
+    d.check("清單：每天看、桌面上沒有", d.has(ns, "每天看", True) and any("桌面上沒有" in n.text for n in ns), [n.text for n in ns if n.text][:20])
+    # 左滑刪除、復原
+    f.swipe_row_left(d.first(ns, "每天看", True))
+    d.time.sleep(1.2)
+    if not any(n.text.startswith("已刪除排版") for n in d.nodes()):
+        d.tap_text("刪除", exact=True)
+        d.time.sleep(0.6)
+    ns = d.shot("刪掉")
+    d.check("提示「已刪除排版「每天看」」", any(n.text.startswith("已刪除排版") for n in ns), [n.text for n in ns if n.text][:20])
+    und = d.first(ns, "復原", True)
+    if und:
+        d.tap(und)
+        d.time.sleep(1)
+    ns = d.shot("復原")
+    d.check("復原：每天看又回來", d.has(ns, "每天看", True), [n.text for n in ns if n.text][:20])

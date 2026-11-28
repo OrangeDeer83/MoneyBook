@@ -204,6 +204,53 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         _messages.tryEmit(UiMsg("已恢復預設排版", "復原") { setCardLayout(page, before) })
     }
 
+    // ───────── 自組桌面小工具（見 WidgetLayout.kt） ─────────
+
+    /** 新增一份排版（範例排版），回傳 id */
+    fun newWidgetLayout(): Long {
+        val d = data
+        val id = d.nextId
+        val n = d.widgetLayouts.size + 1
+        val name = if (n == 1) "每天看" else "排版 $n"
+        commit(d.copy(widgetLayouts = d.widgetLayouts + WBlocks.example(id, name, d), nextId = id + 1))
+        return id
+    }
+
+    /** 改一份排版（排版頁每改一下就存；桌面上的小工具跟著更新） */
+    fun saveWidgetLayout(l: WLayout) {
+        val d = data
+        if (d.widgetLayouts.firstOrNull { it.id == l.id } == l) return
+        commit(d.copy(widgetLayouts = d.widgetLayouts.map { if (it.id == l.id) l else it }))
+    }
+
+    /** 刪掉一份排版，可以復原（放回原本的位置） */
+    fun deleteWidgetLayout(id: Long) {
+        val d = data
+        val i = d.widgetLayouts.indexOfFirst { it.id == id }
+        if (i < 0) return
+        val l = d.widgetLayouts[i]
+        commit(d.copy(widgetLayouts = d.widgetLayouts.filter { it.id != id }))
+        _messages.tryEmit(UiMsg("已刪除排版「${l.name}」", "復原") {
+            val now = data
+            if (now.widgetLayouts.none { it.id == id }) {
+                val list = now.widgetLayouts.toMutableList()
+                list.add(i.coerceAtMost(list.size), l)
+                commit(now.copy(widgetLayouts = list))
+            }
+        })
+    }
+
+    /** 排版頁的「恢復範例」：區塊回到範例的樣子（名字、外觀不動），可以復原 */
+    fun resetWidgetLayout(id: Long) {
+        val l = data.widgetLayouts.firstOrNull { it.id == id } ?: return
+        val ex = WBlocks.example(l.id, l.name, data)
+        saveWidgetLayout(l.copy(layout = ex.layout, opts = ex.opts))
+        _messages.tryEmit(UiMsg("已恢復範例排版", "復原") { saveWidgetLayout(l) })
+    }
+
+    /** 首頁預算的「錢花在哪」：小工具點預算的區塊進來時打開（首頁用掉就清掉） */
+    var rankAsk by mutableStateOf(false)
+
     /** 總資產頁的期間：近 6、12 個月，0 是全部，-1 是自訂（assetFrom～assetTo，不存檔；跟趨勢分頁分開記） */
     var assetRange by mutableIntStateOf(12)
     var assetFrom by mutableStateOf<YearMonth?>(null)

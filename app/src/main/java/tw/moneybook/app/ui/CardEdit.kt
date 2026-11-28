@@ -78,13 +78,53 @@ private sealed interface Drop {
  */
 @Composable
 fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
+    val layout = vm.cardLayout(page)
+    CardLayoutEditor(
+        page = page, layout = layout, save = { l -> if (l != layout) vm.setCardLayout(page, l) },
+        title = "調整排版・${page.title}", onBack = onBack, onReset = { vm.resetCardLayout(page) },
+    )
+}
+
+/** 排版頁上的字（統計卡片、自組小工具各用自己的說法） */
+class LayoutTexts(
+    val hint: String = "長按卡片拖到想要的位置；••• 改寬度或隱藏",
+    val reset: String = "恢復預設",
+    val empty: String = "所有卡片都隱藏了，從下面加回來",
+    val hiddenTitle: (Int) -> String = { "隱藏的卡片（$it）" },
+    val hiddenHint: (Boolean) -> String = { none ->
+        if (none) "把卡片拖到這裡，或按卡片的 ••• 選「隱藏」" else "點「＋ 顯示」加到最下面；也可以長按拖到上面想要的位置"
+    },
+    val show: String = "＋ 顯示",
+    val hide: String = "隱藏",
+    val menuDesc: String = "卡片選單",
+)
+
+/**
+ * 調整排版的畫面本體（統計卡片、自組小工具共用）：header 放在清單上面（小工具的預覽、名字…）、footer 放在最下面（外觀）；
+ * name：卡片上寫的名字；badge：名字下面多一個灰色小標（例如「放不下」）；hiddenIds：隱藏區要列哪幾張（照順序）；
+ * extraMenu：••• 選單多的項目（close 關掉選單）
+ */
+@Composable
+fun CardLayoutEditor(
+    page: CardPage,
+    layout: CardLayout,
+    save: (CardLayout) -> Unit,
+    title: String,
+    onBack: () -> Unit,
+    onReset: () -> Unit,
+    texts: LayoutTexts = LayoutTexts(),
+    name: (String) -> String = { page.name(it) },
+    badge: (String) -> String? = { null },
+    hiddenIds: List<String> = layout.hidden,
+    extraMenu: @Composable (id: String, close: () -> Unit) -> Unit = { _, _ -> },
+    header: @Composable () -> Unit = {},
+    footer: @Composable () -> Unit = {},
+) {
     BackHandler { onBack() }
     val cute = LocalCute.current
     val primary = MaterialTheme.colorScheme.primary
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
-    val layout = vm.cardLayout(page)
-    fun save(l: CardLayout) { if (l != layout) vm.setCardLayout(page, l) }
 
     // 拖曳中的卡片、手指位置（螢幕座標）、按住的地方在卡片裡的位置、卡片大小
     var dragId by remember { mutableStateOf<String?>(null) }
@@ -171,21 +211,30 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(page.name(id), style = MaterialTheme.typography.titleSmall, maxLines = 2)
-                Text(
-                    when {
-                        !canHalf -> "只能整排"
-                        half -> "半排"
-                        else -> "整排・可以改半排"
-                    },
-                    style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
-                )
+                Text(name(id), style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        when {
+                            !canHalf -> "只能整排"
+                            half -> "半排"
+                            else -> "整排・可以改半排"
+                        },
+                        style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
+                    )
+                    badge(id)?.let { b ->
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            b, style = MaterialTheme.typography.labelSmall, color = cute.sub, maxLines = 1,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(cute.soft).padding(horizontal = 6.dp, vertical = 1.dp),
+                        )
+                    }
+                }
             }
             Box {
                 Box(
                     Modifier.size(36.dp).clip(CircleShape).clickable { menu = true },
                     contentAlignment = Alignment.Center,
-                ) { Icon(AppIcons.More, contentDescription = "卡片選單", tint = cute.sub, modifier = Modifier.size(20.dp)) }
+                ) { Icon(AppIcons.More, contentDescription = texts.menuDesc, tint = cute.sub, modifier = Modifier.size(20.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     val check: @Composable () -> Unit = { Icon(AppIcons.LCheck, contentDescription = "目前", modifier = Modifier.size(18.dp)) }
                     if (canHalf) {
@@ -197,7 +246,8 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
                         DropdownMenuItem(text = { Text("靠左") }, trailingIcon = if (!right) check else null, onClick = { menu = false; save(page.setSide(layout, id, false)) })
                         DropdownMenuItem(text = { Text("靠右") }, trailingIcon = if (right) check else null, onClick = { menu = false; save(page.setSide(layout, id, true)) })
                     }
-                    DropdownMenuItem(text = { Text("隱藏", color = cute.expense) }, onClick = { menu = false; save(page.hide(layout, id)) })
+                    extraMenu(id) { menu = false }
+                    DropdownMenuItem(text = { Text(texts.hide, color = cute.expense) }, onClick = { menu = false; save(page.hide(layout, id)) })
                 }
             }
         }
@@ -208,24 +258,25 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
             .onGloballyPositioned { rootPos = it.positionInWindow() }
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            SubTopBar("調整排版・${page.title}", onBack) {
+            SubTopBar(title, onBack) {
                 TextButton(onClick = onBack) { Text("完成", style = MaterialTheme.typography.titleSmall) }
             }
             Column(
                 Modifier.fillMaxWidth().weight(1f).dragScrollArea(dragScroll).verticalScroll(scroll, enabled = dragId == null)
                     .padding(horizontal = 16.dp).padding(bottom = 24.dp),
             ) {
+                header()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "長按卡片拖到想要的位置；••• 改寬度或隱藏",
+                        texts.hint,
                         style = MaterialTheme.typography.bodySmall, color = cute.sub, modifier = Modifier.weight(1f),
                     )
-                    SoftButton("恢復預設", { vm.resetCardLayout(page) }, compact = true)
+                    SoftButton(texts.reset, onReset, compact = true)
                 }
                 Spacer(Modifier.height(12.dp))
                 Column(Modifier.widthIn(max = CardMaxWidth).fillMaxWidth().align(Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (layout.rows.isEmpty()) {
-                        Text("所有卡片都隱藏了，從下面加回來", style = MaterialTheme.typography.bodyMedium, color = cute.sub,
+                        Text(texts.empty, style = MaterialTheme.typography.bodyMedium, color = cute.sub,
                             modifier = Modifier.fillMaxWidth().onGloballyPositioned { rowBounds.clear() }.padding(vertical = 16.dp))
                     }
                     layout.rows.forEachIndexed { i, r ->
@@ -265,13 +316,9 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
                             .background(if (target == Drop.Hide) cute.soft else androidx.compose.ui.graphics.Color.Transparent),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("隱藏的卡片（${layout.hidden.size}）", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            if (layout.hidden.isEmpty()) "把卡片拖到這裡，或按卡片的 ••• 選「隱藏」"
-                            else "點「＋ 顯示」加到最下面；也可以長按拖到上面想要的位置",
-                            style = MaterialTheme.typography.bodySmall, color = cute.sub,
-                        )
-                        layout.hidden.forEach { id ->
+                        Text(texts.hiddenTitle(hiddenIds.size), style = MaterialTheme.typography.titleSmall)
+                        Text(texts.hiddenHint(hiddenIds.isEmpty()), style = MaterialTheme.typography.bodySmall, color = cute.sub)
+                        hiddenIds.forEach { id ->
                             key(id) {
                                 Row(
                                     Modifier.fillMaxWidth().alpha(if (dragId == id) 0.35f else 1f).draggable(id)
@@ -279,13 +326,14 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
                                         .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(page.name(id), style = MaterialTheme.typography.titleSmall, color = cute.sub, modifier = Modifier.weight(1f))
-                                    TextButton(onClick = { save(page.show(layout, id)) }) { Text("＋ 顯示") }
+                                    Text(name(id), style = MaterialTheme.typography.titleSmall, color = cute.sub, modifier = Modifier.weight(1f))
+                                    TextButton(onClick = { save(page.show(layout, id)) }) { Text(texts.show) }
                                 }
                             }
                         }
                         Spacer(Modifier.height(4.dp))
                     }
+                    footer()
                 }
             }
         }
@@ -314,7 +362,7 @@ fun CardLayoutScreen(vm: MoneyViewModel, page: CardPage, onBack: () -> Unit) {
                     .clip(RoundedCornerShape(14.dp)).background(cute.card).border(2.dp, primary, RoundedCornerShape(14.dp))
                     .heightIn(min = 60.dp).padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-            ) { Text(page.name(id), style = MaterialTheme.typography.titleSmall) }
+            ) { Text(name(id), style = MaterialTheme.typography.titleSmall) }
         }
     }
 }

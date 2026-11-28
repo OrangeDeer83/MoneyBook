@@ -271,6 +271,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                 "search" -> SearchScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "drill" -> DrillScreen(vm, onEdit = { editTxn(it) }) { pop() }
                 "asset" -> AssetScreen(vm, onLayout = { push(Route.Page("layout:$it")) }) { pop() }
+                "widgets" -> WidgetLayoutsScreen(vm, onOpen = { push(Route.Page("wlayout:$it")) }) { pop() }
                 "invest" -> InvestAllScreen(vm, onOpen = { vm.accMonths.remove(it); push(Route.Page("account:$it")) }) { pop() }
                 else -> {
                     // 調整卡片排版：layout:<CardPage.key>
@@ -297,6 +298,13 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                         ) { pop() }
                     }
                     // 一檔持股：holding:<帳戶 id>:<代號>
+                    // 自組小工具的排版頁：wlayout:<排版 id>[:寬:高]（從桌面上的小工具打開時帶那個小工具的大小）
+                    if (top.name.startsWith("wlayout:")) {
+                        val parts = top.name.split(":")
+                        parts.getOrNull(1)?.toLongOrNull()?.let { wid ->
+                            WidgetEditScreen(vm, wid, parts.getOrNull(2)?.toIntOrNull(), parts.getOrNull(3)?.toIntOrNull()) { pop() }
+                        }
+                    }
                     if (top.name.startsWith("holding:")) {
                         val parts = top.name.split(":", limit = 3)
                         val hAcc = parts.getOrNull(1)?.toLongOrNull()
