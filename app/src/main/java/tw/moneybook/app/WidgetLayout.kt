@@ -137,6 +137,9 @@ object WBlocks {
     const val GAP = 6f
     const val TPL_CELL = 44f
 
+    /** 常用記帳的格子夠寬才放分類圖示（太窄時名字會被拆成好幾行，只放名字） */
+    fun tplShowIcon(blockW: Float, perRow: Int, font: Float): Boolean = (blockW - (perRow - 1) * 4f) / perRow >= 84f * font
+
     /** 常用記帳一排幾格：整排 4、半排 2 */
     fun tplPerRow(half: Boolean) = if (half) 2 else 4
 

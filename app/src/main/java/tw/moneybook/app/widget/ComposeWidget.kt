@@ -209,6 +209,7 @@ private fun Block(context: Context, d: AppData, l: WLayout, c: GColors, id: Stri
             val ids = WBlocks.tplIds(d, l.opts)
             val cells: List<Long?> = ids + null
             val per = WBlocks.tplPerRow(half)
+            val icon = WBlocks.tplShowIcon(wDp, per, f)
             Column(GlanceModifier.fillMaxSize()) {
                 cells.chunked(per).forEachIndexed { ri, row ->
                     if (ri > 0) Spacer(GlanceModifier.height(4.dp))
@@ -217,7 +218,7 @@ private fun Block(context: Context, d: AppData, l: WLayout, c: GColors, id: Stri
                             if (k > 0) Spacer(GlanceModifier.width(4.dp))
                             val tid = row.getOrNull(k)
                             Box(GlanceModifier.defaultWeight().fillMaxHeight()) {
-                                if (k < row.size) TplBlockCell(context, d, c, tid, f)
+                                if (k < row.size) TplBlockCell(context, d, c, tid, f, icon)
                             }
                         }
                     }
@@ -275,7 +276,7 @@ private fun Block(context: Context, d: AppData, l: WLayout, c: GColors, id: Stri
 
 /** 常用記帳的一格（null＝最後的＋） */
 @Composable
-private fun TplBlockCell(context: Context, d: AppData, c: GColors, tid: Long?, f: Float) {
+private fun TplBlockCell(context: Context, d: AppData, c: GColors, tid: Long?, f: Float, icon: Boolean) {
     val base = GlanceModifier.fillMaxSize().background(c.cell).cornerRadius(android.R.dimen.system_app_widget_inner_radius)
     val t = tid?.let { x -> d.templates.firstOrNull { it.id == x } }
     if (t == null) {
@@ -286,10 +287,15 @@ private fun TplBlockCell(context: Context, d: AppData, c: GColors, tid: Long?, f
     }
     val cat = t.categoryId?.let { d.catMap[it] }
     val emoji = t.icon.ifEmpty { cat?.emoji ?: if (t.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box" }
-    Row(base.clickable(openApp(context, "tpl:${t.id}")).padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-        TplIcon(emoji, cat?.color ?: 5, (22 * f).toInt())
-        Spacer(GlanceModifier.width(4.dp))
-        Text(t.name, style = TextStyle(color = c.ink, fontSize = (12 * f).sp), maxLines = 2)
+    Row(
+        base.clickable(openApp(context, "tpl:${t.id}")).padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = if (icon) Alignment.Start else Alignment.CenterHorizontally,
+    ) {
+        if (icon) {
+            TplIcon(emoji, cat?.color ?: 5, (22 * f).toInt())
+            Spacer(GlanceModifier.width(4.dp))
+        }
+        Text(t.name, style = TextStyle(color = c.ink, fontSize = (12 * f).sp, textAlign = if (icon) TextAlign.Start else TextAlign.Center), maxLines = 2)
     }
 }
 

@@ -389,7 +389,10 @@ fun WidgetPreview(d0: AppData, l: WLayout, wDp: Float, hDp: Float, pendN: Int) {
         val dens = LocalDensity.current
         Box(Modifier.size((wDp * scale).dp, (hDp * scale).dp)) {
             CompositionLocalProvider(LocalDensity provides Density(dens.density * scale, dens.fontScale)) {
-                WidgetBody(d, l, c, wDp, hDp, pendN)
+                // 跟桌面上一樣用手機的字型、自然的行高（App 的字型行高比較高，數字會被切掉）
+                CompositionLocalProvider(androidx.compose.material3.LocalTextStyle provides androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Default)) {
+                    WidgetBody(d, l, c, wDp, hDp, pendN)
+                }
             }
         }
     }
@@ -407,10 +410,11 @@ private fun WidgetBody(d: AppData, l: WLayout, c: WColors, wDp: Float, hDp: Floa
     ) {
         l.layout.rows.take(fit).forEachIndexed { i, r ->
             Row(Modifier.fillMaxWidth().height(heights[i].dp), horizontalArrangement = Arrangement.spacedBy(WBlocks.GAP.dp)) {
-                if (!r.half) PreviewBlock(d, l, c, r.left!!, false, f, pendN, Modifier.weight(1f).fillMaxHeight())
+                val inner = wDp - WBlocks.PAD * 2
+                if (!r.half) PreviewBlock(d, l, c, r.left!!, false, f, pendN, inner, Modifier.weight(1f).fillMaxHeight())
                 else listOf(r.left, r.right).forEach { bid ->
                     if (bid == null) Spacer(Modifier.weight(1f))
-                    else PreviewBlock(d, l, c, bid, true, f, pendN, Modifier.weight(1f).fillMaxHeight())
+                    else PreviewBlock(d, l, c, bid, true, f, pendN, (inner - WBlocks.GAP) / 2, Modifier.weight(1f).fillMaxHeight())
                 }
             }
         }
@@ -418,7 +422,7 @@ private fun WidgetBody(d: AppData, l: WLayout, c: WColors, wDp: Float, hDp: Floa
 }
 
 @Composable
-private fun PreviewBlock(d: AppData, l: WLayout, c: WColors, id: String, half: Boolean, f: Float, pendN: Int, modifier: Modifier) {
+private fun PreviewBlock(d: AppData, l: WLayout, c: WColors, id: String, half: Boolean, f: Float, pendN: Int, wDp: Float, modifier: Modifier) {
     val today = LocalDate.now()
     val cellBg = Color(c.cell).copy(alpha = if (c.bgAlpha == 0f) 0.9f else 1f)
     val cellMod = modifier.clip(RoundedCornerShape(14.dp)).background(cellBg).padding(horizontal = 10.dp, vertical = 6.dp)
@@ -469,6 +473,7 @@ private fun PreviewBlock(d: AppData, l: WLayout, c: WColors, id: String, half: B
             val ids = WBlocks.tplIds(d, l.opts)
             val cells: List<Long?> = ids + null
             val per = WBlocks.tplPerRow(half)
+            val icon = WBlocks.tplShowIcon(wDp, per, f)
             Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 cells.chunked(per).forEach { row ->
                     Row(Modifier.fillMaxWidth().height((WBlocks.TPL_CELL * f).dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -477,14 +482,16 @@ private fun PreviewBlock(d: AppData, l: WLayout, c: WColors, id: String, half: B
                             Row(
                                 Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(cellBg).padding(horizontal = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = if (t == null) Arrangement.Center else Arrangement.Start,
+                                horizontalArrangement = if (t == null || !icon) Arrangement.Center else Arrangement.Start,
                             ) {
                                 if (t == null) {
                                     Text("＋", color = Color(c.primary), fontSize = (18 * f).sp, fontWeight = FontWeight.Bold)
                                 } else {
                                     val cat = t.categoryId?.let { d.catMap[it] }
-                                    CatBubble(t.icon.ifEmpty { cat?.emoji ?: if (t.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box" }, cat?.color ?: 5, (22 * f).dp)
-                                    Spacer(Modifier.width(4.dp))
+                                    if (icon) {
+                                        CatBubble(t.icon.ifEmpty { cat?.emoji ?: if (t.type == TxType.TRANSFER) "img:ui_transfer" else "img:cat_box" }, cat?.color ?: 5, (22 * f).dp)
+                                        Spacer(Modifier.width(4.dp))
+                                    }
                                     Text(t.name, color = Color(c.ink), fontSize = (12 * f).sp, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = (13 * f).sp)
                                 }
                             }

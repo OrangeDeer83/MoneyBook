@@ -7732,13 +7732,17 @@ def w_find(pred, what, tries=8, up=False):
     raise TimeoutError(f"找不到{what}")
 
 
-def block_menu(title):
-    """排版頁上那個區塊的 •••（同一列、在名字右邊）"""
-    t = w_find(lambda n: n.text.startswith(title), title)
-    ns = d.nodes()
-    t = next((n for n in ns if n.text.startswith(title)), t)
-    ms = [n for n in ns if n.desc == "區塊選單" and abs(n.cy - t.cy) < 70 and n.cx > t.cx]
-    return min(ms, key=lambda n: n.cx - t.cx) if ms else None
+def block_menu(title, tries=8):
+    """排版頁上那個區塊的 •••（同一列、在名字右邊；預覽裡同名的字旁邊沒有 •••）"""
+    for _ in range(tries):
+        ns = d.nodes()
+        for t in [n for n in ns if n.text.startswith(title)]:
+            ms = [n for n in ns if n.desc == "區塊選單" and abs(n.cy - t.cy) < 70 and n.cx > t.cx]
+            if ms:
+                return min(ms, key=lambda n: n.cx - t.cx)
+        d.scroll_down(1)
+        d.time.sleep(0.4)
+    return None
 
 
 def widget_seed():
@@ -7787,7 +7791,8 @@ def t_widget_layout_edit():
     d.tap_text("5×5", exact=True)
     d.time.sleep(0.8)
     ns = d.shot("加了近 7 天")
-    d.check("預覽多了「近 7 天支出」（排版清單也有一個）", sum(1 for n in ns if n.text == "近 7 天支出") >= 1 and not any(n.text.startswith("放不下：") for n in ns),
+    # 加在最下面：5×5 也放不下第 7 排，寫在「放不下：近 7 天支出」
+    d.check("加到最下面：預覽下面寫「放不下：近 7 天支出」", any(n.text.startswith("放不下：") and "近 7 天支出" in n.text for n in ns),
             [n.text for n in ns if n.text][:40])
     # ＋ 記一筆 → 打開：收入
     m = block_menu("＋ 記一筆")
