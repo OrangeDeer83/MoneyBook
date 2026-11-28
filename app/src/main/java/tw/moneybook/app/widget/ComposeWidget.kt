@@ -85,7 +85,11 @@ private class GColors(l: WLayout, p: tw.moneybook.app.ui.Pal) {
 }
 
 class ComposeWidget : GlanceAppWidget() {
-    override val sizeMode: SizeMode = SizeMode.Exact
+    /**
+     * 只畫一種大小，自己讀系統記的「直向時的寬、高」來算放得下幾排：用 Exact 時有些桌面（例如小米）會挑橫向那個比較矮的版本，
+     * 下面明明還有空位卻少畫好幾排（使用者 11/28 回報）。拉大縮小時系統會通知，重新畫
+     */
+    override val sizeMode: SizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val d0 = loadData(context)
@@ -103,8 +107,9 @@ class ComposeWidget : GlanceAppWidget() {
         }
         provideContent {
             val size = LocalSize.current
+            val (wDp, hDp) = portraitSize(context, wid) ?: (size.width.value to size.height.value)
             // 記下現在的大小：長按 → 設定打開排版頁時，預覽用這個大小
-            if (wid != 0) WidgetBinds.setSize(context, wid, size.width.value.toInt(), size.height.value.toInt())
+            if (wid != 0) WidgetBinds.setSize(context, wid, wDp.toInt(), hDp.toInt())
             if (l == null) {
                 val c = GColors(WBlocks.example(0, "", d0), palOf(d0.prefs.palette))
                 Column(
@@ -116,10 +121,23 @@ class ComposeWidget : GlanceAppWidget() {
                     Text("長按這裡 → 設定，選一份排版", style = TextStyle(color = c.sub, fontSize = 12.sp), maxLines = 2)
                 }
             } else {
-                Body(context, d0.forWidget(l), l, pendN, size.width.value, size.height.value)
+                Body(context, d0.forWidget(l), l, pendN, wDp, hDp)
             }
         }
     }
+}
+
+/** 直向時小工具的寬、高（dp）：寬是 MIN_WIDTH、高是 MAX_HEIGHT（橫向時才是另一組）；系統沒給回傳 null */
+private fun portraitSize(context: Context, wid: Int): Pair<Float, Float>? {
+    if (wid == 0) return null
+    val o = try {
+        AppWidgetManager.getInstance(context).getAppWidgetOptions(wid)
+    } catch (_: Exception) {
+        return null
+    }
+    val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+    val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+    return if (w > 0 && h > 0) w.toFloat() to h.toFloat() else null
 }
 
 @Composable
@@ -310,6 +328,12 @@ class ComposeWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
         WidgetTick.schedule(context)
+    }
+
+    /** 拉大縮小：照新的大小重畫（放得下的排數會變） */
+    override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: android.os.Bundle) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        WidgetConfigActivity.refresh(context.applicationContext)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
