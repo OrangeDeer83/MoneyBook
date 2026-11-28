@@ -115,6 +115,15 @@ fun WidgetLayoutsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onBack: () -
     val d = vm.data
     val cute = LocalCute.current
     val ctx = LocalContext.current
+    // 桌面上幾個小工具用這份：綁定存在手機上（不在 App 資料裡），回到這一頁（例如長按 → 設定換了排版）就重算
+    var tick by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    @Suppress("DEPRECATION")
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) tick++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding().navigationBarsPadding()) {
         SubTopBar("桌面小工具", onBack)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
@@ -130,7 +139,7 @@ fun WidgetLayoutsScreen(vm: MoneyViewModel, onOpen: (Long) -> Unit, onBack: () -
                         SwipeRow(onDelete = { vm.deleteWidgetLayout(l.id) }) {
                             val n = l.layout.rows.sumOf { it.ids.size }
                             val book = d.books.firstOrNull { it.id == l.bookId }?.name ?: "跟著 App 的帳本"
-                            val used = remember(l.id, d) { WidgetBinds.countFor(ctx, l.id) }
+                            val used = remember(l.id, d, tick) { WidgetBinds.countFor(ctx, l.id) }
                             Row(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cute.card).clickable { onOpen(l.id) }
                                     .padding(horizontal = 16.dp, vertical = 12.dp),
