@@ -7667,9 +7667,11 @@ def t_est_due():
         d.sh("cmd statusbar collapse")
         d.time.sleep(1)
     ns = d.shot("點通知回首頁")
+    # 今天記的那筆在下面的明細看得到，只看提醒卡（預算、本月支出上面）
+    lim = min([n.cy for n in ns if n.text in ("設定每月預算", "本月支出")] + [10 ** 6])
     d.check("回到首頁、展開「2 筆試刷還沒填實際金額」，今天記的不在裡面",
-            d.has(ns, "2 筆試刷還沒填實際金額", True) and d.has(ns, "台灣中油", True) and d.has(ns, "全國加油站", True) and not d.has(ns, "今天的試刷", True),
-            pend_texts(ns))
+            d.has(ns, "2 筆試刷還沒填實際金額", True) and d.has(ns, "台灣中油", True) and d.has(ns, "全國加油站", True)
+            and not any(n.text == "今天的試刷" and n.cy < lim for n in ns), pend_texts(ns))
     # 再檢查一次：通知過的不再發
     d.sh("service call notification 1")
     d.sh(f"am broadcast -n {d.PKG}/tw.moneybook.app.notify.SubBootReceiver -a tw.moneybook.app.SUB_CHECK")
