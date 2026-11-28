@@ -28,6 +28,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) openRequest.value = intent?.getStringExtra("open")
+        // 自組小工具過了半夜換天（見 WidgetTick）
+        tw.moneybook.app.widget.WidgetTick.schedule(this)
         setContent {
             val vm: MoneyViewModel = viewModel()
             val prefs = vm.data.prefs

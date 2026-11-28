@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自組的小工具：放到桌面時先選排版（WidgetConfigActivity），長按 → 設定可以換 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_compose_desc"
+    android:previewLayout="@layout/widget_preview_compose"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:configure="tw.moneybook.app.widget.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable"
+    android:minWidth="110dp"
+    android:minHeight="56dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

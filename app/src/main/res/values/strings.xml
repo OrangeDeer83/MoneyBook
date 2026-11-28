@@ -11,4 +11,6 @@
     <string name="widget_budget_desc">還剩多少預算、平均每天可以花多少</string>
     <string name="widget_reimb_name">待報銷提醒</string>
     <string name="widget_reimb_desc">還沒收到的報銷款、欠最久的對象</string>
+    <string name="widget_compose_name">自己組的</string>
+    <string name="widget_compose_desc">在 App 裡挑區塊、排順序，照著畫（我的 → 桌面小工具）</string>
 </resources>

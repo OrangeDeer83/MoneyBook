@@ -210,5 +210,6 @@ class SubBootReceiver : BroadcastReceiver() {
             EstNotifier.post(ctx, d)
         }
         SubNotifier.schedule(ctx, d.prefs)
+        tw.moneybook.app.widget.WidgetTick.schedule(ctx)
     }
 }

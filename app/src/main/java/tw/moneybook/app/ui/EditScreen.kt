@@ -165,6 +165,8 @@ fun EditScreen(
     pendId: Long? = null,
     /** 預購（見 Preorder.kt）：new＝新增預購、edit:<id>＝修改預購、buy:<id>＝買了（照那筆帶好，存好那筆算買了） */
     preorder: String? = null,
+    /** 一開始的類型（自組小工具的「＋ 記收入／記轉帳」）；null＝照原本的規則 */
+    presetType: TxType? = null,
     onClose: () -> Unit,
 ) {
     val d = vm.data
@@ -192,7 +194,7 @@ fun EditScreen(
     var type by rememberSaveable {
         mutableStateOf(
             orig?.type ?: tpl?.type ?: if (pend?.kind == tw.moneybook.app.PendKind.REFUND) TxType.INCOME
-            else if (presetTo != null || presetFrom != null) TxType.TRANSFER else TxType.EXPENSE
+            else if (presetTo != null || presetFrom != null) TxType.TRANSFER else presetType ?: TxType.EXPENSE
         )
     }
     // 外幣：編輯既有的外幣記錄時，算出當初是哪一種外幣模式，計算機和另一邊的金額才放得回去

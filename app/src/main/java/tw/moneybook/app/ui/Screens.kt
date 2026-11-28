@@ -648,6 +648,10 @@ fun HomeScreen(
     var showBudget by remember { mutableStateOf(false) }
     // 點預算卡：這個月錢花在哪（見 BudgetRank.kt）；rankBudget＝從排行點了改預算（排行先收起來，存好再回來）
     var showRank by remember { mutableStateOf(false) }
+    // 自組小工具點預算的區塊進來：打開「錢花在哪」
+    LaunchedEffect(vm.rankAsk) {
+        if (vm.rankAsk) { showRank = true; vm.rankAsk = false }
+    }
     var rankBudget by remember { mutableStateOf(false) }
     var rankTab by rememberSaveable { mutableIntStateOf(0) }
     // 到期還沒記的固定扣款（見 Subs.kt）：放在書本列下面

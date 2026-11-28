@@ -7841,3 +7841,78 @@ def t_widget_layout_edit():
         d.time.sleep(1)
     ns = d.shot("復原")
     d.check("復原：每天看又回來", d.has(ns, "每天看", True), [n.text for n in ns if n.text][:20])
+
+
+def widget_cfg(wid):
+    """等同把自組小工具放到桌面（或長按 → 設定）：系統打開選排版的畫面"""
+    d.sh(f"am start -n {d.PKG}/tw.moneybook.app.widget.WidgetConfigActivity --ei appWidgetId {wid}")
+    d.time.sleep(2.5)
+
+
+def widget_list_info(name):
+    """我的 → 桌面小工具 清單上那一份排版下面那行小字"""
+    ns = d.nodes()
+    t = d.first(ns, name, True)
+    if t is None:
+        return ""
+    sub = [n for n in ns if "塊・" in n.text and 0 < n.cy - t.cy < 90]
+    return sub[0].text if sub else ""
+
+
+@case(D, "自組小工具放到桌面：還沒有排版時直接新增一份範例、打開排版頁；有排版時問用哪一份，可以新增一份、長按 → 設定換一份；點區塊打開的地方（記收入、錢花在哪、這個月的預購）", visual=True)
+def t_widget_config():
+    d.fresh(widget_seed().json())
+    widget_cfg(4101)
+    ns = d.shot("第一次放：直接新增")
+    d.check("還沒有排版：直接打開新的排版頁「每天看」", d.has(ns, "名字：每天看", True), [n.text for n in ns if n.text][:30])
+    d.tap_back()
+    d.time.sleep(1)
+    ns = d.shot("排版清單")
+    d.check("清單：每天看・桌面上有 1 個", "桌面上有 1 個" in widget_list_info("每天看"), [n.text for n in ns if n.text][:20])
+    # 第二個小工具：問用哪一份
+    widget_cfg(4102)
+    d.wait_text("這個小工具用哪一份排版？", timeout=8)
+    ns = d.shot("問用哪一份")
+    d.check("有每天看、＋ 新增一份、用這份、改這份排版",
+            d.has(ns, "每天看", True) and d.has(ns, "＋ 新增一份", True) and d.has(ns, "用這份", True) and d.has(ns, "改這份排版 ›", True),
+            [n.text for n in ns if n.text][:20])
+    d.tap_text("＋ 新增一份", exact=True)
+    d.time.sleep(2.5)
+    ns = d.shot("新增第二份")
+    d.check("打開新的排版頁「排版 2」", d.has(ns, "名字：排版 2", True), [n.text for n in ns if n.text][:30])
+    d.tap_back()
+    d.time.sleep(1)
+    d.shot("兩份")
+    d.check("兩份各有 1 個小工具", "桌面上有 1 個" in widget_list_info("每天看") and "桌面上有 1 個" in widget_list_info("排版 2"),
+            [widget_list_info("每天看"), widget_list_info("排版 2")])
+    # 長按第一個 → 設定：預設選目前那份，改選排版 2
+    widget_cfg(4101)
+    d.wait_text("這個小工具用哪一份排版？", timeout=8)
+    d.tap_text("排版 2", exact=True)
+    d.time.sleep(0.4)
+    d.shot("改選排版 2")
+    d.tap_text("用這份", exact=True)
+    d.time.sleep(1.5)
+    f.me_page("桌面小工具")
+    d.time.sleep(1)
+    d.shot("換了之後")
+    d.check("每天看・桌面上沒有；排版 2・桌面上有 2 個", "桌面上沒有" in widget_list_info("每天看") and "桌面上有 2 個" in widget_list_info("排版 2"),
+            [widget_list_info("每天看"), widget_list_info("排版 2")])
+    # 點區塊打開的地方（小工具點下去送的就是這些）
+    d.sh(f"am start -n {d.PKG}/tw.moneybook.app.MainActivity --es open add:INCOME")
+    d.time.sleep(2.5)
+    ns = d.shot("記收入")
+    d.check("＋ 記收入：打開記一筆、是收入（看得到薪資分類）", d.has(ns, "薪資", True), [n.text for n in ns if n.text][:30])
+    d.tap_back()
+    d.time.sleep(1)
+    d.sh(f"am start -n {d.PKG}/tw.moneybook.app.MainActivity --es open rank")
+    d.time.sleep(2.5)
+    ns = d.shot("錢花在哪")
+    d.check("預算的區塊：首頁打開「錢花在哪」", any(n.text.endswith("月錢花在哪") for n in ns), [n.text for n in ns if n.text][:30])
+    d.tap_back()
+    d.time.sleep(1)
+    m = f.today().strftime("%Y-%m")
+    d.sh(f"am start -n {d.PKG}/tw.moneybook.app.MainActivity --es open po-month:{m}")
+    d.time.sleep(2.5)
+    ns = d.shot("這個月的預購")
+    d.check("預購預留：打開預購清單", d.has(ns, "預購清單", True), [n.text for n in ns if n.text][:30])

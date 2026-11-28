@@ -3,4 +3,10 @@
     <style name="Theme.MoneyBook" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_bg</item>
     </style>
+    <!-- 放小工具時選排版：半透明背景，畫面上只有一個像對話框的卡片 -->
+    <style name="Theme.MoneyBook.Dialog" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
 </resources>

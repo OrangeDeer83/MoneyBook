@@ -73,13 +73,15 @@ sealed interface Route {
         val pendId: Long? = null,
         /** 預購（見 Preorder.kt）：new＝新增預購、edit:<id>＝修改那筆預購、buy:<id>＝買了，照那筆帶好記一筆 */
         val preorder: String? = null,
+        /** 一開始的類型（自組小工具的「＋ 記收入／記轉帳」） */
+        val presetType: tw.moneybook.app.TxType? = null,
     ) : Route
     data class Page(val name: String) : Route
 }
 
 /** 一頁存成一段文字（頁面堆疊存檔用，也當成記住那一頁狀態的 key） */
 private fun encodeRoute(r: Route): String = when (r) {
-    is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}|${r.presetFrom ?: ""}|${r.presetAcc ?: ""}|${r.pendId ?: ""}|${r.preorder ?: ""}"
+    is Route.Edit -> "E|${r.id ?: ""}|${r.presetTo ?: ""}|${r.presetAmount ?: ""}|${r.tplMode}|${r.tplId ?: ""}|${r.presetDay ?: ""}|${r.presetFrom ?: ""}|${r.presetAcc ?: ""}|${r.pendId ?: ""}|${r.preorder ?: ""}|${r.presetType ?: ""}"
     is Route.Page -> "P|${r.name}"
 }
 
@@ -88,7 +90,7 @@ private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
     save = { list -> ArrayList(list.map { encodeRoute(it) }) },
     restore = { saved ->
         saved.mapNotNull { s ->
-            val p = s.split("|", limit = 11)
+            val p = s.split("|", limit = 12)
             when (p.firstOrNull()) {
                 "E" -> if (p.size >= 6) Route.Edit(
                     id = p[1].toLongOrNull(),
@@ -101,6 +103,7 @@ private val RouteStackSaver = Saver<List<Route>, ArrayList<String>>(
                     presetAcc = p.getOrNull(8)?.toLongOrNull(),
                     pendId = p.getOrNull(9)?.toLongOrNull(),
                     preorder = p.getOrNull(10)?.takeIf { it.isNotEmpty() },
+                    presetType = p.getOrNull(11)?.let { t -> runCatching { tw.moneybook.app.TxType.valueOf(t) }.getOrNull() },
                 ) else null
                 "P" -> if (p.size >= 2) Route.Page(s.substring(2)) else null
                 else -> null
@@ -121,6 +124,7 @@ private val Tabs = listOf(
 @Composable
 fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () -> Unit = {}) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var stack by rememberSaveable(stateSaver = RouteStackSaver) { mutableStateOf(listOf<Route>()) }
     val snackbar = remember { SnackbarHostState() }
 
@@ -157,8 +161,38 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
             "reimb" -> { stack = emptyList(); push(Route.Page("reimb")) }
             "templates" -> { stack = emptyList(); push(Route.Page("templates")) }
             // 預購的「買了嗎？」通知：點通知本身打開預購清單
-            "preorders" -> { stack = emptyList(); push(Route.Page("preorders")) }
+            "preorders" -> { stack = emptyList(); vm.preorderMonth = null; push(Route.Page("preorders")) }
+            // 自組小工具的區塊（見 widgetOpen）
+            "add:INCOME" -> { stack = emptyList(); push(Route.Edit(null, presetType = tw.moneybook.app.TxType.INCOME)) }
+            "add:TRANSFER" -> { stack = emptyList(); push(Route.Edit(null, presetType = tw.moneybook.app.TxType.TRANSFER)) }
+            "rank", "budget" -> { stack = emptyList(); tab = 0; vm.rankAsk = true }
+            "pend-home" -> { stack = emptyList(); tab = 0; vm.remindAsk = "pend" }
+            "accounts" -> { stack = emptyList(); tab = 1 }
+            "stats" -> { stack = emptyList(); tab = 2 }
+            "subs" -> { stack = emptyList(); push(Route.Page("subs")) }
+            "search" -> { stack = emptyList(); push(Route.Page("search")) }
+            "widgets" -> { stack = emptyList(); tab = 3; push(Route.Page("widgets")) }
             else -> {
+                // 自組小工具的預購預留：這個月的預購清單
+                openRequest?.takeIf { it.startsWith("po-month:") }?.let {
+                    stack = emptyList()
+                    vm.preorderMonth = runCatching { java.time.YearMonth.parse(it.removePrefix("po-month:")) }.getOrNull()
+                    push(Route.Page("preorders"))
+                }
+                // 放自組小工具時還沒有排版、或選了「＋ 新增一份」：wnew:<小工具 id>[:寬:高] → 新增範例排版、綁好、打開排版頁
+                openRequest?.takeIf { it.startsWith("wnew:") }?.let {
+                    val parts = it.split(":")
+                    val wid = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                    val lid = vm.newWidgetLayout()
+                    if (wid != 0) {
+                        tw.moneybook.app.widget.WidgetBinds.bind(ctx, wid, lid)
+                        tw.moneybook.app.widget.WidgetConfigActivity.refresh(ctx.applicationContext)
+                    }
+                    stack = emptyList(); tab = 3
+                    push(Route.Page("wlayout:$lid" + if (parts.size >= 4) ":${parts[2]}:${parts[3]}" else ""))
+                }
+                // 放到桌面時選了「改這份排版」、或長按小工具 → 設定：打開那一份的排版頁（帶小工具的大小）
+                openRequest?.takeIf { it.startsWith("wlayout:") }?.let { stack = emptyList(); tab = 3; push(Route.Page(it)) }
                 // 通知上的「買了」：記一筆帶好那筆預購；「延後」：預購清單先問延後到哪天
                 openRequest?.takeIf { it.startsWith("po-buy:") }?.removePrefix("po-buy:")?.toLongOrNull()?.let {
                     stack = emptyList(); push(Route.Edit(null, preorder = "buy:$it"))
@@ -239,6 +273,7 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
             is Route.Edit -> EditScreen(
                 vm, top.id, top.presetTo, top.presetAmount, top.tplMode, top.tplId, presetDay = top.presetDay, presetFrom = top.presetFrom, presetAcc = top.presetAcc, pendId = top.pendId,
                 preorder = top.preorder,
+                presetType = top.presetType,
                 onMakeSub = { push(Route.Page("sub:from:$it")) },
                 onGoRecords = { who ->
                     // 關掉記一筆，打開這個人的紀錄分頁；本來就是從報銷頁過來的就不再疊一層

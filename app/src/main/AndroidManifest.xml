@@ -43,6 +43,32 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_quick" />
         </receiver>
+        <!-- 自組的小工具：放到桌面時先選排版 -->
+        <receiver
+            android:name=".widget.ComposeWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_compose_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_compose" />
+        </receiver>
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.MoneyBook.Dialog">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <!-- 過了半夜更新小工具（不對外） -->
+        <receiver
+            android:name=".widget.WidgetTickReceiver"
+            android:exported="false" />
         <receiver
             android:name=".widget.TemplateWidgetReceiver"
             android:exported="true"

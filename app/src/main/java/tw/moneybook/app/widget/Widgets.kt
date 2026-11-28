@@ -75,7 +75,7 @@ import java.time.temporal.ChronoUnit
 // ───────────────────────── 共用 ─────────────────────────
 
 /** 小工具直接讀手機上的存檔（跟 App 同一份，沒有網路） */
-private fun loadData(context: Context): AppData = Store(context.filesDir).load().also { Money.sync(it); tw.moneybook.app.ui.UserPics.sync(it.pics) }
+internal fun loadData(context: Context): AppData = Store(context.filesDir).load().also { Money.sync(it); tw.moneybook.app.ui.UserPics.sync(it.pics) }
 
 /** 小工具用的配色：跟著 App 選的配色，深色模式跟著系統 */
 private class WTheme(p: Pal) {
@@ -90,7 +90,7 @@ private class WTheme(p: Pal) {
 }
 
 /** 點小工具開啟 App：open = add（記一筆）、reimb（報銷）、templates（常用記帳頁）、tpl:<id>（用那個常用記帳記一筆）、空白（首頁） */
-private fun openApp(context: Context, open: String?): androidx.glance.action.Action {
+internal fun openApp(context: Context, open: String?): androidx.glance.action.Action {
     val intent = Intent(context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         if (open != null) putExtra("open", open)
@@ -116,6 +116,7 @@ suspend fun updateAllWidgets(context: Context) {
     BudgetWidget().updateAll(context)
     ReimbWidget().updateAll(context)
     TemplateWidget().updateAll(context)
+    ComposeWidget().updateAll(context)
 }
 
 // ───────────────────────── 快速記一筆 ─────────────────────────
@@ -355,7 +356,7 @@ private fun TplPlus(context: Context, t: WTheme) {
 
 /** 分類圖示：圖片圖示用 App 裡的圖，表情符號用文字，線條圖示（小工具畫不出來）用箱子 */
 @Composable
-private fun TplIcon(emoji: String, color: Int, box: Int) {
+internal fun TplIcon(emoji: String, color: Int, box: Int) {
     val img = box * 3 / 4
     Box(
         GlanceModifier.size(box.dp).background(androidx.glance.unit.ColorProvider(catColor(color).copy(alpha = 0.35f))).cornerRadius((box / 3).dp),
