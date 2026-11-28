@@ -77,7 +77,8 @@ def fill_dialog(values):
         d.hide_ime()
 
 
-REMIND_TITLES = {"扣款": ("固定扣款到期了", "筆固定扣款還沒記"), "預購": ("買好了嗎？", "樣預購買好了嗎？"), "刷卡": ("刷卡等你確認",)}
+REMIND_TITLES = {"扣款": ("固定扣款到期了", "筆固定扣款還沒記"), "預購": ("買好了嗎？", "樣預購買好了嗎？"), "刷卡": ("刷卡等你確認",),
+                 "試刷": ("筆試刷還沒填實際金額",), "預估": ("筆預估的刷卡還沒填實際金額",)}
 
 
 def remind_chip(ns, kind):
@@ -7499,8 +7500,9 @@ def t_card_test_charge():
     d.tap(btns[0])
     d.wait_text("台灣中油 $1 是試刷", timeout=8)
     ns = d.shot("是試刷：記或不記")
-    d.check("視窗有「記，等請款再改金額」「不記」", d.has(ns, "記，等請款再改金額", True) and d.has(ns, "不記", True), pend_texts(ns))
-    d.tap_text("記，等請款再改金額", exact=True)
+    d.check("視窗有實際金額欄、「先記 $1，之後再填」「不記」",
+            any(n.desc == "金額欄位：台灣中油 實際金額" for n in ns) and d.has(ns, "先記 $1，之後再填", True) and d.has(ns, "不記", True), pend_texts(ns))
+    d.tap_text("先記 $1，之後再填", exact=True)
     d.time.sleep(0.6)
     ns = d.nodes()
     d.check("提示「已記成預估 台灣中油 $1，請款時再改」", any(n.text.startswith("已記成預估") and "台灣中油" in n.text for n in ns), pend_texts(ns))
@@ -7592,3 +7594,122 @@ def t_card_no_shop():
     d.time.sleep(1)
     ns = d.shot("收到的通知")
     d.check("收到的通知標「已記」（記好了就不寫沒寫商店）", d.has(ns, "已記", True) and not d.has(ns, "少了商店", True), pend_texts(ns))
+
+
+@case(D, "是試刷：沒填實際金額按記，金額欄亮紅框「要填實際金額」；用小算盤填 1,280，按「記 $1,280」直接記成實際金額（不是預估）", visual=True)
+def t_card_test_charge_fill():
+    s = S.Seed(f.today())
+    s.expense(-3, 900, S.C_TRAFFIC, acc=S.CARD, note="台灣中油")
+    d.fresh(card_noti_seed(s))
+    card_noti_on()
+    day = today_slash()
+    bank_post("t1", f"您的信用卡末四碼1234於{day} 08:12在台灣中油消費NT$1")
+    to_main()
+    f.tab("明細")
+    home_open("刷卡", timeout=8)
+    d.tap(d.wait(lambda n: n.text == "是試刷", 8, "是試刷"))
+    d.wait_text("台灣中油 $1 是試刷", timeout=8)
+    d.time.sleep(0.5)
+    d.tap(d.wait(lambda n: n.desc == "記實際金額", 6, "記實際金額"))
+    d.time.sleep(0.8)
+    ns = d.shot("沒填金額按記")
+    d.check("金額欄下面寫「要填實際金額」、視窗還開著", d.has(ns, "要填實際金額", True) and d.has(ns, "台灣中油 $1 是試刷", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "金額欄位：台灣中油 實際金額", 6, "實際金額欄"))
+    d.time.sleep(0.8)
+    f.keypad("1280")
+    c = [n for n in d.nodes() if n.text == "完成"]
+    d.tap(max(c, key=lambda n: n.cy))
+    d.time.sleep(0.8)
+    ns = d.shot("填好 1,280")
+    d.check("按鈕變成「記 $1,280」、紅字不見", d.has(ns, "記 $1,280", True) and not d.has(ns, "要填實際金額", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "記實際金額", 6, "記實際金額"))
+    d.time.sleep(0.6)
+    ns = d.nodes()
+    d.check("提示「已記 台灣中油 $1,280」", any(n.text.startswith("已記 台灣中油 $1,280") for n in ns), pend_texts(ns))
+    d.time.sleep(4)
+    ns = d.shot("記好了")
+    d.check("待確認沒有了、明細 -$1,280、沒有試刷提醒", no_remind(ns, "刷卡") and d.has(ns, "-$1,280", True) and remind_chip(ns, "試刷") is None, pend_texts(ns))
+    open_account("測試信用卡")
+    d.time.sleep(1)
+    ns = d.shot("信用卡頁")
+    d.check("信用卡頁沒有「還沒請款」那行（不是預估）", not any("還沒請款" in n.text for n in ns), pend_texts(ns))
+
+
+@case(D, "試刷記成預估 $1：隔天起首頁多一顆「試刷」膠囊（今天記的還沒有）；定時檢查發一次吉祥物通知，點了回首頁展開，再檢查不會再發；填金額改成實際金額、可以復原；刪掉", visual=True)
+def t_est_due():
+    s = S.Seed(f.today())
+    for off, shop in ((-1, "台灣中油"), (-2, "全國加油站"), (0, "今天的試刷")):
+        t = s.expense(off, 1, S.C_TRAFFIC, acc=S.CARD)
+        t["est"] = True
+        t["shop"] = shop
+    d.fresh(s.json())
+    d.sh(f"pm grant {d.PKG} android.permission.POST_NOTIFICATIONS")
+    d.sh("service call notification 1")
+    to_main()
+    f.tab("明細")
+    d.time.sleep(1.5)
+    ns = d.shot("首頁")
+    chip = remind_chip(ns, "試刷")
+    d.check("吉祥物下面有「試刷 2」膠囊（今天記的不算）", chip is not None and chip.desc == "提醒：試刷 2",
+            [n.desc for n in ns if n.desc.startswith("提醒")])
+    # 模擬到了提醒時間（每天定時做的檢查）
+    d.sh(f"am broadcast -n {d.PKG}/tw.moneybook.app.notify.SubBootReceiver -a tw.moneybook.app.SUB_CHECK")
+    d.time.sleep(2)
+    d.sh("cmd statusbar expand-notifications")
+    d.time.sleep(2)
+    ns = d.shot("通知欄")
+    nt = d.first(ns, "小鹿：有 2 筆預估的刷卡還沒填實際金額", True)
+    d.check("吉祥物通知：小鹿：有 2 筆預估的刷卡還沒填實際金額", nt is not None, [n.text for n in ns if n.text][:25])
+    if nt:
+        d.tap(nt)
+        d.time.sleep(2.5)
+    else:
+        d.sh("cmd statusbar collapse")
+        d.time.sleep(1)
+    ns = d.shot("點通知回首頁")
+    d.check("回到首頁、展開「2 筆試刷還沒填實際金額」，今天記的不在裡面",
+            d.has(ns, "2 筆試刷還沒填實際金額", True) and d.has(ns, "台灣中油", True) and d.has(ns, "全國加油站", True) and not d.has(ns, "今天的試刷", True),
+            pend_texts(ns))
+    # 再檢查一次：通知過的不再發
+    d.sh("service call notification 1")
+    d.sh(f"am broadcast -n {d.PKG}/tw.moneybook.app.notify.SubBootReceiver -a tw.moneybook.app.SUB_CHECK")
+    d.time.sleep(2)
+    d.sh("cmd statusbar expand-notifications")
+    d.time.sleep(2)
+    ns = d.shot("再檢查一次")
+    d.check("同樣的兩筆不再發通知", not any("還沒填實際金額" in n.text for n in ns), [n.text for n in ns if n.text][:25])
+    d.sh("cmd statusbar collapse")
+    d.time.sleep(1)
+    to_main()
+    f.tab("明細")
+    home_open("試刷", timeout=8)
+    # 填金額：台灣中油 1,280
+    d.tap(d.wait(lambda n: n.desc == "填金額 台灣中油", 8, "填金額 台灣中油"))
+    d.time.sleep(0.8)
+    f.keypad("1280")
+    c = [n for n in d.nodes() if n.text == "完成"]
+    d.tap(max(c, key=lambda n: n.cy))
+    d.time.sleep(0.6)
+    ns = d.shot("填好金額")
+    d.check("提示「已改成 $1,280（原本預估 $1）」、剩 1 筆",
+            d.has(ns, "已改成 $1,280（原本預估 $1）", True) and d.has(ns, "1 筆試刷還沒填實際金額", True), pend_texts(ns))
+    und = d.first(ns, "復原", True)
+    if und:
+        d.tap(und)
+        d.time.sleep(1)
+    ns = d.shot("復原")
+    d.check("復原：又是 2 筆", d.has(ns, "2 筆試刷還沒填實際金額", True), pend_texts(ns))
+    d.tap(d.wait(lambda n: n.desc == "填金額 台灣中油", 8, "填金額 台灣中油"))
+    d.time.sleep(0.8)
+    f.keypad("1280")
+    c = [n for n in d.nodes() if n.text == "完成"]
+    d.tap(max(c, key=lambda n: n.cy))
+    d.time.sleep(4.5)
+    # 刪掉全國加油站
+    d.tap_text("刪掉", exact=True)
+    d.time.sleep(0.6)
+    ns = d.shot("刪掉")
+    d.check("提示「已刪除」、試刷提醒都沒有了", any(n.text.startswith("已刪除") for n in ns) and no_remind(ns, "試刷"), pend_texts(ns))
+    d.time.sleep(4)
+    ns = d.shot("首頁")
+    d.check("明細有 -$1,280、膠囊還是沒有「試刷」", d.has(ns, "-$1,280", True) and remind_chip(ns, "試刷") is None, pend_texts(ns))

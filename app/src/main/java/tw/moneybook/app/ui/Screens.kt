@@ -63,6 +63,8 @@ import tw.moneybook.app.budgetSpent
 import tw.moneybook.app.outOfBudgetSpent
 import tw.moneybook.app.preorderReserved
 import tw.moneybook.app.preordersDue
+import tw.moneybook.app.estDue
+import tw.moneybook.app.isTestEst
 import tw.moneybook.app.preorderReservedNames
 import tw.moneybook.app.AppData
 import tw.moneybook.app.MoneyViewModel
@@ -662,14 +664,21 @@ fun HomeScreen(
     }
     // 預購到了預計那天還沒回答的（見 Preorder.kt）
     val preDue = remember(d) { d.preordersDue(LocalDate.now().toEpochDay()) }
+    // 預估放太久還沒填實際金額（試刷隔天起、預先授權 14 天，見 EstDue.kt）
+    val estDue = remember(d) { d.estDue(LocalDate.now().toEpochDay()) }
     // 提醒（草圖 ci-out/home_todo.png 甲）：不再疊在吉祥物上面，吉祥物說「有 N 件事等你處理」，下面一排膠囊，
     // 點一顆才在吉祥物下面展開那一張（一次一張、再點收起；不記住，重新打開 App 都是收起來的）
     val reminds = listOfNotNull(
         if (subsDue.isNotEmpty()) Triple("subs", "扣款", subsDue.size) else null,
         if (preDue.isNotEmpty()) Triple("pre", "預購", preDue.size) else null,
         if (hasPend) Triple("pend", "刷卡", pendN) else null,
+        if (estDue.isNotEmpty()) Triple("est", if (estDue.all { it.isTestEst }) "試刷" else "預估", estDue.size) else null,
     )
     var remindOpen by rememberSaveable { mutableStateOf<String?>(null) }
+    // 從「預估放太久」的通知點進來：展開那一張
+    LaunchedEffect(vm.remindAsk) {
+        vm.remindAsk?.let { remindOpen = it; vm.remindAsk = null }
+    }
     // 那一種都處理完了：收起來
     val openKind = remindOpen?.takeIf { k -> reminds.any { it.first == k } }
     // 前面固定的項目：書本列、吉祥物（關掉吉祥物但有提醒時是一排膠囊）、展開的提醒、預算、本月摘要
@@ -756,6 +765,7 @@ fun HomeScreen(
             "subs" -> item(key = "subsDue") { SubDueCard(vm, subsDue) }
             "pre" -> item(key = "preDue") { PreorderDueCard(vm, preDue, onPreorder) }
             "pend" -> item(key = "cardPend") { CardPendCard(vm, pends, onEditPend) }
+            "est" -> item(key = "estDue") { EstDueCard(vm, estDue) }
         }
 
         val budget = book.budgetFor(month)

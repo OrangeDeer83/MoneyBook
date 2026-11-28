@@ -115,7 +115,7 @@ internal fun AmountField(
 
 /** 金額欄位的小算盤視窗：標題、算式、小算盤；左下角「貼上」（剪貼簿有數字才有），右下角「取消」 */
 @Composable
-private fun AmountKeypadDialog(
+internal fun AmountKeypadDialog(
     title: String, initial: String, prefix: String, dec: Int, maxDigits: Int, onDone: (String) -> Unit, onDismiss: () -> Unit,
     nextLabel: String? = null, onNext: (String) -> Unit = {},
 ) {

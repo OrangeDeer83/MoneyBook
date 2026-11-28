@@ -298,6 +298,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 tw.moneybook.app.notify.PreorderNotifier.refreshShown(appContext, d)
             } catch (_: Exception) {
             }
+            // 預估放太久的提醒：都填好、刪掉了就收掉
+            try {
+                tw.moneybook.app.notify.EstNotifier.refreshShown(appContext, d)
+            } catch (_: Exception) {
+            }
             // 讓桌面上的小工具跟著更新
             viewModelScope.launch {
                 try {
@@ -1427,7 +1432,11 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
      * 記下一筆刷卡（記在目前的帳本；卡、分類由畫面決定）。外幣記在台幣卡：twd 是台幣金額，沒給就用目前匯率，
      * 沒有匯率回傳 false（畫面要問）。可以復原：刪掉那一筆、回到待確認。
      */
-    fun recordPend(id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true, est: Boolean = false, shop: String = ""): Boolean {
+    fun recordPend(
+        id: Long, cardId: Long, catId: Long?, twd: Long? = null, pending: Boolean = true, est: Boolean = false, shop: String = "",
+        /** 試刷直接填的實際金額（台幣）；null＝照通知的金額 */
+        amount: Long? = null,
+    ): Boolean {
         val p = tw.moneybook.app.notify.CardPendLog.load(appContext).firstOrNull { it.id == id && it.state == PendState.WAIT } ?: return false
         if (p.kind == PendKind.REFUND) return recordRefund(id, cardId, twd)
         val d = data
@@ -1439,12 +1448,15 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
                 .let { if (p.kind == PendKind.PREAUTH || est) it.copy(est = true) else it }
                 // 通知沒寫商店、按記時自己填的店家
                 .let { if (shop.isNotBlank() && it.shop.isBlank()) it.copy(shop = shop.trim()) else it }
+                // 試刷直接填了實際金額（加油站不會再通知請款的金額）：記成那個金額，不是預估
+                .let { if (amount != null && amount > 0 && p.cur.isEmpty()) it.copy(amount = amount, est = false) else it }
         )
         val ids = list.map { it.id }.toSet()
         commit(d.copy(txns = sortTxns(d.txns + list), nextId = d.nextId + list.size))
         setPend(id) { it.copy(state = PendState.DONE, txnId = list.first().id, cardId = cardId) }
         val msg = when {
             p.isInst -> "已記 ${p.merchant.ifEmpty { "刷卡" }} 分 ${list.size} 期，每期約 ${formatMoney(p.amount / list.size)}"
+            amount != null && amount > 0 && p.cur.isEmpty() -> "已記 ${data.pendName(p)} ${formatMoney(amount)}"
             p.kind == PendKind.PREAUTH || est -> "已記成預估 ${pendTitle(p)}，請款時再改"
             else -> "已記 ${pendTitle(p)}"
         }
@@ -1500,6 +1512,21 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         })
     }
 
+    /** 預估放太久（見 EstDue.kt）：自己填實際金額，不再是預估（入帳月份照原本的日期）。可以復原 */
+    fun fillEst(txnId: Long, amount: Long) {
+        val d = data
+        val old = d.txnMap[txnId] ?: return
+        if (amount <= 0) return
+        commit(d.settlePreauth(txnId, amount, old.day))
+        _messages.tryEmit(UiMsg("已改成 ${formatMoney(amount)}（原本預估 ${formatMoney(old.amount)}）", "復原") {
+            val now = data
+            commit(now.copy(txns = now.txns.map { if (it.id == txnId) old else it }))
+        })
+    }
+
+    /** 首頁「試刷」膠囊：通知點進來時要展開哪一張提醒（首頁用掉就清掉） */
+    var remindAsk by mutableStateOf<String?>(null)
+
     /** 「是另一筆」：不是預先授權的請款，變回一般的刷卡；可以復原 */
     fun notPrePend(id: Long) {
         setPend(id) { it.copy(notPre = true) }
@@ -1540,6 +1567,8 @@ class MoneyViewModel(app: Application) : AndroidViewModel(app) {
         update { d -> d.copy(prefs = d.prefs.copy(cardNotify = on)) }
         if (on) tw.moneybook.app.notify.CardPendNotifier.post(appContext, data, silent = true)
         else tw.moneybook.app.notify.CardPendNotifier.cancel(appContext)
+        // 預估放太久的提醒也跟著這個開關（用訂閱通知的定時檢查）
+        tw.moneybook.app.notify.SubNotifier.schedule(appContext, data.prefs)
     }
 
     /** 通知上按了「記好了」「不是消費」（App 開著時由這裡處理，才有「復原」） */

@@ -64,11 +64,14 @@ object SubNotifier {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** 排下一次檢查（訂閱、預購的通知都關掉就取消；預購的「買了嗎？」也用這個時間）；App 打開、改設定、開機後都會重排 */
+    /**
+     * 排下一次檢查（訂閱、預購、刷卡的通知都關掉就取消；預購的「買了嗎？」、預估放太久的提醒也用這個時間）；
+     * App 打開、改設定、開機後都會重排
+     */
     fun schedule(ctx: Context, p: Prefs) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
         val pi = checkIntent(ctx)
-        if (!p.subNotify && !p.preorderNotify) {
+        if (!p.subNotify && !p.preorderNotify && !p.cardNotify) {
             am.cancel(pi)
             return
         }
@@ -159,6 +162,7 @@ class SubNotifyReceiver : BroadcastReceiver() {
                 val d = SubNotifier.current(ctx)
                 SubNotifier.post(ctx, d, silent = false)
                 PreorderNotifier.post(ctx, d, silent = false)
+                EstNotifier.post(ctx, d)
                 SubNotifier.schedule(ctx, d.prefs)
             }
             SubNotifier.ACTION_RECORD, SubNotifier.ACTION_SKIP, SubNotifier.ACTION_ALL -> {
@@ -203,6 +207,7 @@ class SubBootReceiver : BroadcastReceiver() {
         if (intent.action == SubNotifier.ACTION_CHECK) {
             SubNotifier.post(ctx, d, silent = false)
             PreorderNotifier.post(ctx, d, silent = false)
+            EstNotifier.post(ctx, d)
         }
         SubNotifier.schedule(ctx, d.prefs)
     }

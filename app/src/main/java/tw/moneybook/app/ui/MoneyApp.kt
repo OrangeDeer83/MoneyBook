@@ -152,6 +152,8 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
             "add" -> { stack = emptyList(); push(Route.Edit(null)) }
             // 訂閱到期通知：回到首頁（最上面是到期提醒卡）
             "home" -> { stack = emptyList(); tab = 0 }
+            // 預估放太久的通知：回到首頁、展開「試刷」那張提醒
+            "est" -> { stack = emptyList(); tab = 0; vm.remindAsk = "est" }
             "reimb" -> { stack = emptyList(); push(Route.Page("reimb")) }
             "templates" -> { stack = emptyList(); push(Route.Page("templates")) }
             // 預購的「買了嗎？」通知：點通知本身打開預購清單
