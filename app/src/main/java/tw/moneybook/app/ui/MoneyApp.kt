@@ -188,11 +188,12 @@ fun MoneyApp(vm: MoneyViewModel, openRequest: String? = null, onOpenHandled: () 
                         tw.moneybook.app.widget.WidgetBinds.bind(ctx, wid, lid)
                         tw.moneybook.app.widget.WidgetConfigActivity.refresh(ctx.applicationContext)
                     }
-                    stack = emptyList(); tab = 3
+                    // 返回先回到排版清單
+                    stack = listOf(Route.Page("widgets")); tab = 3
                     push(Route.Page("wlayout:$lid" + if (parts.size >= 4) ":${parts[2]}:${parts[3]}" else ""))
                 }
                 // 放到桌面時選了「改這份排版」、或長按小工具 → 設定：打開那一份的排版頁（帶小工具的大小）
-                openRequest?.takeIf { it.startsWith("wlayout:") }?.let { stack = emptyList(); tab = 3; push(Route.Page(it)) }
+                openRequest?.takeIf { it.startsWith("wlayout:") }?.let { stack = listOf(Route.Page("widgets")); tab = 3; push(Route.Page(it)) }
                 // 通知上的「買了」：記一筆帶好那筆預購；「延後」：預購清單先問延後到哪天
                 openRequest?.takeIf { it.startsWith("po-buy:") }?.removePrefix("po-buy:")?.toLongOrNull()?.let {
                     stack = emptyList(); push(Route.Edit(null, preorder = "buy:$it"))
